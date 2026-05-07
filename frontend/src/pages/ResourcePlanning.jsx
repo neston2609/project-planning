@@ -9,9 +9,14 @@ import { PlusIcon } from '@heroicons/react/24/outline';
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const WEEK_W = 28;     // px per week column
-const RESOURCE_W = 220; // px sidebar
+// Sidebar columns
+const COL_NAME_W  = 200;
+const COL_NICK_W  = 90;
+const COL_SKILL_W = 160;
+const RESOURCE_W  = COL_NAME_W + COL_NICK_W + COL_SKILL_W;
 const LANE_H = 26;     // px per lane
 const LANE_GAP = 4;    // px between lanes
+const MIN_ROW_H = 56;  // px — guarantees sidebar (name + role + padding) fits
 
 /** Build week buckets for a year, each = { weekIdx, startISO, endISO, month }. */
 function buildWeeks(year) {
@@ -124,11 +129,12 @@ export default function ResourcePlanning() {
 
     // Total grid height for the today line
     const gridHeight = useMemo(() => {
-        let h = 36; // weeks header
+        let h = 60; // months + weeks header
         for (const r of resources) {
             const lanes = byResource.get(r.id) || [];
             const laneCount = Math.max(1, lanes.length);
-            h += laneCount * (LANE_H + LANE_GAP) + 4;
+            const rowH = Math.max(MIN_ROW_H, laneCount * (LANE_H + LANE_GAP) + 6);
+            h += rowH;
         }
         return h;
     }, [resources, byResource]);
@@ -195,7 +201,7 @@ export default function ResourcePlanning() {
             {loading ? (
                 <p className="text-slate-500 animate-pulse">Loading...</p>
             ) : (
-                <div className="card overflow-auto">
+                <div className="card overflow-x-auto overflow-y-visible">
                     <div className="relative" style={{ minWidth: RESOURCE_W + totalWidth }}>
                         {/* Today vertical line — spans the full grid below the header */}
                         {todayLeft >= 0 && (
@@ -220,8 +226,13 @@ export default function ResourcePlanning() {
                         <div className="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-slate-200">
                             {/* Month band */}
                             <div className="flex">
-                                <div className="shrink-0" style={{ width: RESOURCE_W }}>
-                                    <div className="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">Resource</div>
+                                <div className="shrink-0 flex border-r-2 border-slate-300" style={{ width: RESOURCE_W }}>
+                                    <div className="px-3 py-2 text-xs font-bold text-slate-600 uppercase tracking-wider border-r border-slate-200"
+                                         style={{ width: COL_NAME_W }}>Full Name</div>
+                                    <div className="px-3 py-2 text-xs font-bold text-slate-600 uppercase tracking-wider border-r border-slate-200"
+                                         style={{ width: COL_NICK_W }}>Nickname</div>
+                                    <div className="px-3 py-2 text-xs font-bold text-slate-600 uppercase tracking-wider"
+                                         style={{ width: COL_SKILL_W }}>Skill</div>
                                 </div>
                                 <div className="flex relative" style={{ width: totalWidth }}>
                                     {MONTHS.map((m, mi) => {
@@ -238,8 +249,8 @@ export default function ResourcePlanning() {
                                 </div>
                             </div>
                             {/* Week labels */}
-                            <div className="flex">
-                                <div className="shrink-0" style={{ width: RESOURCE_W }} />
+                            <div className="flex border-b-2 border-slate-300">
+                                <div className="shrink-0 border-r-2 border-slate-300" style={{ width: RESOURCE_W }} />
                                 <div className="flex">
                                     {weeks.map(w => (
                                         <div key={w.weekIdx}
@@ -257,16 +268,33 @@ export default function ResourcePlanning() {
                         {resources.map((r, rIdx) => {
                             const lanes = byResource.get(r.id) || [];
                             const laneCount = Math.max(1, lanes.length);
-                            const rowHeight = laneCount * (LANE_H + LANE_GAP) + 4;
+                            const rowHeight = Math.max(MIN_ROW_H, laneCount * (LANE_H + LANE_GAP) + 4);
                             return (
                                 <div key={r.id}
-                                     className={`flex border-b border-slate-100 ${rIdx % 2 ? 'bg-white' : 'bg-slate-50/40'}`}
+                                     className={`flex border-b-2 border-slate-200 ${rIdx % 2 ? 'bg-white' : 'bg-slate-50/50'}`}
                                      style={{ height: rowHeight }}>
-                                    {/* Sidebar */}
-                                    <div className="shrink-0 px-3 py-2 sticky left-0 z-[5] bg-inherit border-r border-slate-200"
+                                    {/* Sidebar — three columns */}
+                                    <div className="shrink-0 sticky left-0 z-[5] bg-inherit flex border-r-2 border-slate-300"
                                          style={{ width: RESOURCE_W }}>
-                                        <div className="font-semibold text-sm truncate">{r.first_name} {r.last_name}</div>
-                                        <div className="text-[10px] text-slate-400 truncate">{r.nick_name || r.role}</div>
+                                        <div className="px-3 py-2 border-r border-slate-200 flex flex-col justify-center"
+                                             style={{ width: COL_NAME_W }}>
+                                            <div className="font-semibold text-sm truncate" title={`${r.first_name} ${r.last_name}`}>
+                                                {r.first_name} {r.last_name}
+                                            </div>
+                                            {r.role && (
+                                                <div className="text-[10px] text-slate-400 truncate">{r.role}</div>
+                                            )}
+                                        </div>
+                                        <div className="px-3 py-2 border-r border-slate-200 flex items-center"
+                                             style={{ width: COL_NICK_W }}>
+                                            <span className="text-sm text-slate-600 truncate">{r.nick_name || '—'}</span>
+                                        </div>
+                                        <div className="px-3 py-2 flex items-center" style={{ width: COL_SKILL_W }}>
+                                            <span className="text-xs text-slate-500 line-clamp-2 leading-tight"
+                                                  title={r.skill || ''}>
+                                                {r.skill || '—'}
+                                            </span>
+                                        </div>
                                     </div>
 
                                     {/* Lane area */}

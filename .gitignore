@@ -5,5 +5,3 @@ build/
 .env.local
 .DS_Store
 *.log
-backend/sql/migration.sql
-backend/sql/migration_report.md
