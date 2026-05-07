@@ -422,23 +422,26 @@ for (const i of impl) {
 }
 
 // 7) Outsource (Man-Month)
+//    NOTE: a CTE only scopes to the next statement, so we insert the parent
+//    row first, then look it up by project_id when inserting monthly rows.
 sql.push('\n-- Outsource (Man-Month)');
 for (const o of outsource) {
     sql.push(
-        `WITH ins AS (
-   INSERT INTO project_outsource(project_id, outsource_type, description, erp_code)
-   VALUES ((SELECT id FROM projects WHERE project_code=${SQ(o.project_code)}),
-           ${SQ(o.outsource_type)}, ${SQ(o.description)}, ${SQ(o.erp_code)})
-   ON CONFLICT (project_id) DO UPDATE SET description=EXCLUDED.description
-   RETURNING id
-)
-` +
-        o.months.map(m =>
-            `INSERT INTO project_outsource_monthly(project_outsource_id, year, month, revenue, cost)
-   SELECT id, ${m.year}, ${m.month}, ${num(m.revenue)}, ${num(m.cost)} FROM ins
-   ON CONFLICT (project_outsource_id, year, month) DO UPDATE SET revenue=EXCLUDED.revenue, cost=EXCLUDED.cost;`
-        ).join('\n') + '\n'
+        `INSERT INTO project_outsource(project_id, outsource_type, description, erp_code)
+ VALUES ((SELECT id FROM projects WHERE project_code=${SQ(o.project_code)}),
+         ${SQ(o.outsource_type)}, ${SQ(o.description)}, ${SQ(o.erp_code)})
+ ON CONFLICT (project_id) DO UPDATE SET description=EXCLUDED.description, outsource_type=EXCLUDED.outsource_type;`
     );
+    for (const m of o.months) {
+        sql.push(
+            `INSERT INTO project_outsource_monthly(project_outsource_id, year, month, revenue, cost)
+ SELECT po.id, ${m.year}, ${m.month}, ${num(m.revenue)}, ${num(m.cost)}
+   FROM project_outsource po
+  WHERE po.project_id = (SELECT id FROM projects WHERE project_code=${SQ(o.project_code)})
+ ON CONFLICT (project_outsource_id, year, month) DO UPDATE
+    SET revenue=EXCLUDED.revenue, cost=EXCLUDED.cost;`
+        );
+    }
 }
 
 // 8) Resources

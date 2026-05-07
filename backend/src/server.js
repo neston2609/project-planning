@@ -1,4 +1,16 @@
-require('dotenv').config();
+const path = require('path');
+// Try the local backend/.env first, then fall back to default cwd lookup.
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+require('dotenv').config(); // also load any cwd .env without overriding the above
+
+console.log('[startup] env loaded — PGHOST=%s PGPORT=%s PGUSER=%s PGDATABASE=%s PGPASSWORD=%s PORT=%s',
+    process.env.PGHOST || '(unset)',
+    process.env.PGPORT || '(unset)',
+    process.env.PGUSER || '(unset)',
+    process.env.PGDATABASE || '(unset)',
+    process.env.PGPASSWORD ? `(${process.env.PGPASSWORD.length} chars)` : '(unset!)',
+    process.env.PORT || '(unset, using default 6000)');
+
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
@@ -39,7 +51,7 @@ app.use((err, req, res, _next) => {
     res.status(500).json({ error: err.message || 'Internal server error' });
 });
 
-const PORT = Number(process.env.PORT) || 5000;
+const PORT = Number(process.env.PORT) || 6000;
 (async () => {
     try {
         await bootstrap();
