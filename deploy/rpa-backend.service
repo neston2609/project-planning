@@ -1,0 +1,34 @@
+# Alternative to PM2: run the backend as a systemd service.
+# Install with:
+#   sudo cp deploy/rpa-backend.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now rpa-backend
+# Logs:
+#   journalctl -u rpa-backend -f
+
+[Unit]
+Description=RPA Planning Backend
+After=network.target
+
+[Service]
+Type=simple
+User=rpa
+Group=rpa
+WorkingDirectory=/srv/rpa-planning/backend
+ExecStart=/usr/bin/node src/server.js
+Restart=on-failure
+RestartSec=5
+EnvironmentFile=/srv/rpa-planning/backend/.env
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rpa-backend
+
+# Lockdown
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/srv/rpa-planning/backend
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

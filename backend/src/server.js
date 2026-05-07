@@ -43,6 +43,18 @@ app.use('/api/projects',   projectsRouter);
 app.use('/api/dashboards', dashboardsRouter);
 app.use('/api/admin',      adminRouter);
 
+// ---------- Optional: serve the built frontend from the backend ----------
+// If frontend/dist exists (i.e. you ran `npm --prefix frontend run build`),
+// serve those static files plus an SPA fallback to index.html. This lets you
+// run the whole app from one Node process when you don't want nginx.
+const fs = require('fs');
+const distDir = path.join(__dirname, '..', '..', 'frontend', 'dist');
+if (fs.existsSync(path.join(distDir, 'index.html'))) {
+    app.use(express.static(distDir, { maxAge: '30d', index: false }));
+    app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(path.join(distDir, 'index.html')));
+    console.log('[startup] serving built frontend from', distDir);
+}
+
 // Generic error handler
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, _next) => {
