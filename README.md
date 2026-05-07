@@ -42,13 +42,17 @@ npm run install:all                # installs backend + frontend
 cp backend/.env.example backend/.env
 ```
 
-## 3) Apply the database schema
+## 3) Create the database and apply the schema
 
 ```bash
+# 3a) Create the database (one-time). Connect to the built-in 'postgres' db.
+psql -h 10.98.68.254 -U postgres -d postgres -c "CREATE DATABASE rpa_planning;"
+
+# 3b) Apply the schema
 psql -h 10.98.68.254 -U postgres -d rpa_planning -f backend/sql/schema.sql
 ```
 
-The backend will also try to apply the schema automatically on first start (idempotent — uses `IF NOT EXISTS` everywhere). You can skip the manual `psql` step if your backend host can reach the DB.
+After the database exists, the backend will also re-apply the schema automatically on first start (idempotent — uses `IF NOT EXISTS` everywhere). You can skip step 3b once 3a is done if your backend host can reach the DB.
 
 ## 4) Migrate data from the existing Excel
 
