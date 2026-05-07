@@ -1,5 +1,14 @@
 import { baht } from '../format';
 
+// Static map so Tailwind's JIT keeps every literal class name in the bundle.
+const ACCENT_CLASS = {
+    blue:   'kpi kpi-blue',
+    purple: 'kpi kpi-purple',
+    green:  'kpi kpi-green',
+    amber:  'kpi kpi-amber',
+    rose:   'kpi kpi-rose'
+};
+
 /**
  * Header for a dashboard page.
  *  - title: page title (will be rendered with the brand gradient)
@@ -24,7 +33,7 @@ export default function DashboardHeader({ title, subtitle, tiles = [], currency 
                   : 'md:grid-cols-4'
                 } gap-4`}>
                     {tiles.map((t, i) => (
-                        <div key={i} className={`kpi kpi-${t.accent || 'blue'}`}>
+                        <div key={i} className={ACCENT_CLASS[t.accent] || ACCENT_CLASS.blue}>
                             <div className="text-[11px] uppercase tracking-wider opacity-80">{t.label}</div>
                             <div className="text-2xl font-extrabold tabular-nums mt-2">
                                 {currency && typeof t.value === 'number' ? baht(t.value) : t.value}
