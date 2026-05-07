@@ -5,7 +5,7 @@ Web application that replaces the **RPA SV Summary** Excel workbook with a year-
 | Layer        | Tech                                                   | Port |
 | ------------ | ------------------------------------------------------ | ---- |
 | **Frontend** | React 18 + react-router 6 + Tailwind 3 (Vite)          | 3000 |
-| **Backend**  | Node.js 20 + Express 4 + JWT + bcrypt                  | 5000 |
+| **Backend**  | Node.js 20 + Express 4 + JWT + bcrypt                  | 6000 |
 | **Database** | PostgreSQL 13+ (external host)                          | 5432 |
 
 The whole project is split into two npm workspaces (`backend/` and `frontend/`) plus a top-level orchestrator that runs both with `concurrently`.
@@ -74,7 +74,7 @@ Read `backend/sql/migration_report.md` afterwards — it lists every row that ne
 npm run dev
 
 # …or separately
-npm --prefix backend run dev      # http://localhost:5000
+npm --prefix backend run dev      # http://localhost:6000
 npm --prefix frontend run dev     # http://localhost:3000
 ```
 
