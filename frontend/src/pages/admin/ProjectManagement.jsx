@@ -152,33 +152,42 @@ function CreateProjectModal({ customers, onClose, onCreated }) {
     );
 }
 
-// ---------- Project Editor with 5 tabs ----------
+// ---------- Project Editor: master form on top + 5 revenue tabs below ----------
 function ProjectEditor({ project, customers, onClose, onSaved, year }) {
-    const tabs = ['Master','Subscription','Perpetual / SW MA','Service MA','Implementation','Outsource'];
-    const [active, setActive] = useState('Master');
+    const tabs = ['Subscription','Perpetual / SW MA','Service MA','Implementation','Outsource'];
+    const [active, setActive] = useState('Subscription');
     return (
         <Modal open onClose={onClose} size="xl"
                title={`Edit — ${project.project_code} ${project.description ? '— ' + project.description : ''}`}>
-            <div className="border-b border-slate-200 mb-4 flex flex-wrap gap-1">
+            {/* Master form — always visible at the top */}
+            <MasterForm project={project} customers={customers} onSaved={onSaved} />
+
+            {/* Tab strip for the 5 revenue types */}
+            <div className="mt-6 border-b border-slate-200 flex flex-wrap gap-1">
                 {tabs.map(t => (
                     <button key={t}
-                        className={`px-3 py-1.5 text-sm rounded-t-md ${active === t ? 'bg-brand-50 text-brand-700 font-medium' : 'text-slate-600 hover:bg-slate-100'}`}
+                        className={`px-4 py-2 text-sm rounded-t-md transition-colors ${
+                            active === t
+                                ? 'bg-brand-50 text-brand-700 font-semibold border-b-2 border-brand-500 -mb-px'
+                                : 'text-slate-600 hover:bg-slate-100'
+                        }`}
                         onClick={() => setActive(t)}>
                         {t}
                     </button>
                 ))}
             </div>
-            {active === 'Master'        && <MasterTab project={project} customers={customers} onSaved={onSaved} />}
-            {active === 'Subscription'  && <SubscriptionTab project={project} onSaved={onSaved} />}
-            {active === 'Perpetual / SW MA' && <PerpetualTab project={project} onSaved={onSaved} />}
-            {active === 'Service MA'    && <ServiceMATab project={project} onSaved={onSaved} />}
-            {active === 'Implementation'&& <ImplementationTab project={project} onSaved={onSaved} />}
-            {active === 'Outsource'     && <OutsourceTab project={project} year={year} onSaved={onSaved} />}
+            <div className="pt-4">
+                {active === 'Subscription'      && <SubscriptionTab project={project} onSaved={onSaved} />}
+                {active === 'Perpetual / SW MA' && <PerpetualTab project={project} onSaved={onSaved} />}
+                {active === 'Service MA'        && <ServiceMATab project={project} onSaved={onSaved} />}
+                {active === 'Implementation'    && <ImplementationTab project={project} onSaved={onSaved} />}
+                {active === 'Outsource'         && <OutsourceTab project={project} year={year} onSaved={onSaved} />}
+            </div>
         </Modal>
     );
 }
 
-function MasterTab({ project, customers, onSaved }) {
+function MasterForm({ project, customers, onSaved }) {
     const [f, setF] = useState({
         project_code: project.project_code,
         description: project.description || '',
@@ -189,7 +198,9 @@ function MasterTab({ project, customers, onSaved }) {
         pipeline_target_date: formatDate(project.pipeline_target_date),
         note: project.note || ''
     });
+    const [saving, setSaving] = useState(false);
     async function save() {
+        setSaving(true);
         try {
             await api.put(`/projects/${project.id}`, {
                 ...f, customer_id: f.customer_id ? Number(f.customer_id) : null,
@@ -197,34 +208,42 @@ function MasterTab({ project, customers, onSaved }) {
                 project_end_date: f.project_end_date || null,
                 pipeline_target_date: f.pipeline_target_date || null
             });
-            toast.success('Saved');
+            toast.success('Project details saved');
             onSaved();
         } catch (err) { toast.error(err.response?.data?.error || 'Save failed'); }
+        finally { setSaving(false); }
     }
     return (
-        <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2"><label className="label">Project Code</label>
-                <input className="input" value={f.project_code} onChange={e => setF({ ...f, project_code: e.target.value })} /></div>
-            <div className="col-span-2"><label className="label">Description</label>
-                <input className="input" value={f.description} onChange={e => setF({ ...f, description: e.target.value })} /></div>
-            <div><label className="label">Customer</label>
-                <select className="input" value={f.customer_id} onChange={e => setF({ ...f, customer_id: e.target.value })}>
-                    <option value="">—</option>
-                    {customers.map(c => <option key={c.id} value={c.id}>{c.alias} — {c.full_name}</option>)}
-                </select></div>
-            <div><label className="label">Status</label>
-                <select className="input" value={f.status} onChange={e => setF({ ...f, status: e.target.value })}>
-                    <option>Pipeline</option><option>Win</option><option>Loss</option><option>Backlog</option>
-                </select></div>
-            <div><label className="label">Start Date</label>
-                <input type="date" className="input" value={f.project_start_date} onChange={e => setF({ ...f, project_start_date: e.target.value })} /></div>
-            <div><label className="label">End Date</label>
-                <input type="date" className="input" value={f.project_end_date} onChange={e => setF({ ...f, project_end_date: e.target.value })} /></div>
-            <div className="col-span-2"><label className="label">Pipeline Target Date</label>
-                <input type="date" className="input" value={f.pipeline_target_date} onChange={e => setF({ ...f, pipeline_target_date: e.target.value })} /></div>
-            <div className="col-span-2"><label className="label">Note</label>
-                <textarea className="input" rows={3} value={f.note} onChange={e => setF({ ...f, note: e.target.value })} /></div>
-            <div className="col-span-2 flex justify-end"><button className="btn-primary" onClick={save}>Save Master</button></div>
+        <div>
+            <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wider">Project Details</h3>
+                <button className="btn-primary" disabled={saving} onClick={save}>
+                    {saving ? 'Saving...' : 'Save Project'}
+                </button>
+            </div>
+            <div className="grid grid-cols-2 gap-3 p-4 rounded-xl bg-gradient-to-br from-indigo-50/40 to-pink-50/40 border border-slate-200/70">
+                <div className="col-span-2"><label className="label">Project Code</label>
+                    <input className="input" value={f.project_code} onChange={e => setF({ ...f, project_code: e.target.value })} /></div>
+                <div className="col-span-2"><label className="label">Description</label>
+                    <input className="input" value={f.description} onChange={e => setF({ ...f, description: e.target.value })} /></div>
+                <div><label className="label">Customer</label>
+                    <select className="input" value={f.customer_id} onChange={e => setF({ ...f, customer_id: e.target.value })}>
+                        <option value="">—</option>
+                        {customers.map(c => <option key={c.id} value={c.id}>{c.alias} — {c.full_name}</option>)}
+                    </select></div>
+                <div><label className="label">Status</label>
+                    <select className="input" value={f.status} onChange={e => setF({ ...f, status: e.target.value })}>
+                        <option>Pipeline</option><option>Win</option><option>Loss</option><option>Backlog</option>
+                    </select></div>
+                <div><label className="label">Start Date</label>
+                    <input type="date" className="input" value={f.project_start_date} onChange={e => setF({ ...f, project_start_date: e.target.value })} /></div>
+                <div><label className="label">End Date</label>
+                    <input type="date" className="input" value={f.project_end_date} onChange={e => setF({ ...f, project_end_date: e.target.value })} /></div>
+                <div className="col-span-2"><label className="label">Pipeline Target Date</label>
+                    <input type="date" className="input" value={f.pipeline_target_date} onChange={e => setF({ ...f, pipeline_target_date: e.target.value })} /></div>
+                <div className="col-span-2"><label className="label">Note</label>
+                    <textarea className="input" rows={2} value={f.note} onChange={e => setF({ ...f, note: e.target.value })} /></div>
+            </div>
         </div>
     );
 }
