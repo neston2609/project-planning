@@ -1,0 +1,16 @@
+{
+  "name": "rpa-planning",
+  "version": "1.0.0",
+  "private": true,
+  "description": "RPA Planning Management — top-level orchestrator",
+  "scripts": {
+    "install:all": "npm --prefix backend install && npm --prefix frontend install",
+    "dev": "concurrently -n backend,frontend -c blue,green \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
+    "start": "concurrently -n backend,frontend -c blue,green \"npm --prefix backend start\" \"npm --prefix frontend run preview\"",
+    "build": "npm --prefix frontend run build",
+    "migrate:excel": "npm --prefix backend run migrate:excel"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1"
+  }
+}

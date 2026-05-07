@@ -1,0 +1,1259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>RPA SV Summary — Wireframe</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --brand:#2563eb; --brand-dark:#1d4ed8; --bg:#f8fafc; --card:#fff;
+    --border:#e2e8f0; --muted:#64748b; --win:#10b981; --pipe:#f59e0b;
+  }
+  body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; background: var(--bg); }
+  .nav-item { display:flex; align-items:center; gap:12px; padding:9px 14px; border-radius:8px; color:#334155; font-size:14px; cursor:pointer; transition:background .12s; }
+  .nav-item:hover { background:#eef2ff; }
+  .nav-item.active { background:#dbeafe; color:var(--brand-dark); font-weight:600; }
+  .nav-item.disabled { color:#94a3b8; cursor:not-allowed; }
+  .nav-icon { width:18px; height:18px; flex:0 0 18px; }
+  .kpi-card { background:white; border:1px solid var(--border); border-radius:12px; padding:18px 20px; }
+  .badge { display:inline-flex; align-items:center; padding:2px 10px; border-radius:9999px; font-size:11px; font-weight:600; }
+  .badge-win { background:#dcfce7; color:#15803d; }
+  .badge-pipe { background:#fef3c7; color:#a16207; }
+  .badge-phase { background:#e0e7ff; color:#3730a3; font-size:10px; padding:2px 7px; }
+  table.grid { width:100%; border-collapse:collapse; font-size:13px; }
+  table.grid th, table.grid td { border:1px solid #e2e8f0; padding:6px 9px; text-align:left; vertical-align:middle; }
+  table.grid thead th { background:#f1f5f9; font-weight:600; color:#334155; position:sticky; top:0; z-index:1; }
+  table.grid tr:hover td { background:#fafafa; }
+  table.grid td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  table.grid th.num { text-align:right; }
+  table.grid td.calc { background:#f8fafc; color:#475569; }
+  table.grid td.calc::after { content:"ƒ"; float:right; opacity:.25; font-style:italic; margin-left:6px; }
+  table.grid td.editable:hover { background:#eff6ff; cursor:text; }
+  table.grid tfoot td { background:#f1f5f9; font-weight:600; }
+  .footer-bar { background:#1e293b; color:white; padding:10px 18px; font-size:12px; display:flex; justify-content:space-between; align-items:center; }
+  .toolbar-btn { padding:6px 12px; background:white; border:1px solid var(--border); border-radius:6px; font-size:13px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; }
+  .toolbar-btn:hover { background:#f8fafc; }
+  .toolbar-btn.primary { background:var(--brand); color:white; border-color:var(--brand); }
+  .toolbar-btn.primary:hover { background:var(--brand-dark); }
+  .pill-tab { padding:6px 14px; border-radius:8px; font-size:13px; cursor:pointer; color:#475569; }
+  .pill-tab.active { background:var(--brand); color:white; font-weight:500; }
+  .fy-select {
+    background:#1e293b; color:white; border:1px solid #334155; border-radius:8px;
+    padding:8px 16px; font-size:14px; font-weight:600; cursor:pointer;
+  }
+  .fy-banner {
+    background:linear-gradient(90deg,#1e40af 0%,#2563eb 100%);
+    color:white; padding:6px 16px; font-size:12px; display:flex; align-items:center; gap:8px;
+  }
+  .fy-banner .dot { width:6px; height:6px; background:#bef264; border-radius:50%; box-shadow:0 0 8px #bef264; animation:pulse 2s infinite; }
+  @keyframes pulse { 50% { opacity:.4; } }
+  .pulse-update { animation:flash .6s; }
+  @keyframes flash { 0% { background:#fef3c7; } 100% { background:transparent; } }
+</style>
+</head>
+<body>
+
+<div class="flex h-screen">
+
+  <!-- ============== SIDEBAR ============== -->
+  <aside class="w-64 bg-white border-r border-slate-200 flex flex-col">
+    <div class="px-5 py-4 border-b border-slate-200">
+      <div class="flex items-center gap-2">
+        <div class="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-bold text-sm">RP</div>
+        <div>
+          <div class="font-semibold text-slate-800 text-sm leading-tight">RPA SV Summary</div>
+          <div class="text-[11px] text-slate-500">Business Automation Team</div>
+        </div>
+      </div>
+    </div>
+
+    <nav class="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
+      <div class="text-[10px] uppercase tracking-wide text-slate-400 px-3 mt-1 mb-1">Plan & track</div>
+      <div class="nav-item active" data-view="dashboard">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+        Dashboard
+      </div>
+      <div class="nav-item" data-view="projects">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 7h18M3 12h18M3 17h18"/></svg>
+        Projects <span class="badge badge-phase ml-auto">P2</span>
+      </div>
+
+      <div class="text-[10px] uppercase tracking-wide text-slate-400 px-3 mt-3 mb-1">Revenue workbenches</div>
+      <div class="nav-item" data-view="implementation">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2v20M2 12h20"/></svg>
+        Implementation
+      </div>
+      <div class="nav-item" data-view="subscription">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg>
+        Subscription MA
+      </div>
+      <div class="nav-item" data-view="percepture">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 3h11l5 5v13H5z"/><path d="M16 3v5h5"/></svg>
+        Percepture License
+      </div>
+      <div class="nav-item" data-view="outsource">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M8 6V4M16 6V4"/></svg>
+        Outsource
+      </div>
+
+      <div class="text-[10px] uppercase tracking-wide text-slate-400 px-3 mt-3 mb-1">Capacity</div>
+      <div class="nav-item disabled">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M2 21v-2a4 4 0 014-4h6a4 4 0 014 4v2M17 11a4 4 0 110-8M22 21v-2a4 4 0 00-3-3.87"/></svg>
+        Resource Planning <span class="badge badge-phase ml-auto">P3</span>
+      </div>
+      <div class="nav-item disabled">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg>
+        Forecasting <span class="badge badge-phase ml-auto">P3</span>
+      </div>
+
+      <div class="text-[10px] uppercase tracking-wide text-slate-400 px-3 mt-3 mb-1">Admin</div>
+      <div class="nav-item disabled">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
+        Reports <span class="badge badge-phase ml-auto">P4</span>
+      </div>
+      <div class="nav-item disabled">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        Settings <span class="badge badge-phase ml-auto">P4</span>
+      </div>
+      <div class="nav-item disabled">
+        <svg class="nav-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        Audit Log <span class="badge badge-phase ml-auto">P2</span>
+      </div>
+    </nav>
+
+    <div class="px-3 py-3 border-t border-slate-200">
+      <div class="flex items-center gap-2 px-2">
+        <div class="w-7 h-7 rounded-full bg-slate-200 flex items-center justify-center text-[11px] font-medium text-slate-700">NE</div>
+        <div class="flex-1 min-w-0">
+          <div class="text-xs font-medium text-slate-700 truncate">NESTON</div>
+          <div class="text-[10px] text-slate-500 truncate">neston14@gmail.com</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ============== MAIN ============== -->
+  <main class="flex-1 flex flex-col overflow-hidden">
+
+    <!-- ===== Global FY banner ===== -->
+    <div class="fy-banner">
+      <span class="dot"></span>
+      All data on this page is scoped to fiscal year
+      <select id="fySelect" class="fy-select ml-1">
+        <option value="2024">2024</option>
+        <option value="2025">2025</option>
+        <option value="2026" selected>2026</option>
+        <option value="2027">2027 (forecast)</option>
+      </select>
+      <span class="ml-3 opacity-75">— change the year and every grid, total, and column header re-pivots automatically.</span>
+    </div>
+
+    <!-- ===== DASHBOARD ===== -->
+    <section id="view-dashboard" class="view flex-1 overflow-y-auto">
+      <header class="bg-white border-b border-slate-200 px-8 py-4 flex justify-between items-center">
+        <div>
+          <div class="text-[11px] uppercase tracking-wide text-slate-400">Dashboard</div>
+          <h1 class="text-xl font-semibold text-slate-800">Annual Summary <span id="dashYear" class="text-blue-600">2026</span></h1>
+        </div>
+        <div class="flex items-center gap-3">
+          <button class="toolbar-btn">Export</button>
+          <button class="toolbar-btn primary">Snapshot now</button>
+        </div>
+      </header>
+
+      <div class="p-8 space-y-6">
+
+        <!-- KPI tiles -->
+        <div class="grid grid-cols-4 gap-4">
+          <div class="kpi-card">
+            <div class="text-xs text-slate-500 mb-1">Total Revenue (Win + Pipeline)</div>
+            <div class="text-2xl font-bold text-slate-800" id="kpiTotalRev">฿—</div>
+            <div class="text-xs text-slate-500 mt-1" id="kpiPctOfTarget">— of target</div>
+          </div>
+          <div class="kpi-card">
+            <div class="text-xs text-slate-500 mb-1">Annual Target</div>
+            <div class="text-2xl font-bold text-slate-800" id="kpiTarget">฿—</div>
+            <div class="text-xs text-slate-500 mt-1" id="kpiTargetCalc">— heads × ฿—</div>
+          </div>
+          <div class="kpi-card">
+            <div class="text-xs text-slate-500 mb-1">Remaining</div>
+            <div class="text-2xl font-bold text-amber-600" id="kpiRemaining">฿—</div>
+            <div class="text-xs text-slate-500 mt-1">to hit target</div>
+          </div>
+          <div class="kpi-card">
+            <div class="text-xs text-slate-500 mb-1">Pipeline (unconfirmed)</div>
+            <div class="text-2xl font-bold text-slate-800" id="kpiPipeline">฿—</div>
+            <div class="text-xs text-slate-500 mt-1" id="kpiPipelineSplit">SW ฿— • SV ฿—</div>
+          </div>
+        </div>
+
+        <!-- Progress -->
+        <div class="kpi-card">
+          <div class="flex justify-between text-sm mb-2">
+            <div><span class="font-semibold">Revenue vs Target</span> <span class="text-slate-500" id="progressLabel">— achieved</span></div>
+            <div class="text-slate-500">FY <span id="progressYear">2026</span></div>
+          </div>
+          <div class="w-full bg-slate-100 rounded-full h-7 overflow-hidden flex" id="progressBar"></div>
+        </div>
+
+        <!-- Two breakdown tables + chart -->
+        <div class="grid grid-cols-3 gap-6">
+          <div class="kpi-card col-span-1">
+            <div class="flex items-center justify-between mb-3">
+              <div class="font-semibold text-slate-800">Backlog & New Win</div>
+              <span class="badge badge-win">Win</span>
+            </div>
+            <table class="w-full text-sm" id="winTable"></table>
+          </div>
+
+          <div class="kpi-card col-span-1">
+            <div class="flex items-center justify-between mb-3">
+              <div class="font-semibold text-slate-800">Pipeline <span id="pipeYear">2026</span></div>
+              <span class="badge badge-pipe">Pipeline</span>
+            </div>
+            <table class="w-full text-sm" id="pipeTable"></table>
+          </div>
+
+          <div class="kpi-card col-span-1">
+            <div class="font-semibold text-slate-800 mb-3">Revenue Mix (Win)</div>
+            <canvas id="donutChart" height="220"></canvas>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-6">
+          <div class="kpi-card col-span-2">
+            <div class="font-semibold text-slate-800 mb-3">Win vs Pipeline by Revenue Stream</div>
+            <canvas id="barChart" height="100"></canvas>
+          </div>
+          <div class="kpi-card col-span-1">
+            <div class="font-semibold text-slate-800 mb-3">Open Decisions <span class="text-xs text-slate-500 font-normal">— from migration plan §9</span></div>
+            <ul class="space-y-2 text-sm text-slate-700">
+              <li class="flex gap-2"><span class="text-amber-500">●</span> Confirm fiscal calendar</li>
+              <li class="flex gap-2"><span class="text-amber-500">●</span> TH holiday source</li>
+              <li class="flex gap-2"><span class="text-amber-500">●</span> Multi-currency need?</li>
+              <li class="flex gap-2"><span class="text-amber-500">●</span> Azure AD scope</li>
+              <li class="flex gap-2"><span class="text-amber-500">●</span> Hosting target</li>
+              <li class="flex gap-2"><span class="text-slate-400">○</span> Pipeline weighting (50%?)</li>
+              <li class="flex gap-2"><span class="text-slate-400">○</span> 2025 backfill</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bar"><span>Wireframe — numbers seeded from <code>RPA SV Summary - 2026.xlsx</code></span><span>Phase 1 MVP target</span></div>
+    </section>
+
+    <!-- ===== IMPLEMENTATION WORKBENCH ===== -->
+    <section id="view-implementation" class="view flex-1 overflow-hidden flex-col" style="display:none">
+      <header class="bg-white border-b border-slate-200 px-8 py-4">
+        <div class="flex justify-between items-center mb-3">
+          <div>
+            <div class="text-[11px] uppercase tracking-wide text-slate-400">Revenue Workbench • FY <span class="implFyLabel">2026</span></div>
+            <h1 class="text-xl font-semibold text-slate-800">Implementation</h1>
+          </div>
+          <div class="flex items-center gap-2">
+            <button class="toolbar-btn">Import .xlsx</button>
+            <button class="toolbar-btn">Export .xlsx</button>
+            <button class="toolbar-btn primary">+ Add row</button>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <div class="bg-slate-100 rounded-lg p-1 flex gap-1">
+            <div class="pill-tab active" data-filter="all">All</div>
+            <div class="pill-tab" data-filter="Win">Win</div>
+            <div class="pill-tab" data-filter="Pipeline">Pipeline</div>
+          </div>
+          <div class="flex-1"></div>
+          <input type="text" placeholder="Search customer or project…" class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm w-64" id="implSearch"/>
+          <span class="text-xs text-slate-500">Cells with <span class="font-bold">ƒ</span> are computed from FY <span class="implFyLabel">2026</span></span>
+        </div>
+      </header>
+
+      <div class="flex-1 overflow-auto bg-white">
+        <table class="grid" id="implTable">
+          <thead>
+            <tr>
+              <th>Customer</th>
+              <th>Project</th>
+              <th>ERP Code</th>
+              <th>Status</th>
+              <th>Pipeline Target</th>
+              <th class="num">Progress <span class="implPrevYear">2025</span></th>
+              <th class="num">Progress <span class="implCurrYear">2026</span></th>
+              <th class="num">% Recognize</th>
+              <th class="num">Estm % Regn</th>
+              <th class="num">SV Revenue</th>
+              <th class="num">SV Cost</th>
+              <th class="num">Gross MG</th>
+              <th class="num">GM Recognize</th>
+              <th class="num">Estimate <span class="implCurrYear">2026</span></th>
+              <th class="num">SV Pipeline <span class="implCurrYear">2026</span></th>
+            </tr>
+          </thead>
+          <tbody id="implBody"></tbody>
+          <tfoot id="implFoot"></tfoot>
+        </table>
+      </div>
+      <div class="footer-bar"><span id="implFootBar">— rows</span><span>Auto-saved 14:32</span></div>
+    </section>
+
+    <!-- ===== SUBSCRIPTION MA WORKBENCH ===== -->
+    <section id="view-subscription" class="view flex-1 overflow-hidden flex-col" style="display:none">
+      <header class="bg-white border-b border-slate-200 px-8 py-4">
+        <div class="flex justify-between items-center mb-3">
+          <div>
+            <div class="text-[11px] uppercase tracking-wide text-slate-400">Revenue Workbench • FY <span class="subFyLabel">2026</span></div>
+            <h1 class="text-xl font-semibold text-slate-800">Subscription MA</h1>
+            <p class="text-xs text-slate-500 mt-1">UiPath subscription contracts. % Recognize is computed by overlapping the contract period with FY <span class="subFyLabel">2026</span>.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button class="toolbar-btn">Import .xlsx</button>
+            <button class="toolbar-btn">Export .xlsx</button>
+            <button class="toolbar-btn primary">+ Add contract</button>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <div class="bg-slate-100 rounded-lg p-1 flex gap-1">
+            <div class="pill-tab active sub-pill" data-filter="all">All</div>
+            <div class="pill-tab sub-pill" data-filter="Existing">Existing</div>
+            <div class="pill-tab sub-pill" data-filter="Pipeline">Pipeline</div>
+          </div>
+          <div class="flex-1"></div>
+          <input type="text" placeholder="Search…" class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm w-64" id="subSearch"/>
+          <span class="text-xs text-slate-500">Cells with <span class="font-bold">ƒ</span> are computed</span>
+        </div>
+      </header>
+      <div class="flex-1 overflow-auto bg-white">
+        <table class="grid" id="subTable">
+          <thead>
+            <tr>
+              <th>Customer</th>
+              <th>ERP Code</th>
+              <th>Status</th>
+              <th>Period Start</th>
+              <th>Period End</th>
+              <th class="num">License Rev</th>
+              <th class="num">License Cost</th>
+              <th class="num">SV Rev</th>
+              <th class="num">SV Cost</th>
+              <th class="num">% Recognize</th>
+              <th class="num">SW Recognize</th>
+              <th class="num">SV Recognize</th>
+            </tr>
+          </thead>
+          <tbody id="subBody"></tbody>
+          <tfoot id="subFoot"></tfoot>
+        </table>
+      </div>
+      <div class="footer-bar"><span id="subFootBar">— rows</span><span>Auto-saved 14:32</span></div>
+    </section>
+
+    <!-- ===== PERCEPTURE LICENSE WORKBENCH ===== -->
+    <section id="view-percepture" class="view flex-1 overflow-hidden flex-col" style="display:none">
+      <header class="bg-white border-b border-slate-200 px-8 py-4">
+        <div class="flex justify-between items-center mb-3">
+          <div>
+            <div class="text-[11px] uppercase tracking-wide text-slate-400">Revenue Workbench • FY <span class="percFyLabel">2026</span></div>
+            <h1 class="text-xl font-semibold text-slate-800">Percepture License</h1>
+            <p class="text-xs text-slate-500 mt-1">License recognized 100% in win year only; SW MA & SV MA pro-rated by FY <span class="percFyLabel">2026</span> overlap.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button class="toolbar-btn">Import .xlsx</button>
+            <button class="toolbar-btn">Export .xlsx</button>
+            <button class="toolbar-btn primary">+ Add row</button>
+          </div>
+        </div>
+      </header>
+      <div class="flex-1 overflow-auto bg-white">
+        <table class="grid" id="percTable">
+          <thead>
+            <tr>
+              <th rowspan="2">Customer</th>
+              <th rowspan="2">Project</th>
+              <th rowspan="2">Type</th>
+              <th rowspan="2">Period</th>
+              <th colspan="3" class="text-center bg-blue-50">License</th>
+              <th colspan="3" class="text-center bg-purple-50">SW MA</th>
+              <th colspan="3" class="text-center bg-cyan-50">SV MA</th>
+              <th colspan="2" class="text-center bg-slate-100">Total</th>
+            </tr>
+            <tr>
+              <th class="num">% Regn</th>
+              <th class="num">Revenue</th>
+              <th class="num">GM Recog</th>
+              <th class="num">% Regn</th>
+              <th class="num">Revenue</th>
+              <th class="num">GM Recog</th>
+              <th class="num">% Regn</th>
+              <th class="num">Revenue</th>
+              <th class="num">GM Recog</th>
+              <th class="num">Revenue</th>
+              <th class="num">$ Margin</th>
+            </tr>
+          </thead>
+          <tbody id="percBody"></tbody>
+          <tfoot id="percFoot"></tfoot>
+        </table>
+      </div>
+      <div class="footer-bar"><span id="percFootBar">— rows</span><span>Auto-saved 14:32</span></div>
+    </section>
+
+    <!-- ===== OUTSOURCE WORKBENCH ===== -->
+    <section id="view-outsource" class="view flex-1 overflow-y-auto" style="display:none">
+      <header class="bg-white border-b border-slate-200 px-8 py-4">
+        <div class="flex justify-between items-center">
+          <div>
+            <div class="text-[11px] uppercase tracking-wide text-slate-400">Revenue Workbench • FY <span class="outFyLabel">2026</span></div>
+            <h1 class="text-xl font-semibold text-slate-800">Outsource</h1>
+            <p class="text-xs text-slate-500 mt-1">Monthly time-and-materials engagements + annual pro-rated contracts. Working days exclude TH holidays.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button class="toolbar-btn">Import .xlsx</button>
+            <button class="toolbar-btn">Export .xlsx</button>
+            <button class="toolbar-btn primary">+ Add engagement</button>
+          </div>
+        </div>
+      </header>
+      <div class="p-8 space-y-6">
+
+        <!-- BOT — monthly T&M -->
+        <div class="kpi-card">
+          <div class="flex justify-between items-center mb-4">
+            <div>
+              <div class="font-semibold text-slate-800">BOT RPA Dev <span class="text-xs text-slate-500 font-normal" id="botErp">(BFS260082)</span></div>
+              <div class="text-xs text-slate-500">Time-and-materials. Senior rate × working days. Past months are locked actuals.</div>
+            </div>
+            <div class="flex items-center gap-2 text-xs">
+              <span class="text-slate-500">Senior rate</span>
+              <span class="font-semibold">฿8,000 / md</span>
+              <span class="text-slate-300">|</span>
+              <span class="text-slate-500">VAT</span>
+              <span class="font-semibold">7%</span>
+            </div>
+          </div>
+          <table class="grid">
+            <thead>
+              <tr>
+                <th class="w-16">Month</th>
+                <th class="num">Manday</th>
+                <th class="num">Revenue (excl. VAT)</th>
+                <th>Status</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody id="botBody"></tbody>
+            <tfoot id="botFoot"></tfoot>
+          </table>
+        </div>
+
+        <!-- MTL & TRUE side by side -->
+        <div class="grid grid-cols-2 gap-6">
+          <div class="kpi-card">
+            <div class="font-semibold text-slate-800 mb-1">MTL Onsite <span class="text-xs text-slate-500 font-normal">(BFS250670)</span></div>
+            <div class="text-xs text-slate-500 mb-4">Annual contract pro-rated by FY overlap.</div>
+            <div id="mtlBlock"></div>
+          </div>
+          <div class="kpi-card">
+            <div class="font-semibold text-slate-800 mb-1">TRUE Onsite</div>
+            <div class="text-xs text-slate-500 mb-4">Annual contract pro-rated by FY overlap.</div>
+            <div id="trueBlock"></div>
+          </div>
+        </div>
+
+        <!-- Year-end summary -->
+        <div class="kpi-card">
+          <div class="font-semibold text-slate-800 mb-3">Outsource roll-up — FY <span class="outFyLabel">2026</span></div>
+          <table class="grid">
+            <thead>
+              <tr>
+                <th>Engagement</th>
+                <th class="num">Revenue</th>
+                <th>Status</th>
+                <th class="text-right">Contributes to</th>
+              </tr>
+            </thead>
+            <tbody id="outRollup"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== PROJECTS placeholder ===== -->
+    <section id="view-projects" class="view flex-1 overflow-y-auto p-8" style="display:none">
+      <div class="kpi-card max-w-3xl mx-auto text-center py-12">
+        <div class="inline-block px-3 py-1 rounded-full bg-indigo-100 text-indigo-700 text-xs font-semibold mb-3">Phase 2</div>
+        <h2 class="text-2xl font-semibold text-slate-800 mb-2">Projects Master Register</h2>
+        <p class="text-slate-600 mb-4">166 projects from <code>Project List</code>, indexed and filterable by FY context.</p>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+// ============================================================================
+// DATA — every project carries a TIME SERIES of cumulative progress, not fixed
+// "p25/p26" columns. The selected fiscal year picks which two snapshots to diff.
+// progressByYear[Y]: cumulative_pct at end of year Y (1.0 = complete).
+// ============================================================================
+const implRows = [
+  // Win — most either started 2025 or are continuing
+  {customer:"KBANK", project:"Implement Kryon RPA for LG Process Phase 3", erp:"ENT250065", status:"Win",
+    rev:2220000, cost:1157360, progressByYear:{2024:0, 2025:0, 2026:1, 2027:1}, pipeDate:""},
+  {customer:"MTL", project:"MTL - RPA Turbo Money Process Enhancement 2025", erp:"BFS250781", status:"Win",
+    rev:50000, cost:40000, progressByYear:{2024:0, 2025:0, 2026:1, 2027:1}, pipeDate:""},
+  {customer:"SET", project:"SET PS RPA UiPath for Y26 (80 Man-days)", erp:"BFS250543", status:"Win",
+    rev:920000, cost:576000, progressByYear:{2024:0, 2025:0, 2026:1, 2027:1}, pipeDate:""},
+  {customer:"SET", project:"SET Phase 7 (CR)", erp:"BFS250812", status:"Win",
+    rev:345000, cost:216000, progressByYear:{2024:0, 2025:0, 2026:1, 2027:1}, pipeDate:""},
+  {customer:"TMG", project:"TMG - RPA Development", erp:"ENT240107", status:"Win",
+    rev:25500, cost:21675, progressByYear:{2024:0.4, 2025:1, 2026:1, 2027:1}, pipeDate:""},
+  {customer:"ADVICS", project:"ADVICS UiPath RPA", erp:"ENT250361", status:"Win",
+    rev:426000, cost:270000, progressByYear:{2024:0, 2025:0.7, 2026:0.7, 2027:1}, pipeDate:""},
+  {customer:"SAM", project:"SAM- UiPath RPA Phase 4", erp:"BFS250305", status:"Win",
+    rev:1776121.5, cost:1319242.5, progressByYear:{2024:0, 2025:0.7, 2026:1, 2027:1}, pipeDate:""},
+  {customer:"SET", project:"SET PS 80 Man-days for RPA UiPath Y25", erp:"BFS250067", status:"Win",
+    rev:920000, cost:489600, progressByYear:{2024:0, 2025:0.7, 2026:1, 2027:1}, pipeDate:""},
+  {customer:"SET", project:"[SET] Imp RPA 4 process for TDX", erp:"BFS240928", status:"Win",
+    rev:1150000, cost:612000, progressByYear:{2024:0.3, 2025:0.75, 2026:1, 2027:1}, pipeDate:""},
+  {customer:"SET", project:"[SET] PS RPA 2 process (Team K. Wimol)", erp:"BFS240514", status:"Win",
+    rev:471500, cost:233070, progressByYear:{2024:0.2, 2025:0.5, 2026:1, 2027:1}, pipeDate:""},
+  {customer:"THP", project:"THP_RPA", erp:"GOV230110", status:"Win",
+    rev:2500000, cost:1700000, progressByYear:{2024:0, 2025:0, 2026:0.8, 2027:1}, pipeDate:""},
+  // Pipeline 2026
+  {customer:"SAM", project:"SAM Phase 5", erp:"", status:"Pipeline",
+    rev:3350000, cost:2800000, progressByYear:{2024:0, 2025:0, 2026:0.8, 2027:1}, pipeDate:"2026-05-01", estPctOverride:1},
+  {customer:"SAM", project:"SAM CR", erp:"", status:"Pipeline",
+    rev:363000, cost:300000, progressByYear:{2024:0, 2025:0, 2026:1, 2027:1}, pipeDate:"2026-04-01"},
+  {customer:"TMG", project:"TMG 2026", erp:"ENT250455", status:"Pipeline",
+    rev:1575000, cost:1260000, progressByYear:{2024:0, 2025:0, 2026:1, 2027:1}, pipeDate:"2026-05-01"},
+  {customer:"KBANK", project:"Addon license Nintex #PP", erp:"ENT260095", status:"Pipeline",
+    rev:60000, cost:34000, progressByYear:{2024:0, 2025:0, 2026:1, 2027:1}, pipeDate:"2026-05-01"},
+  {customer:"KBANK", project:"Addon license Nintex #CT", erp:"ENT260096", status:"Pipeline",
+    rev:60000, cost:34000, progressByYear:{2024:0, 2025:0, 2026:1, 2027:1}, pipeDate:"2026-05-01"},
+  {customer:"PTTEP", project:"RPA for Read Barcode and Reconcile", erp:"", status:"Pipeline",
+    rev:730000, cost:440000, progressByYear:{2024:0, 2025:0, 2026:0, 2027:1}, pipeDate:"2026-05-01"},
+  {customer:"GSB", project:"Training for New Contract", erp:"BFS260150", status:"Pipeline",
+    rev:225000, cost:76500, progressByYear:{2024:0, 2025:0, 2026:1, 2027:1}, pipeDate:"2026-05-01"},
+];
+
+// Subscription MA — every contract row has a single (start,end) period. The Excel
+// kept "2025" and "2026" side-by-side; here each renewal is its own row, and the
+// active FY decides which contracts surface and how much each recognizes.
+const subRows = [
+  // ADVICS — renews yearly Nov→Nov
+  {customer:"ADVICS", erp:"ENT250361", status:"Existing", start:"2025-11-10", end:"2026-11-09", licRev:237062,  licCost:197647,  svRev:70000,  svCost:44200},
+  {customer:"ADVICS", erp:"ENT260xxx", status:"Existing", start:"2026-11-10", end:"2027-11-09", licRev:237062,  licCost:197647,  svRev:70000,  svCost:44200},
+  {customer:"AISIN",  erp:"MTS250092", status:"Existing", start:"2025-11-15", end:"2026-11-14", licRev:621300,  licCost:489800,  svRev:120000, svCost:74256},
+  {customer:"AISIN",  erp:"MTS260xxx", status:"Existing", start:"2026-11-15", end:"2027-11-14", licRev:621300,  licCost:489800,  svRev:120000, svCost:74256},
+  {customer:"BOT",    erp:"BFS220074", status:"Existing", start:"2023-01-01", end:"2025-12-31", licRev:33096000, licCost:29646605.65, svRev:1440000, svCost:771052},
+  {customer:"BOT",    erp:"BFS240937", status:"Existing", start:"2026-01-01", end:"2028-12-31", licRev:35391300, licCost:29482973, svRev:144000,  svCost:122400},
+  {customer:"BOT",    erp:"BFS250816", status:"Existing", start:"2026-01-01", end:"2028-12-31", licRev:0,        licCost:0,        svRev:1290000, svCost:765000},
+  {customer:"DTGO",   erp:"ENT250316", status:"Existing", start:"2024-08-01", end:"2026-07-31", licRev:694110,  licCost:670200,  svRev:280000, svCost:165750},
+  {customer:"DTGO",   erp:"ENT260xxx", status:"Existing", start:"2026-08-01", end:"2027-07-31", licRev:694110,  licCost:670200,  svRev:0,      svCost:0},
+  {customer:"GLS",    erp:"ENT250392", status:"Existing", start:"2025-12-15", end:"2026-12-14", licRev:270000,  licCost:216200,  svRev:254000, svCost:100000},
+  {customer:"GLS",    erp:"ENT260xxx", status:"Existing", start:"2026-12-15", end:"2027-12-14", licRev:270000,  licCost:216200,  svRev:114000, svCost:40375},
+  {customer:"KGI",    erp:"ENT250xxx", status:"Existing", start:"2025-10-01", end:"2026-09-30", licRev:193100,  licCost:155000,  svRev:88000,  svCost:55000},
+  {customer:"MTL",    erp:"BFS250xxx", status:"Existing", start:"2025-05-16", end:"2026-05-15", licRev:924456.79, licCost:730000, svRev:87500, svCost:60000},
+  {customer:"Pruksa", erp:"ENT250xxx", status:"Existing", start:"2025-01-15", end:"2026-01-14", licRev:682158,  licCost:540000,  svRev:70000,  svCost:45000},
+  {customer:"SET",    erp:"BFS250xxx", status:"Existing", start:"2025-10-18", end:"2026-10-17", licRev:1790000, licCost:1450000, svRev:150000, svCost:95000},
+  {customer:"LHB",    erp:"ENT250xxx", status:"Existing", start:"2025-01-01", end:"2025-12-31", licRev:1343908, licCost:1100000, svRev:36000,  svCost:25000},
+  {customer:"LHB",    erp:"ENT260xxx", status:"Existing", start:"2026-01-01", end:"2026-12-31", licRev:1343908, licCost:1100000, svRev:36000,  svCost:25000},
+  {customer:"KTAM",   erp:"ENT250xxx", status:"Existing", start:"2025-10-07", end:"2026-10-06", licRev:593000,  licCost:475000,  svRev:143700, svCost:90000},
+  {customer:"SCCC",   erp:"ENT250xxx", status:"Existing", start:"2025-01-01", end:"2025-12-31", licRev:1492000, licCost:1180000, svRev:0,      svCost:0},
+  {customer:"SCCC",   erp:"ENT260xxx", status:"Existing", start:"2026-01-01", end:"2026-12-31", licRev:1492000, licCost:1180000, svRev:0,      svCost:0},
+  {customer:"GSB",    erp:"BFS250xxx", status:"Existing", start:"2023-04-01", end:"2026-03-31", licRev:3700000, licCost:2900000, svRev:4300000, svCost:3400000},
+  {customer:"GSB",    erp:"BFS260xxx", status:"Existing", start:"2026-04-01", end:"2028-03-31", licRev:3700000, licCost:2900000, svRev:4300000, svCost:3400000},
+  {customer:"GSB",    erp:"PIPE-2026", status:"Pipeline", start:"2026-10-01", end:"2027-09-30", licRev:619949.53, licCost:480000, svRev:0,    svCost:0},
+  {customer:"THP",    erp:"PIPE-2026", status:"Pipeline", start:"2026-03-31", end:"2028-03-30", licRev:3000000, licCost:2400000, svRev:500000, svCost:330000},
+  {customer:"PTT",    erp:"ENT250xxx", status:"Existing", start:"2025-03-21", end:"2026-03-20", licRev:115000,  licCost:90000,   svRev:0,      svCost:0},
+];
+
+// Percepture License — single period per row, type drives the recognition rule.
+const percRows = [
+  {customer:"KBANK", project:"Addon 9 license Nintex",  erp:"ENT250331", type:"License", winYear:2025, periodStart:"2025-10-10", periodEnd:"2026-08-31", licRev:2301240, licCost:1204144.64, swRev:300000,  swCost:225174.09, svRev:0,      svCost:0},
+  {customer:"KBANK", project:"Addon license Nintex #2", erp:"ENT250388", type:"License", winYear:2025, periodStart:"2025-11-01", periodEnd:"2026-08-31", licRev:1535526.5, licCost:1203781.18, swRev:1000000, swCost:204641.86, svRev:0,    svCost:0},
+  {customer:"KBANK", project:"Addon license Nintex #3", erp:"ENT250453", type:"License", winYear:2025, periodStart:"2025-12-01", periodEnd:"2027-08-31", licRev:2503928.4, licCost:1195785.04, swRev:512852.85, swCost:388084.78, svRev:0,  svCost:0},
+  {customer:"KBANK", project:"MA 2025-2026",            erp:"ENT240148", type:"SW MA",   winYear:null, periodStart:"2025-09-01", periodEnd:"2026-08-31", licRev:0,       licCost:0,        swRev:4572988.28, swCost:3431066.7, svRev:760000, svCost:372232},
+  {customer:"KBANK", project:"MA 2025-2026 (MA 5)",     erp:"ENT240148", type:"SW MA",   winYear:null, periodStart:"2026-09-01", periodEnd:"2027-08-31", licRev:0,       licCost:0,        swRev:202500,  swCost:150020.53, svRev:0,    svCost:0},
+  {customer:"KL",    project:"RPA Kyorn",               erp:"ENT250258", type:"License", winYear:2025, periodStart:"2025-09-01", periodEnd:"2026-08-31", licRev:707190.71, licCost:354300.1, swRev:144846.29, swCost:60230.03, svRev:120000, svCost:66470},
+  {customer:"KBANK", project:"MA 2026-2027",            erp:"ENT260xxx", type:"SW MA",   winYear:null, periodStart:"2026-09-01", periodEnd:"2027-08-31", licRev:0,       licCost:0,        swRev:7246309.05, swCost:5500000, svRev:520000, svCost:330000},
+  {customer:"KBANK", project:"Addon Nintex Pipeline A", erp:"PIPE-A",    type:"License", winYear:2026, periodStart:"2026-05-01", periodEnd:"2028-08-31", licRev:1732140.46, licCost:1300000, swRev:350472, swCost:240000, svRev:0,     svCost:0},
+  {customer:"KBANK", project:"Addon Nintex Pipeline B", erp:"PIPE-B",    type:"License", winYear:2026, periodStart:"2026-05-01", periodEnd:"2028-08-31", licRev:2020830.54, licCost:1500000, swRev:408884, swCost:280000, svRev:0,     svCost:0},
+];
+
+// Outsource — per-FY engagements
+const outsourceData = {
+  bot: {
+    label: "BOT RPA Dev", erp:"BFS260082", rate: 8000, vatRate: 0.07,
+    monthsByFy: {
+      2024: Array.from({length:12}, (_,i) => ({month:i+1, manday:18, revenue:18*7470, isActual:true, note:"FY24 actuals"})),
+      2025: Array.from({length:12}, (_,i) => ({month:i+1, manday:25, revenue:25*7470, isActual:true, note:"FY25 actuals"})),
+      2026: [
+        {month:1,  manday:37, revenue:276390, isActual:true,  note:"actual @ ฿7,470/md"},
+        {month:2,  manday:39, revenue:291330, isActual:true,  note:"actual @ ฿7,470/md"},
+        {month:3,  manday:20, revenue:149400, isActual:true,  note:"actual @ ฿7,470/md"},
+        {month:4,  manday:36, revenue:288000, isActual:false, note:"forecast"},
+        {month:5,  manday:34, revenue:272000, isActual:false, note:"forecast"},
+        {month:6,  manday:36, revenue:288000, isActual:false, note:"forecast"},
+        {month:7,  manday:36, revenue:288000, isActual:false, note:"forecast"},
+        {month:8,  manday:34, revenue:272000, isActual:false, note:"forecast"},
+        {month:9,  manday:36, revenue:288000, isActual:false, note:"forecast"},
+        {month:10, manday:36, revenue:288000, isActual:false, note:"forecast"},
+        {month:11, manday:34, revenue:272000, isActual:false, note:"forecast"},
+        {month:12, manday:36, revenue:288000, isActual:false, note:"forecast"},
+      ],
+      2027: Array.from({length:12}, (_,i) => ({month:i+1, manday:35, revenue:35*8000, isActual:false, note:"forecast"})),
+    }
+  },
+  mtl: {
+    label: "MTL Onsite", erp:"BFS250670", status:"Win",
+    contractStart:"2026-04-01", contractEnd:"2027-03-31", annualAmount:1090000
+  },
+  truex: {
+    label: "TRUE Onsite", erp:"-", status:"Win",
+    contractStart:"2026-05-01", contractEnd:"2027-04-30", annualAmount:1400000
+  },
+};
+
+// FY-keyed master data for non-Implementation streams.  In the real app these come
+// from the calculation engine running against the DB; for the wireframe we just
+// pre-compute the Total-sheet equivalents per year so the dashboard re-pivots.
+const fyMaster = {
+  2024: {
+    headCount: 17, targetPerHead: 1500000,
+    win:      { swMaGm: 2800000, subscriptionGm: 3100000, outsource: 2400000, implementation: 0,        maSv: 3200000 },
+    pipeline: { swMaGm: 0,       subscriptionGm: 0,       outsource: 0,       implementation: 0,        maSv: 0       },
+  },
+  2025: {
+    headCount: 19, targetPerHead: 1700000,
+    win:      { swMaGm: 3700000, subscriptionGm: 4200000, outsource: 3500000, implementation: 0,        maSv: 4500000 },
+    pipeline: { swMaGm: 0,       subscriptionGm: 0,       outsource: 0,       implementation: 0,        maSv: 0       },
+  },
+  2026: {
+    headCount: 20, targetPerHead: 1800000,
+    win:      { swMaGm: 4633785, subscriptionGm: 4841330, outsource: 4081890, implementation: 0,        maSv: 4927572 },
+    pipeline: { swMaGm: 0,       subscriptionGm: 555050,  outsource: 0,       implementation: 0,        maSv: 189000  },
+  },
+  2027: {
+    headCount: 22, targetPerHead: 1900000,
+    win:      { swMaGm: 1200000, subscriptionGm: 2200000, outsource: 1800000, implementation: 0,        maSv: 1900000 },
+    pipeline: { swMaGm: 800000,  subscriptionGm: 1500000, outsource: 1200000, implementation: 0,        maSv: 1100000 },
+  },
+};
+
+// ============================================================================
+// CALCULATION ENGINE — single source of truth.  In the real app, identical
+// logic lives in /lib/finance/.  Pure functions; FY is the only driver.
+// ============================================================================
+function recognizeImplRow(row, fy) {
+  const prev = row.progressByYear[fy-1] ?? 0;
+  const curr = row.progressByYear[fy]   ?? 0;
+  const pct  = +(curr - prev).toFixed(4);
+  const estPct = row.estPctOverride ?? pct;
+  const gmAbs    = row.rev - row.cost;
+  const gmRecog  = row.rev * pct;
+  const estimate = row.status === "Win"      ? row.rev * estPct : 0;
+  const pipeline = row.status === "Pipeline" ? row.rev * estPct : 0;
+  return { prev, curr, pct, estPct, gmAbs, gmRecog, estimate, pipeline };
+}
+
+function rollupImpl(rows, fy) {
+  let estimate = 0, pipeline = 0;
+  for (const r of rows) {
+    const x = recognizeImplRow(r, fy);
+    estimate += x.estimate;
+    pipeline += x.pipeline;
+  }
+  return { estimate, pipeline };
+}
+
+// Period-overlap recognition (used by Subscription MA, Percepture SW MA / SV MA, Outsource MTL/TRUE)
+function periodPctForYear(startISO, endISO, fy) {
+  if (!startISO || !endISO) return 0;
+  const start = new Date(startISO + 'T00:00:00Z');
+  const end   = new Date(endISO   + 'T00:00:00Z');
+  const yStart = new Date(Date.UTC(fy, 0, 1));
+  const yEnd   = new Date(Date.UTC(fy, 11, 31));
+  const overlapStart = start > yStart ? start : yStart;
+  const overlapEnd   = end   < yEnd   ? end   : yEnd;
+  if (overlapEnd < overlapStart) return 0;
+  const day = 86400000;
+  const overlapDays = Math.round((overlapEnd - overlapStart) / day) + 1;
+  const totalDays   = Math.round((end - start) / day) + 1;
+  return overlapDays / totalDays;
+}
+
+// License recognition: 100% if win year of LICENSE row matches FY, else 0%
+function licensePctForFy(row, fy) {
+  if (row.type !== "License") return 0;
+  return (row.winYear === fy) ? 1 : 0;
+}
+
+function recognizeSubRow(row, fy) {
+  const pct = periodPctForYear(row.start, row.end, fy);
+  const swRecog = (row.licRev - row.licCost) * pct;          // SW = License GM portion
+  const svRecog = row.svRev * pct;
+  return { pct, swRecog, svRecog };
+}
+
+function recognizePercRow(row, fy) {
+  // License component
+  const licPct = licensePctForFy(row, fy);
+  const licRevR = (row.type === "License") ? row.licRev * licPct : 0;
+  const licGmR  = (row.type === "License") ? (row.licRev - row.licCost) * licPct : 0;
+  // SW MA component (always pro-rated)
+  const swPct = periodPctForYear(row.periodStart, row.periodEnd, fy);
+  const swRevR = row.swRev * swPct;
+  const swGmR  = (row.swRev - row.swCost) * swPct;
+  // SV MA component (always pro-rated)
+  const svPct = swPct;
+  const svRevR = row.svRev * svPct;
+  const svGmR  = (row.svRev - row.svCost) * svPct;
+  const totalRev = licRevR + swRevR + svRevR;
+  const totalCost = (row.type === "License" ? row.licCost * licPct : 0)
+                  + row.swCost * swPct
+                  + row.svCost * svPct;
+  return { licPct, licRevR, licGmR, swPct, swRevR, swGmR, svPct, svRevR, svGmR, totalRev, totalGm: totalRev - totalCost };
+}
+
+function rollupSub(rows, fy) {
+  let swRecogExisting = 0, svRecogExisting = 0, swRecogPipeline = 0, svRecogPipeline = 0;
+  for (const r of rows) {
+    const c = recognizeSubRow(r, fy);
+    if (r.status === "Pipeline") { swRecogPipeline += c.swRecog; svRecogPipeline += c.svRecog; }
+    else { swRecogExisting += c.swRecog; svRecogExisting += c.svRecog; }
+  }
+  return { swRecogExisting, svRecogExisting, swRecogPipeline, svRecogPipeline };
+}
+
+function rollupPerc(rows, fy) {
+  let licGmR = 0, swGmR = 0, svRevR = 0;
+  for (const r of rows) {
+    const c = recognizePercRow(r, fy);
+    licGmR += c.licGmR; swGmR += c.swGmR; svRevR += c.svRevR;
+  }
+  return { licSwGm: licGmR + swGmR, svRev: svRevR };
+}
+
+function rollupOutsource(fy) {
+  let win = 0, pipeline = 0;
+  // BOT — sum its monthly revenue for fy
+  const bot = outsourceData.bot.monthsByFy[fy] || [];
+  const botTotal = bot.reduce((s, m) => s + (m.revenue || 0), 0);
+  win += botTotal;
+  // MTL — annual × FY overlap
+  const mtl = outsourceData.mtl;
+  const mtlPct = periodPctForYear(mtl.contractStart, mtl.contractEnd, fy);
+  win += mtl.annualAmount * mtlPct;
+  // TRUE — annual × FY overlap
+  const tr = outsourceData.truex;
+  const trPct = periodPctForYear(tr.contractStart, tr.contractEnd, fy);
+  win += tr.annualAmount * trPct;
+  return { win, pipeline, breakdown: { bot: botTotal, mtl: mtl.annualAmount * mtlPct, truex: tr.annualAmount * trPct } };
+}
+
+function dashboardForFy(fy) {
+  const m = fyMaster[fy];
+  const implTotals = rollupImpl(implRows, fy);
+  const subTotals  = rollupSub(subRows, fy);
+  const percTotals = rollupPerc(percRows, fy);
+  const outTotals  = rollupOutsource(fy);
+  const win = {
+    swMaGm: percTotals.licSwGm,
+    subscriptionGm: subTotals.swRecogExisting,
+    outsource: outTotals.win,
+    implementation: implTotals.estimate,
+    maSv: subTotals.svRecogExisting + percTotals.svRev,
+  };
+  const pipe = {
+    swMaGm: 0,
+    subscriptionGm: subTotals.swRecogPipeline,
+    outsource: outTotals.pipeline,
+    implementation: implTotals.pipeline,
+    maSv: subTotals.svRecogPipeline,
+  };
+  win.totalSwGm = win.swMaGm + win.subscriptionGm;
+  win.totalSv   = win.outsource + win.implementation + win.maSv;
+  pipe.totalSwGm = pipe.swMaGm + pipe.subscriptionGm;
+  pipe.totalSv   = pipe.outsource + pipe.implementation + pipe.maSv;
+
+  const target = m.headCount * m.targetPerHead;
+  const totalRevenue = win.totalSwGm + win.totalSv + pipe.totalSwGm + pipe.totalSv;
+  const remaining = Math.max(0, target - totalRevenue);
+
+  return { fy, headCount: m.headCount, targetPerHead: m.targetPerHead,
+           target, totalRevenue, remaining, win, pipe };
+}
+
+// ============================================================================
+// FORMATTING
+// ============================================================================
+const fmt   = n => (n === 0 || n === null || n === undefined) ? "—"
+                  : "฿" + Math.round(n).toLocaleString();
+const fmtPct = n => (n === null || n === undefined) ? "—" : (n*100).toFixed(1) + "%";
+
+// ============================================================================
+// STATE
+// ============================================================================
+let activeFy = 2026;
+let implFilter = "all";
+let implSearch = "";
+let donutChart, barChart;
+
+// ============================================================================
+// RENDERERS
+// ============================================================================
+function renderImpl() {
+  const fy = activeFy;
+  document.querySelectorAll('.implPrevYear').forEach(e => e.textContent = fy - 1);
+  document.querySelectorAll('.implCurrYear').forEach(e => e.textContent = fy);
+  document.querySelectorAll('.implFyLabel').forEach(e => e.textContent = fy);
+
+  const tb = document.getElementById('implBody');
+  tb.innerHTML = '';
+  const term = implSearch.toLowerCase();
+  let totalRev=0, totalCost=0, totalGm=0, totalGmR=0, totalEst=0, totalPipe=0;
+  let nVisible = 0;
+
+  implRows
+    .filter(r => implFilter==="all" || r.status===implFilter)
+    .filter(r => !term || r.customer.toLowerCase().includes(term) || r.project.toLowerCase().includes(term))
+    .forEach(r => {
+      const c = recognizeImplRow(r, fy);
+      totalRev += r.rev; totalCost += r.cost; totalGm += c.gmAbs;
+      totalGmR += c.gmRecog; totalEst += c.estimate; totalPipe += c.pipeline;
+      nVisible++;
+
+      const badge = r.status === "Win"
+        ? '<span class="badge badge-win">Win</span>'
+        : '<span class="badge badge-pipe">Pipeline</span>';
+
+      tb.insertAdjacentHTML('beforeend', `
+        <tr>
+          <td class="editable">${r.customer}</td>
+          <td class="editable">${r.project}</td>
+          <td class="editable text-slate-500 text-xs">${r.erp || '—'}</td>
+          <td>${badge}</td>
+          <td class="editable text-slate-500 text-xs">${r.pipeDate || '—'}</td>
+          <td class="num editable">${fmtPct(c.prev)}</td>
+          <td class="num editable">${fmtPct(c.curr)}</td>
+          <td class="num calc">${fmtPct(c.pct)}</td>
+          <td class="num editable">${fmtPct(c.estPct)}</td>
+          <td class="num editable">${fmt(r.rev)}</td>
+          <td class="num editable">${fmt(r.cost)}</td>
+          <td class="num calc">${fmt(c.gmAbs)}</td>
+          <td class="num calc">${fmt(c.gmRecog)}</td>
+          <td class="num calc ${c.estimate>0 ? 'text-emerald-700 font-medium' : ''}">${fmt(c.estimate)}</td>
+          <td class="num calc ${c.pipeline>0 ? 'text-amber-700 font-medium' : ''}">${fmt(c.pipeline)}</td>
+        </tr>
+      `);
+    });
+
+  document.getElementById('implFoot').innerHTML = `
+    <tr>
+      <td colspan="9" class="text-right">Totals (FY ${fy} → Dashboard)</td>
+      <td class="num">${fmt(totalRev)}</td>
+      <td class="num">${fmt(totalCost)}</td>
+      <td class="num">${fmt(totalGm)}</td>
+      <td class="num">${fmt(totalGmR)}</td>
+      <td class="num text-emerald-700 font-bold">${fmt(totalEst)}</td>
+      <td class="num text-amber-700 font-bold">${fmt(totalPipe)}</td>
+    </tr>
+  `;
+
+  // pill counts
+  const winCount  = implRows.filter(r => r.status==="Win").length;
+  const pipeCount = implRows.filter(r => r.status==="Pipeline").length;
+  document.querySelectorAll('.pill-tab').forEach(t => {
+    if (t.dataset.filter === "all")      t.innerHTML = `All <span class="text-xs opacity-75">(${implRows.length})</span>`;
+    if (t.dataset.filter === "Win")      t.innerHTML = `Win <span class="text-xs opacity-75">(${winCount})</span>`;
+    if (t.dataset.filter === "Pipeline") t.innerHTML = `Pipeline <span class="text-xs opacity-75">(${pipeCount})</span>`;
+  });
+
+  document.getElementById('implFootBar').textContent =
+    `${nVisible} rows visible • ${winCount} Win • ${pipeCount} Pipeline • FY ${fy}`;
+}
+
+function renderDashboard() {
+  const d = dashboardForFy(activeFy);
+  document.getElementById('dashYear').textContent = activeFy;
+  document.getElementById('progressYear').textContent = activeFy;
+  document.getElementById('pipeYear').textContent = activeFy;
+
+  // KPI tiles
+  document.getElementById('kpiTotalRev').textContent = fmt(d.totalRevenue);
+  document.getElementById('kpiPctOfTarget').textContent =
+    `${(d.totalRevenue / d.target * 100).toFixed(1)}% of target`;
+  document.getElementById('kpiTarget').textContent = fmt(d.target);
+  document.getElementById('kpiTargetCalc').textContent =
+    `${d.headCount} heads × ฿${(d.targetPerHead/1000000).toFixed(1)}M`;
+  document.getElementById('kpiRemaining').textContent = fmt(d.remaining);
+  const totalPipe = d.pipe.totalSwGm + d.pipe.totalSv;
+  document.getElementById('kpiPipeline').textContent = fmt(totalPipe);
+  document.getElementById('kpiPipelineSplit').textContent =
+    `SW ${fmt(d.pipe.totalSwGm)} • SV ${fmt(d.pipe.totalSv)}`;
+
+  // Progress bar
+  const totalWin = d.win.totalSwGm + d.win.totalSv;
+  const winPct  = Math.min(100, (totalWin / d.target) * 100);
+  const pipePct = Math.min(100 - winPct, (totalPipe / d.target) * 100);
+  const gapPct  = Math.max(0, 100 - winPct - pipePct);
+  document.getElementById('progressBar').innerHTML = `
+    <div class="h-7 bg-emerald-500 flex items-center justify-end pr-2 text-xs font-medium text-white" style="width:${winPct}%">${winPct >= 8 ? 'Win '+fmt(totalWin) : ''}</div>
+    <div class="h-7 bg-amber-400 flex items-center justify-end pr-2 text-xs font-medium text-white" style="width:${pipePct}%">${pipePct >= 8 ? 'Pipeline '+fmt(totalPipe) : ''}</div>
+    <div class="h-7 bg-slate-200 flex items-center justify-end pr-2 text-xs text-slate-600" style="width:${gapPct}%">${gapPct >= 6 ? 'Gap '+fmt(d.remaining) : ''}</div>
+  `;
+  document.getElementById('progressLabel').textContent = `— ${(d.totalRevenue/d.target*100).toFixed(1)}% achieved`;
+
+  // Win table
+  document.getElementById('winTable').innerHTML = `
+    <tbody>
+      <tr><td class="py-1.5 text-slate-600">License / SW MA GM</td><td class="py-1.5 text-right font-medium">${fmt(d.win.swMaGm)}</td></tr>
+      <tr><td class="py-1.5 text-slate-600">Subscription GM</td><td class="py-1.5 text-right font-medium">${fmt(d.win.subscriptionGm)}</td></tr>
+      <tr class="border-t border-slate-200"><td class="py-1.5 text-slate-700 font-semibold">Total SW GM</td><td class="py-1.5 text-right font-semibold">${fmt(d.win.totalSwGm)}</td></tr>
+      <tr><td class="py-1.5 text-slate-600 pt-3">Outsource Revenue</td><td class="py-1.5 text-right font-medium pt-3">${fmt(d.win.outsource)}</td></tr>
+      <tr><td class="py-1.5 text-slate-600">Implementation Revenue</td><td class="py-1.5 text-right font-medium">${fmt(d.win.implementation)}</td></tr>
+      <tr><td class="py-1.5 text-slate-600">MA SV Revenue</td><td class="py-1.5 text-right font-medium">${fmt(d.win.maSv)}</td></tr>
+      <tr class="border-t border-slate-200"><td class="py-1.5 text-slate-700 font-semibold">Total SV</td><td class="py-1.5 text-right font-semibold">${fmt(d.win.totalSv)}</td></tr>
+      <tr class="border-t-2 border-slate-300"><td class="py-2 text-slate-800 font-bold">Total Win</td><td class="py-2 text-right font-bold text-emerald-700">${fmt(d.win.totalSwGm + d.win.totalSv)}</td></tr>
+    </tbody>`;
+
+  // Pipeline table
+  document.getElementById('pipeTable').innerHTML = `
+    <tbody>
+      <tr><td class="py-1.5 text-slate-600">License / SW MA GM Pipeline</td><td class="py-1.5 text-right font-medium">${fmt(d.pipe.swMaGm)}</td></tr>
+      <tr><td class="py-1.5 text-slate-600">Subscription GM Pipeline</td><td class="py-1.5 text-right font-medium">${fmt(d.pipe.subscriptionGm)}</td></tr>
+      <tr class="border-t border-slate-200"><td class="py-1.5 text-slate-700 font-semibold">Total SW GM Pipeline</td><td class="py-1.5 text-right font-semibold">${fmt(d.pipe.totalSwGm)}</td></tr>
+      <tr><td class="py-1.5 text-slate-600 pt-3">Outsource Pipeline</td><td class="py-1.5 text-right font-medium pt-3">${fmt(d.pipe.outsource)}</td></tr>
+      <tr><td class="py-1.5 text-slate-600">Implementation Pipeline</td><td class="py-1.5 text-right font-medium">${fmt(d.pipe.implementation)}</td></tr>
+      <tr><td class="py-1.5 text-slate-600">MA SV Pipeline</td><td class="py-1.5 text-right font-medium">${fmt(d.pipe.maSv)}</td></tr>
+      <tr class="border-t border-slate-200"><td class="py-1.5 text-slate-700 font-semibold">Total SV Pipeline</td><td class="py-1.5 text-right font-semibold">${fmt(d.pipe.totalSv)}</td></tr>
+      <tr class="border-t-2 border-slate-300"><td class="py-2 text-slate-800 font-bold">Total Pipeline</td><td class="py-2 text-right font-bold text-amber-700">${fmt(d.pipe.totalSwGm + d.pipe.totalSv)}</td></tr>
+    </tbody>`;
+
+  // Charts
+  const donutData = [d.win.swMaGm, d.win.subscriptionGm, d.win.outsource, d.win.implementation, d.win.maSv];
+  if (donutChart) {
+    donutChart.data.datasets[0].data = donutData;
+    donutChart.update();
+  } else {
+    donutChart = new Chart(document.getElementById('donutChart'), {
+      type:'doughnut',
+      data:{ labels:['SW License/MA GM','Subscription GM','Outsource Rev','Implementation Rev','MA SV Rev'],
+             datasets:[{ data: donutData, backgroundColor:['#3b82f6','#8b5cf6','#10b981','#f59e0b','#06b6d4'], borderWidth:0 }]},
+      options:{ plugins:{ legend:{ position:'bottom', labels:{ font:{size:11}, boxWidth:10 } } }, cutout:'62%' }
+    });
+  }
+  const barWin  = [d.win.swMaGm,  d.win.subscriptionGm,  d.win.outsource,  d.win.implementation,  d.win.maSv];
+  const barPipe = [d.pipe.swMaGm, d.pipe.subscriptionGm, d.pipe.outsource, d.pipe.implementation, d.pipe.maSv];
+  if (barChart) {
+    barChart.data.datasets[0].data = barWin;
+    barChart.data.datasets[1].data = barPipe;
+    barChart.update();
+  } else {
+    barChart = new Chart(document.getElementById('barChart'), {
+      type:'bar',
+      data:{ labels:['License/SW MA GM','Subscription GM','Outsource Rev','Implementation Rev','MA SV Rev'],
+             datasets:[
+               { label:'Win',      data: barWin,  backgroundColor:'#10b981' },
+               { label:'Pipeline', data: barPipe, backgroundColor:'#f59e0b' },
+             ]},
+      options:{ responsive:true, maintainAspectRatio:false,
+                plugins:{ legend:{ position:'top', align:'end' } },
+                scales:{ x:{ grid:{display:false} },
+                         y:{ ticks:{ callback: v => '฿'+(v/1000000).toFixed(1)+'M' } } } }
+    });
+  }
+}
+
+// ============================================================================
+// SUBSCRIPTION MA RENDERER
+// ============================================================================
+let subFilter = "all", subSearch = "";
+function renderSub() {
+  const fy = activeFy;
+  document.querySelectorAll('.subFyLabel').forEach(e => e.textContent = fy);
+  const tb = document.getElementById('subBody');
+  tb.innerHTML = '';
+  const term = subSearch.toLowerCase();
+  let totLic=0, totLicCost=0, totSv=0, totSvCost=0, totSwR=0, totSvR=0, n=0;
+
+  subRows
+    .filter(r => subFilter === "all" || r.status === subFilter)
+    .filter(r => !term || r.customer.toLowerCase().includes(term))
+    .forEach(r => {
+      const c = recognizeSubRow(r, fy);
+      // Rows that don't overlap at all with the active year — dim them
+      const inWindow = c.pct > 0;
+      totLic += r.licRev; totLicCost += r.licCost; totSv += r.svRev; totSvCost += r.svCost;
+      totSwR += c.swRecog; totSvR += c.svRecog; n++;
+      const badge = r.status === "Existing"
+        ? '<span class="badge badge-win">Existing</span>'
+        : '<span class="badge badge-pipe">Pipeline</span>';
+      tb.insertAdjacentHTML('beforeend', `
+        <tr class="${inWindow ? '' : 'opacity-40'}">
+          <td class="editable">${r.customer}</td>
+          <td class="editable text-slate-500 text-xs">${r.erp}</td>
+          <td>${badge}</td>
+          <td class="editable text-slate-600 text-xs">${r.start}</td>
+          <td class="editable text-slate-600 text-xs">${r.end}</td>
+          <td class="num editable">${fmt(r.licRev)}</td>
+          <td class="num editable">${fmt(r.licCost)}</td>
+          <td class="num editable">${fmt(r.svRev)}</td>
+          <td class="num editable">${fmt(r.svCost)}</td>
+          <td class="num calc">${fmtPct(c.pct)}</td>
+          <td class="num calc ${c.swRecog>0 ? 'text-emerald-700 font-medium' : ''}">${fmt(c.swRecog)}</td>
+          <td class="num calc ${c.svRecog>0 ? 'text-emerald-700 font-medium' : ''}">${fmt(c.svRecog)}</td>
+        </tr>
+      `);
+    });
+
+  document.getElementById('subFoot').innerHTML = `
+    <tr>
+      <td colspan="5" class="text-right">Totals (FY ${fy})</td>
+      <td class="num">${fmt(totLic)}</td>
+      <td class="num">${fmt(totLicCost)}</td>
+      <td class="num">${fmt(totSv)}</td>
+      <td class="num">${fmt(totSvCost)}</td>
+      <td></td>
+      <td class="num text-emerald-700 font-bold">${fmt(totSwR)}</td>
+      <td class="num text-emerald-700 font-bold">${fmt(totSvR)}</td>
+    </tr>`;
+
+  // pill counts
+  const ec = subRows.filter(r => r.status==="Existing").length;
+  const pc = subRows.filter(r => r.status==="Pipeline").length;
+  document.querySelectorAll('.sub-pill').forEach(t => {
+    if (t.dataset.filter === "all")      t.innerHTML = `All <span class="text-xs opacity-75">(${subRows.length})</span>`;
+    if (t.dataset.filter === "Existing") t.innerHTML = `Existing <span class="text-xs opacity-75">(${ec})</span>`;
+    if (t.dataset.filter === "Pipeline") t.innerHTML = `Pipeline <span class="text-xs opacity-75">(${pc})</span>`;
+  });
+
+  document.getElementById('subFootBar').textContent =
+    `${n} contracts visible • ${ec} Existing • ${pc} Pipeline • FY ${fy}`;
+}
+
+// ============================================================================
+// PERCEPTURE LICENSE RENDERER
+// ============================================================================
+function renderPerc() {
+  const fy = activeFy;
+  document.querySelectorAll('.percFyLabel').forEach(e => e.textContent = fy);
+  const tb = document.getElementById('percBody');
+  tb.innerHTML = '';
+  let totLicGm=0, totSwGm=0, totSvR=0, totRev=0, totGm=0;
+
+  percRows.forEach(r => {
+    const c = recognizePercRow(r, fy);
+    totLicGm += c.licGmR; totSwGm += c.swGmR; totSvR += c.svRevR;
+    totRev += c.totalRev; totGm += c.totalGm;
+    const inWindow = c.totalRev > 0;
+
+    const typeColor = r.type === "License" ? "bg-blue-100 text-blue-800"
+                    : r.type === "SW MA"   ? "bg-purple-100 text-purple-800"
+                    : "bg-cyan-100 text-cyan-800";
+    tb.insertAdjacentHTML('beforeend', `
+      <tr class="${inWindow ? '' : 'opacity-40'}">
+        <td class="editable">${r.customer}</td>
+        <td class="editable">${r.project}</td>
+        <td><span class="badge ${typeColor}">${r.type}</span></td>
+        <td class="editable text-xs text-slate-600">${r.periodStart} → ${r.periodEnd}</td>
+        <td class="num calc">${fmtPct(c.licPct)}</td>
+        <td class="num editable">${fmt(r.licRev)}</td>
+        <td class="num calc">${fmt(c.licGmR)}</td>
+        <td class="num calc">${fmtPct(c.swPct)}</td>
+        <td class="num editable">${fmt(r.swRev)}</td>
+        <td class="num calc">${fmt(c.swGmR)}</td>
+        <td class="num calc">${fmtPct(c.svPct)}</td>
+        <td class="num editable">${fmt(r.svRev)}</td>
+        <td class="num calc">${fmt(c.svGmR)}</td>
+        <td class="num calc font-medium">${fmt(c.totalRev)}</td>
+        <td class="num calc">${fmt(c.totalGm)}</td>
+      </tr>
+    `);
+  });
+
+  document.getElementById('percFoot').innerHTML = `
+    <tr>
+      <td colspan="6" class="text-right">Totals (FY ${fy})</td>
+      <td class="num text-emerald-700 font-bold">${fmt(totLicGm)}</td>
+      <td colspan="2"></td>
+      <td class="num text-emerald-700 font-bold">${fmt(totSwGm)}</td>
+      <td colspan="2"></td>
+      <td class="num text-emerald-700 font-bold">${fmt(totSvR)}</td>
+      <td class="num text-emerald-700 font-bold">${fmt(totRev)}</td>
+      <td class="num text-emerald-700 font-bold">${fmt(totGm)}</td>
+    </tr>`;
+  document.getElementById('percFootBar').textContent = `${percRows.length} rows • FY ${fy}`;
+}
+
+// ============================================================================
+// OUTSOURCE RENDERER
+// ============================================================================
+const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function renderOutsource() {
+  const fy = activeFy;
+  document.querySelectorAll('.outFyLabel').forEach(e => e.textContent = fy);
+
+  // BOT monthly grid
+  const months = outsourceData.bot.monthsByFy[fy] || [];
+  const botBody = document.getElementById('botBody');
+  botBody.innerHTML = '';
+  let botMd = 0, botRev = 0, hasActuals = false;
+  if (months.length === 0) {
+    botBody.innerHTML = `<tr><td colspan="5" class="text-center text-slate-500 italic py-6">No data for FY ${fy} — add monthly entries to get started.</td></tr>`;
+  } else {
+    months.forEach(m => {
+      botMd += m.manday; botRev += m.revenue;
+      if (m.isActual) hasActuals = true;
+      botBody.insertAdjacentHTML('beforeend', `
+        <tr class="${m.isActual ? 'bg-slate-50' : ''}">
+          <td class="font-medium">${monthNames[m.month-1]} ${fy}</td>
+          <td class="num editable">${m.manday}</td>
+          <td class="num ${m.isActual ? '' : 'calc'}">${fmt(m.revenue)}</td>
+          <td>${m.isActual ? '<span class="badge bg-slate-200 text-slate-700">Actual (locked)</span>' : '<span class="badge bg-blue-100 text-blue-800">Forecast</span>'}</td>
+          <td class="text-xs text-slate-500">${m.note}</td>
+        </tr>
+      `);
+    });
+  }
+  const vat = botRev * outsourceData.bot.vatRate;
+  document.getElementById('botFoot').innerHTML = `
+    <tr>
+      <td>Total ${fy}</td>
+      <td class="num">${botMd} md</td>
+      <td class="num">${fmt(botRev)}</td>
+      <td colspan="2" class="text-xs text-slate-500">Incl. VAT 7%: ${fmt(botRev + vat)}</td>
+    </tr>`;
+
+  // MTL block
+  const mtl = outsourceData.mtl;
+  const mtlPct = periodPctForYear(mtl.contractStart, mtl.contractEnd, fy);
+  const mtlRev = mtl.annualAmount * mtlPct;
+  document.getElementById('mtlBlock').innerHTML = `
+    <table class="w-full text-sm">
+      <tbody>
+        <tr><td class="py-1.5 text-slate-600">Contract period</td><td class="py-1.5 text-right">${mtl.contractStart} → ${mtl.contractEnd}</td></tr>
+        <tr><td class="py-1.5 text-slate-600">Annual amount</td><td class="py-1.5 text-right">${fmt(mtl.annualAmount)}</td></tr>
+        <tr><td class="py-1.5 text-slate-600">Overlap with FY ${fy} <span class="text-xs">ƒ</span></td><td class="py-1.5 text-right font-mono">${fmtPct(mtlPct)}</td></tr>
+        <tr class="border-t-2 border-slate-300">
+          <td class="py-2 font-bold">Recognized FY ${fy} <span class="text-xs">ƒ</span></td>
+          <td class="py-2 text-right font-bold ${mtlRev>0 ? 'text-emerald-700' : 'text-slate-400'}">${fmt(mtlRev)}</td>
+        </tr>
+      </tbody>
+    </table>`;
+
+  // TRUE block
+  const tr = outsourceData.truex;
+  const trPct = periodPctForYear(tr.contractStart, tr.contractEnd, fy);
+  const trRev = tr.annualAmount * trPct;
+  document.getElementById('trueBlock').innerHTML = `
+    <table class="w-full text-sm">
+      <tbody>
+        <tr><td class="py-1.5 text-slate-600">Contract period</td><td class="py-1.5 text-right">${tr.contractStart} → ${tr.contractEnd}</td></tr>
+        <tr><td class="py-1.5 text-slate-600">Annual amount</td><td class="py-1.5 text-right">${fmt(tr.annualAmount)}</td></tr>
+        <tr><td class="py-1.5 text-slate-600">Overlap with FY ${fy} <span class="text-xs">ƒ</span></td><td class="py-1.5 text-right font-mono">${fmtPct(trPct)}</td></tr>
+        <tr class="border-t-2 border-slate-300">
+          <td class="py-2 font-bold">Recognized FY ${fy} <span class="text-xs">ƒ</span></td>
+          <td class="py-2 text-right font-bold ${trRev>0 ? 'text-emerald-700' : 'text-slate-400'}">${fmt(trRev)}</td>
+        </tr>
+      </tbody>
+    </table>`;
+
+  // Roll-up
+  const rollupBody = document.getElementById('outRollup');
+  rollupBody.innerHTML = `
+    <tr><td>BOT RPA Dev (${monthNames[0]}–${monthNames[11]} ${fy})</td>
+        <td class="num">${fmt(botRev)}</td>
+        <td><span class="badge badge-win">Win</span></td>
+        <td class="text-right text-xs text-slate-500">Dashboard → Outsource Revenue</td></tr>
+    <tr><td>MTL Onsite</td>
+        <td class="num">${fmt(mtlRev)}</td>
+        <td><span class="badge badge-win">Win</span></td>
+        <td class="text-right text-xs text-slate-500">Dashboard → Outsource Revenue</td></tr>
+    <tr><td>TRUE Onsite</td>
+        <td class="num">${fmt(trRev)}</td>
+        <td><span class="badge badge-win">Win</span></td>
+        <td class="text-right text-xs text-slate-500">Dashboard → Outsource Revenue</td></tr>
+    <tr class="bg-slate-100"><td class="font-bold">Total Outsource — FY ${fy}</td>
+        <td class="num font-bold text-emerald-700">${fmt(botRev + mtlRev + trRev)}</td>
+        <td colspan="2"></td></tr>`;
+}
+
+// ============================================================================
+// EVENTS
+// ============================================================================
+document.getElementById('fySelect').addEventListener('change', e => {
+  activeFy = parseInt(e.target.value, 10);
+  renderImpl();
+  renderSub();
+  renderPerc();
+  renderOutsource();
+  renderDashboard();
+  // brief flash so users see what changed
+  document.querySelectorAll('table.grid tbody tr, .kpi-card').forEach(el => {
+    el.classList.remove('pulse-update');
+    void el.offsetWidth;
+    el.classList.add('pulse-update');
+  });
+});
+
+// Implementation pills (only the ones inside #view-implementation, not sub-pills)
+document.querySelectorAll('#view-implementation .pill-tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('#view-implementation .pill-tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    implFilter = t.dataset.filter;
+    renderImpl();
+  });
+});
+document.getElementById('implSearch').addEventListener('input', e => {
+  implSearch = e.target.value;
+  renderImpl();
+});
+
+// Subscription MA pills + search
+document.querySelectorAll('.sub-pill').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.sub-pill').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    subFilter = t.dataset.filter;
+    renderSub();
+  });
+});
+document.getElementById('subSearch').addEventListener('input', e => {
+  subSearch = e.target.value;
+  renderSub();
+});
+
+// View switcher
+const navItems = document.querySelectorAll('.nav-item:not(.disabled)');
+const flexViews = new Set(['implementation','subscription','percepture']);
+navItems.forEach(n => {
+  n.addEventListener('click', () => {
+    navItems.forEach(x => x.classList.remove('active'));
+    n.classList.add('active');
+    document.querySelectorAll('.view').forEach(v => v.style.display = 'none');
+    const view = document.getElementById('view-' + n.dataset.view);
+    if (flexViews.has(n.dataset.view)) {
+      view.style.display = 'flex';
+      view.style.flexDirection = 'column';
+    } else {
+      view.style.display = 'block';
+    }
+  });
+});
+
+// ============================================================================
+// INITIAL RENDER
+// ============================================================================
+renderImpl();
+renderSub();
+renderPerc();
+renderOutsource();
+renderDashboard();
+</script>
+</body>
+</html>

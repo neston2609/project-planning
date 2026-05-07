@@ -1,0 +1,11 @@
+-- =====================================================================
+-- Seed: Superadmin is auto-created by the backend on first startup
+-- (see backend/src/utils/bootstrap.js).
+--
+-- Default credentials:
+--   username: superadmin
+--   password: bsmrpa1234   (must be changed on first login)
+--
+-- This file exists only to document the seed and is intentionally a no-op.
+-- =====================================================================
+SELECT 1;
