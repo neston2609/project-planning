@@ -229,13 +229,14 @@ router.get('/summary', async (req, res) => {
         }
     }
 
-    // License-side (use recognize GROSS MARGIN per spec)
-    for (const r of subs) add(r.recognize_gross_margin, 'license', r.status);
-    for (const r of perp) add(r.recognize_gross_margin, 'license', r.status);
+    // License-side (use recognize GROSS MARGIN per spec).
+    // The recognition utility returns the GM amount as `recognize_gm`.
+    for (const r of subs) add(Number(r.recognize_gm) || 0, 'license', r.status);
+    for (const r of perp) add(Number(r.recognize_gm) || 0, 'license', r.status);
     // Service-side (use recognize REVENUE)
-    for (const r of sv)   add(r.recognize_revenue, 'service', r.status);
-    for (const r of impl) add(r.recognize_revenue, 'service', r.status);
-    for (const r of outs) add(r.recognize_revenue, 'service', r.status);
+    for (const r of sv)   add(Number(r.recognize_revenue) || 0, 'service', r.status);
+    for (const r of impl) add(Number(r.recognize_revenue) || 0, 'service', r.status);
+    for (const r of outs) add(Number(r.recognize_revenue) || 0, 'service', r.status);
 
     const total = buckets.pipeline_license_revenue + buckets.pipeline_service_revenue +
                   buckets.backlog_win_license_revenue + buckets.backlog_win_service_revenue;
