@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../auth';
 import toast from 'react-hot-toast';
+import { ChartPieIcon } from '@heroicons/react/24/outline';
 
 export default function Login() {
     const { login } = useAuth();
@@ -27,11 +28,21 @@ export default function Login() {
     }
 
     return (
-        <div className="min-h-screen flex items-center justify-center p-4 bg-slate-50">
-            <form onSubmit={submit} className="card p-6 w-full max-w-sm space-y-4">
-                <div className="text-center">
-                    <h1 className="text-xl font-bold text-brand-700">RPA Planning</h1>
-                    <p className="text-sm text-slate-500">Admin login</p>
+        <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
+            {/* Decorative blobs */}
+            <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full opacity-30 blur-3xl"
+                 style={{ backgroundImage: 'linear-gradient(135deg, #6366f1, #ec4899)' }} />
+            <div className="absolute -bottom-40 -right-40 w-[28rem] h-[28rem] rounded-full opacity-25 blur-3xl"
+                 style={{ backgroundImage: 'linear-gradient(135deg, #10b981, #14b8a6)' }} />
+
+            <form onSubmit={submit} className="card p-7 w-full max-w-sm space-y-5 relative">
+                <div className="flex flex-col items-center text-center">
+                    <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-indigo-500/40 mb-3"
+                         style={{ backgroundImage: 'var(--grad-brand)' }}>
+                        <ChartPieIcon className="w-8 h-8" />
+                    </div>
+                    <h1 className="text-2xl brand-mark">RPA Planning</h1>
+                    <p className="text-xs text-slate-500 mt-1 uppercase tracking-wider">Admin Login</p>
                 </div>
                 <div>
                     <label className="label">Username</label>
@@ -44,8 +55,8 @@ export default function Login() {
                 <button className="btn-primary w-full justify-center" disabled={busy}>
                     {busy ? 'Signing in...' : 'Sign in'}
                 </button>
-                <div className="text-center text-xs text-slate-400">
-                    <Link to="/" className="hover:underline">Continue as Guest →</Link>
+                <div className="text-center text-xs text-slate-500">
+                    <Link to="/" className="hover:text-indigo-600 transition-colors">← Continue as Guest</Link>
                 </div>
             </form>
         </div>

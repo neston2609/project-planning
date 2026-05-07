@@ -2,21 +2,98 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer components {
-    .btn        { @apply inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition; }
-    .btn-primary{ @apply btn bg-brand-600 text-white hover:bg-brand-700; }
-    .btn-ghost  { @apply btn bg-white border border-slate-300 text-slate-700 hover:bg-slate-50; }
-    .btn-danger { @apply btn bg-red-600 text-white hover:bg-red-700; }
-    .input      { @apply w-full px-3 py-2 border border-slate-300 rounded-md text-sm
-                         focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500; }
-    .label      { @apply block text-sm font-medium text-slate-700 mb-1; }
-    .card       { @apply bg-white rounded-xl border border-slate-200 shadow-sm; }
-    .table-clean { @apply w-full text-sm text-left; }
-    .table-clean thead { @apply bg-slate-50 text-slate-600 text-xs uppercase tracking-wide; }
-    .table-clean th, .table-clean td { @apply px-3 py-2 border-b border-slate-100; }
-    .table-clean tbody tr:hover { @apply bg-slate-50; }
-    .pill        { @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium; }
-    .pill-win    { @apply pill bg-emerald-100 text-emerald-700; }
-    .pill-pipe   { @apply pill bg-amber-100 text-amber-700; }
-    .pill-loss   { @apply pill bg-slate-200 text-slate-600; }
+:root {
+    --grad-brand: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #ec4899 100%);
+    --grad-brand-soft: linear-gradient(135deg, #eef2ff 0%, #faf5ff 50%, #fdf2f8 100%);
+    --grad-pipeline: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+    --grad-win:      linear-gradient(135deg, #34d399 0%, #10b981 100%);
+    --grad-loss:     linear-gradient(135deg, #94a3b8 0%, #64748b 100%);
 }
+
+html, body, #root { height: 100%; }
+body {
+    background:
+        radial-gradient(circle at 0% 0%, rgba(99, 102, 241, 0.08), transparent 50%),
+        radial-gradient(circle at 100% 0%, rgba(236, 72, 153, 0.06), transparent 50%),
+        radial-gradient(circle at 50% 100%, rgba(16, 185, 129, 0.05), transparent 50%),
+        #f8fafc;
+    background-attachment: fixed;
+}
+
+@layer components {
+    /* Buttons */
+    .btn         { @apply inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 active:scale-[0.97]; }
+    .btn-primary { @apply btn text-white shadow-md shadow-indigo-500/30 hover:shadow-lg hover:shadow-indigo-500/40 hover:-translate-y-0.5; background-image: var(--grad-brand); }
+    .btn-ghost   { @apply btn bg-white/80 backdrop-blur border border-slate-200 text-slate-700 hover:bg-white hover:border-indigo-300 hover:text-indigo-600 hover:shadow-sm; }
+    .btn-danger  { @apply btn text-white shadow-md shadow-red-500/30 hover:shadow-lg hover:shadow-red-500/40 hover:-translate-y-0.5; background-image: linear-gradient(135deg, #f87171, #ef4444); }
+
+    /* Forms */
+    .input { @apply w-full px-3 py-2 bg-white/90 backdrop-blur border border-slate-200 rounded-lg text-sm
+                    transition-all duration-200
+                    placeholder:text-slate-400
+                    focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 focus:bg-white; }
+    .label { @apply block text-sm font-semibold text-slate-700 mb-1; }
+
+    /* Cards & tables */
+    .card { @apply bg-white/80 backdrop-blur rounded-2xl border border-white shadow-lg shadow-slate-200/60; }
+    .table-clean { @apply w-full text-sm text-left; }
+    .table-clean thead { @apply text-slate-600 text-xs uppercase tracking-wide; background-image: linear-gradient(180deg, #f8fafc, #f1f5f9); }
+    .table-clean th, .table-clean td { @apply px-3 py-2.5 border-b border-slate-100; }
+    .table-clean tbody tr { @apply transition-colors duration-150; }
+    .table-clean tbody tr:hover { @apply bg-indigo-50/40; }
+
+    /* Pills */
+    .pill        { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ring-1 ring-inset; }
+    .pill-win    { @apply pill bg-emerald-50 text-emerald-700 ring-emerald-200; }
+    .pill-pipe   { @apply pill bg-amber-50 text-amber-700 ring-amber-200; }
+    .pill-loss   { @apply pill bg-slate-100 text-slate-600 ring-slate-200; }
+
+    /* Sidebar */
+    .nav-link {
+        @apply flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-slate-600
+               transition-all duration-200 hover:bg-white hover:text-indigo-600 hover:shadow-sm;
+    }
+    .nav-link-active {
+        @apply text-white shadow-md shadow-indigo-500/30;
+        background-image: var(--grad-brand);
+    }
+    .nav-link-active:hover {
+        @apply text-white shadow-lg;
+        background-image: var(--grad-brand);
+    }
+    .nav-section-title {
+        @apply px-3 pt-4 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400;
+    }
+
+    /* KPI tiles */
+    .kpi {
+        @apply rounded-2xl p-5 text-white shadow-xl transition-transform duration-300 hover:-translate-y-1;
+    }
+    .kpi-blue   { background-image: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%); }
+    .kpi-purple { background-image: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%); }
+    .kpi-green  { background-image: linear-gradient(135deg, #10b981 0%, #14b8a6 100%); }
+    .kpi-amber  { background-image: linear-gradient(135deg, #f59e0b 0%, #f97316 100%); }
+    .kpi-rose   { background-image: linear-gradient(135deg, #f43f5e 0%, #ec4899 100%); }
+
+    /* Brand mark */
+    .brand-mark {
+        background-image: var(--grad-brand);
+        @apply bg-clip-text text-transparent font-extrabold;
+    }
+
+    /* Animation utility */
+    .fade-in {
+        animation: fadeInUp 280ms ease-out both;
+    }
+}
+
+@keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Pretty scrollbars */
+::-webkit-scrollbar       { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #c7d2fe, #a5b4fc); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #a5b4fc, #818cf8); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }

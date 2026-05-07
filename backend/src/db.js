@@ -1,4 +1,8 @@
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
+
+// Return DATE (oid 1082) as plain 'YYYY-MM-DD' instead of a JS Date in local
+// time. Avoids timezone drift in revenue recognition math.
+types.setTypeParser(1082, (val) => val);
 
 const pool = new Pool({
     host:     process.env.PGHOST     || 'localhost',

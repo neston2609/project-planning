@@ -8,9 +8,22 @@
 const MS_PER_DAY = 86_400_000;
 
 function toDate(d) {
-    if (!d) return null;
-    if (d instanceof Date) return d;
-    return new Date(d);
+    if (d === null || d === undefined || d === '') return null;
+    if (d instanceof Date) {
+        return isNaN(d.getTime()) ? null : d;
+    }
+    // Strings like "2026-11-10" or full ISO timestamps. node-postgres can also
+    // return DATE columns as 'YYYY-MM-DD' strings depending on driver options.
+    const s = String(d);
+    // Force UTC interpretation for a bare YYYY-MM-DD so getUTCFullYear()/etc.
+    // don't drift across midnight in negative-offset locales.
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) {
+        const dt = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+        return isNaN(dt.getTime()) ? null : dt;
+    }
+    const dt = new Date(s);
+    return isNaN(dt.getTime()) ? null : dt;
 }
 
 function toUTCMidnight(d) {
@@ -36,7 +49,7 @@ function clampDate(d, lo, hi) {
 function prorataRecognition(start, end, year) {
     start = toDate(start);
     end   = toDate(end);
-    if (!start || !end || isNaN(start) || isNaN(end)) return 0;
+    if (!start || !end) return 0;
 
     const yearStart = new Date(Date.UTC(year, 0, 1));
     const yearEnd   = new Date(Date.UTC(year, 11, 31));
@@ -127,10 +140,6 @@ function recognizeImplementation(row /*, year*/) {
  * Outsource recognition.
  *  - Man-Month: 100% — caller must sum the monthly rows for the year.
  *  - Man-Year:  pro-rata.
- *
- *  When outsource_type === 'Man-Month' the row will also expose
- *  `monthly_revenue` and `monthly_cost` (sum of monthly children for the
- *  selected year), which the caller can pass in via `row.revenue`/`row.cost`.
  */
 function recognizeOutsource(row, year) {
     const revenue = Number(row.revenue || 0);
