@@ -11,6 +11,14 @@
 }
 
 html, body, #root { height: 100%; }
+
+/* Force Century Gothic everywhere, including form controls which don't
+   inherit font-family by default. */
+html, body, button, input, select, textarea {
+    font-family: "Century Gothic", "URW Gothic", "AppleGothic", "Apple Gothic",
+                 system-ui, ui-sans-serif, Helvetica, Arial, sans-serif;
+}
+
 body {
     background:
         radial-gradient(circle at 0% 0%, rgba(99, 102, 241, 0.08), transparent 50%),

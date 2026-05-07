@@ -10,6 +10,14 @@ export default {
                     600: '#1d4ed8',
                     700: '#1e40af'
                 }
+            },
+            fontFamily: {
+                // Make Century Gothic the default for everything (font-sans).
+                // Fallbacks cover Linux ("URW Gothic"), older Macs ("Apple Gothic"),
+                // and finally system-ui / sans-serif.
+                sans: ['"Century Gothic"', '"URW Gothic"', '"AppleGothic"',
+                       '"Apple Gothic"', 'system-ui', 'ui-sans-serif',
+                       'Helvetica', 'Arial', 'sans-serif']
             }
         }
     },
