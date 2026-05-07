@@ -25,7 +25,9 @@ jobs:
             npm install
 
             # build frontend
+            cd frontend
             npm run build
+            cp -rp dist/ ../
 
             # restart backend
-            pm2 restart project-planning-backend
+            pm2 restart rpa-planning-backend
