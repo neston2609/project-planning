@@ -299,9 +299,13 @@ function processOutsource() {
         const months = [];
         for (let i = 1; i < arr.length; i++) {
             const r = arr[i]; if (!r) continue;
-            const mo = r[off + 1]; const rev = num(r[off + 3]);
-            if (!mo || mo < 1 || mo > 12) continue;
-            months.push({ year: planningYear, month: Number(mo), revenue: rev, cost: 0 });
+            const moRaw = r[off + 1];
+            const moNum = Number(moRaw);
+            // Strict guard: must be a real integer 1..12. Anything else (including
+            // strings like "Total" or NaN) is skipped.
+            if (!Number.isInteger(moNum) || moNum < 1 || moNum > 12) continue;
+            const rev = num(r[off + 3]);
+            months.push({ year: planningYear, month: moNum, revenue: rev, cost: 0 });
         }
         outs.push({
             project_code: code, outsource_type: 'Man-Month',
@@ -435,7 +439,7 @@ for (const o of outsource) {
     for (const m of o.months) {
         sql.push(
             `INSERT INTO project_outsource_monthly(project_outsource_id, year, month, revenue, cost)
- SELECT po.id, ${m.year}, ${m.month}, ${num(m.revenue)}, ${num(m.cost)}
+ SELECT po.id, ${num(m.year)}, ${num(m.month)}, ${num(m.revenue)}, ${num(m.cost)}
    FROM project_outsource po
   WHERE po.project_id = (SELECT id FROM projects WHERE project_code=${SQ(o.project_code)})
  ON CONFLICT (project_outsource_id, year, month) DO UPDATE
