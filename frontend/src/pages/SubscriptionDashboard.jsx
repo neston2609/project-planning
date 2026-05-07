@@ -4,7 +4,7 @@ import { useYear } from '../YearContext';
 import StatusPill from '../components/StatusPill';
 import DashboardHeader from '../components/DashboardHeader';
 import ProgressCell from '../components/ProgressCell';
-import { baht, formatDate } from '../format';
+import { baht, formatDate, splitTotals } from '../format';
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 
 export default function SubscriptionDashboard() {
@@ -29,11 +29,7 @@ export default function SubscriptionDashboard() {
                (r.license_name || '').toLowerCase().includes(q);
     }), [rows, search]);
 
-    const totals = filtered.reduce((a, r) => ({
-        rev: a.rev + (r.recognize_revenue || 0),
-        gm:  a.gm  + (r.recognize_gross_margin || 0),
-        gross: a.gross + (r.license_revenue || 0)
-    }), { rev: 0, gm: 0, gross: 0 });
+    const t = splitTotals(filtered, 'license_revenue');
 
     return (
         <div className="space-y-5">
@@ -41,12 +37,11 @@ export default function SubscriptionDashboard() {
                 title={`Subscription License · ${year}`}
                 subtitle="Pro-rata recognition based on contract days falling in the selected year."
                 tiles={[
-                    { label: 'Projects', value: filtered.length, accent: 'blue', hint: 'Visible rows' },
-                    { label: 'Total Revenue (Contract)', value: totals.gross, accent: 'purple' },
-                    { label: 'Recognized Revenue', value: totals.rev, accent: 'green' },
-                    { label: 'Recognized Gross Margin', value: totals.gm, accent: 'amber' }
-                ]}
-                currency={true} />
+                    { label: 'Pipeline · Rec. Revenue', value: t.pipelineRev, accent: 'amber' },
+                    { label: 'Pipeline · Rec. Gross Margin', value: t.pipelineGm, accent: 'rose' },
+                    { label: 'Win · Rec. Revenue', value: t.winRev, accent: 'green' },
+                    { label: 'Win · Rec. Gross Margin', value: t.winGm, accent: 'blue' }
+                ]} />
 
             <div className="card p-3 flex items-center gap-2">
                 <MagnifyingGlassIcon className="w-5 h-5 text-slate-400" />
@@ -59,18 +54,11 @@ export default function SubscriptionDashboard() {
                 <table className="table-clean">
                     <thead>
                         <tr>
-                            <th>Code</th>
-                            <th>Description</th>
-                            <th>Customer</th>
-                            <th>Status</th>
-                            <th>License Name</th>
-                            <th>Period</th>
-                            <th className="text-right">Revenue</th>
-                            <th className="text-right">Cost</th>
-                            <th className="text-right">GM</th>
+                            <th>Code</th><th>Description</th><th>Customer</th><th>Status</th>
+                            <th>License Name</th><th>Period</th>
+                            <th className="text-right">Revenue</th><th className="text-right">Cost</th><th className="text-right">GM</th>
                             <th className="min-w-[150px]">% Recognize</th>
-                            <th className="text-right">Rec. Revenue</th>
-                            <th className="text-right">Rec. GM</th>
+                            <th className="text-right">Rec. Revenue</th><th className="text-right">Rec. GM</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -97,10 +85,10 @@ export default function SubscriptionDashboard() {
                         {!loading && filtered.length > 0 && (
                             <tr className="bg-gradient-to-r from-indigo-50 to-pink-50 sticky bottom-0">
                                 <td colSpan={6} className="text-right font-bold">Totals</td>
-                                <td className="text-right tabular-nums font-bold">{baht(totals.gross)}</td>
+                                <td className="text-right tabular-nums font-bold">{baht(t.gross)}</td>
                                 <td colSpan={3}></td>
-                                <td className="text-right tabular-nums font-extrabold text-emerald-700">{baht(totals.rev)}</td>
-                                <td className="text-right tabular-nums font-extrabold text-indigo-700">{baht(totals.gm)}</td>
+                                <td className="text-right tabular-nums font-extrabold text-emerald-700">{baht(t.totalRev)}</td>
+                                <td className="text-right tabular-nums font-extrabold text-indigo-700">{baht(t.totalGm)}</td>
                             </tr>
                         )}
                     </tbody>
