@@ -145,15 +145,19 @@ export default function ResourcePlanning() {
         const we = weeks[Math.min(3, weeks.length - 1)]?.endISO || `${year}-01-31`;
         setModal({
             resource, existing: null,
-            form: { project_id: '', start_date: ws, end_date: we, note: '' }
+            form: { customer_filter: '', project_id: '', start_date: ws, end_date: we, note: '' }
         });
     }
     function openEdit(resource, a) {
         if (!canEdit) return;
+        // Pre-select the customer of the project being edited so the project
+        // dropdown filters down to its siblings on open.
+        const proj = projects.find(p => p.id === a.project_id);
         setModal({
             resource, existing: a,
             form: {
                 id: a.id, project_id: a.project_id,
+                customer_filter: proj?.customer_alias || '',
                 start_date: formatDate(a.start_date),
                 end_date:   formatDate(a.end_date),
                 note: a.note || ''
@@ -357,19 +361,49 @@ export default function ResourcePlanning() {
                        <button className="btn-ghost" onClick={() => setModal(null)}>Cancel</button>
                        <button className="btn-primary" onClick={saveAssignment}>Save</button>
                    </>)}>
-                {modal && (
+                {modal && (() => {
+                    // Unique sorted customer aliases from the available projects
+                    const customerAliases = Array.from(new Set(
+                        projects.map(p => p.customer_alias).filter(Boolean)
+                    )).sort();
+                    const filterAlias = modal.form.customer_filter || '';
+                    const visibleProjects = filterAlias
+                        ? projects.filter(p => p.customer_alias === filterAlias)
+                        : projects;
+                    return (
                     <div className="space-y-3">
+                        <div>
+                            <label className="label">Customer</label>
+                            <select className="input" value={filterAlias}
+                                    onChange={(e) => setModal({
+                                        ...modal,
+                                        form: {
+                                            ...modal.form,
+                                            customer_filter: e.target.value,
+                                            // Reset selected project if it doesn't match the new filter
+                                            project_id: ''
+                                        }
+                                    })}>
+                                <option value="">All Customer</option>
+                                {customerAliases.map(c => (
+                                    <option key={c} value={c}>{c}</option>
+                                ))}
+                            </select>
+                        </div>
                         <div>
                             <label className="label">Project</label>
                             <select className="input" value={modal.form.project_id}
                                     onChange={(e) => setModal({ ...modal, form: { ...modal.form, project_id: e.target.value } })}>
                                 <option value="">— Select —</option>
-                                {projects.map(p => (
+                                {visibleProjects.map(p => (
                                     <option key={p.id} value={p.id}>
-                                        {p.project_code}{p.customer_alias ? ` · ${p.customer_alias}` : ''} — {p.description}
+                                        {`[${p.customer_alias || 'No customer'}] - ${p.project_code} : ${p.description}`}
                                     </option>
                                 ))}
                             </select>
+                            {visibleProjects.length === 0 && (
+                                <p className="text-xs text-amber-600 mt-1">No projects for this customer.</p>
+                            )}
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                             <div>
@@ -389,7 +423,8 @@ export default function ResourcePlanning() {
                                 onChange={(e) => setModal({ ...modal, form: { ...modal.form, note: e.target.value } })} />
                         </div>
                     </div>
-                )}
+                    );
+                })()}
             </Modal>
         </div>
     );
