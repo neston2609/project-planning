@@ -46,11 +46,32 @@ export function applyFiltersAndSort(rows, opts = {}) {
 
     const cmpStr = (a, b) => (a || '').localeCompare(b || '');
     const cmpNum = (a, b) => (Number(a) || 0) - (Number(b) || 0);
+    const tie = (a, b) => cmpStr(a.project_code, b.project_code);
     const sorted = [...out];
-    if (sortBy === 'customer')          sorted.sort((a, b) => cmpStr(a.customer, b.customer));
-    else if (sortBy === 'project_code') sorted.sort((a, b) => cmpStr(a.project_code, b.project_code));
-    else if (sortBy === 'revenue_desc') sorted.sort((a, b) => cmpNum(b[revenueField], a[revenueField]));
-    else if (sortBy === 'revenue_asc')  sorted.sort((a, b) => cmpNum(a[revenueField], b[revenueField]));
+    switch (sortBy) {
+        case 'project_code':
+            sorted.sort((a, b) => cmpStr(a.project_code, b.project_code)); break;
+        case 'project_code_desc':
+            sorted.sort((a, b) => cmpStr(b.project_code, a.project_code)); break;
+        case 'customer':
+            sorted.sort((a, b) => cmpStr(a.customer, b.customer) || tie(a, b)); break;
+        case 'customer_desc':
+            sorted.sort((a, b) => cmpStr(b.customer, a.customer) || tie(a, b)); break;
+        case 'status':
+            sorted.sort((a, b) => cmpStr(a.status, b.status) || tie(a, b)); break;
+        case 'revenue_desc':
+            sorted.sort((a, b) => cmpNum(b[revenueField], a[revenueField]) || tie(a, b)); break;
+        case 'revenue_asc':
+            sorted.sort((a, b) => cmpNum(a[revenueField], b[revenueField]) || tie(a, b)); break;
+        case 'rec_revenue_desc':
+            sorted.sort((a, b) => cmpNum(b.recognize_revenue, a.recognize_revenue) || tie(a, b)); break;
+        case 'rec_revenue_asc':
+            sorted.sort((a, b) => cmpNum(a.recognize_revenue, b.recognize_revenue) || tie(a, b)); break;
+        case 'rec_gm_desc':
+            sorted.sort((a, b) => cmpNum(b.recognize_gross_margin, a.recognize_gross_margin) || tie(a, b)); break;
+        case 'rec_gm_asc':
+            sorted.sort((a, b) => cmpNum(a.recognize_gross_margin, b.recognize_gross_margin) || tie(a, b)); break;
+    }
     return sorted;
 }
 

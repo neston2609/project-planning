@@ -2,6 +2,8 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 
 import Login            from './pages/Login';
+import Register         from './pages/Register';
+import VerifyEmail      from './pages/VerifyEmail';
 import ChangePassword   from './pages/ChangePassword';
 import Summary          from './pages/Summary';
 import SubscriptionDash from './pages/SubscriptionDashboard';
@@ -44,7 +46,9 @@ function RequireSuper({ children }) {
 export default function App() {
     return (
         <Routes>
-            <Route path="/login" element={<Login />} />
+            <Route path="/login"         element={<Login />} />
+            <Route path="/register"      element={<Register />} />
+            <Route path="/verify-email"  element={<VerifyEmail />} />
             <Route element={<RequireAuth><Layout /></RequireAuth>}>
                 <Route index element={<Summary />} />
                 <Route path="subscription"      element={<SubscriptionDash />} />

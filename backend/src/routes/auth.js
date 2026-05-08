@@ -1,10 +1,15 @@
 const express = require('express');
+const crypto  = require('crypto');
 const bcrypt  = require('bcrypt');
-const { body, validationResult } = require('express-validator');
+const { body, query, validationResult } = require('express-validator');
 const db = require('../db');
 const { signToken, requireAuth } = require('../middleware/auth');
+const { sendMail } = require('../utils/mailer');
 
 const router = express.Router();
+
+const ALLOWED_DOMAIN = '@mfec.co.th';
+const REG_TOKEN_TTL_HOURS = 24;
 
 router.post('/login',
     body('username').isString().notEmpty(),
@@ -70,6 +75,164 @@ router.post('/change-password',
             [hash, user.id]
         );
         res.json({ ok: true });
+    }
+);
+
+// ---------- Self-registration (email-verified) ----------
+//
+// 1) POST /auth/register   — creates a pending_registrations row + sends email
+// 2) GET  /auth/verify-email?token=...   — promotes pending row to a real user
+//
+// Only @mfec.co.th emails are allowed. New users are created with the
+// 'user' (view-only) role.
+
+function buildAppOrigin(req) {
+    // Prefer explicit env var if set; otherwise reconstruct from request headers.
+    if (process.env.APP_ORIGIN) return process.env.APP_ORIGIN.replace(/\/$/, '');
+    const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http').toString().split(',')[0];
+    const host  = (req.headers['x-forwarded-host']  || req.headers['host']).toString().split(',')[0];
+    return `${proto}://${host}`;
+}
+
+router.post('/register',
+    body('username').isString().trim().isLength({ min: 3, max: 64 })
+        .withMessage('Username must be 3–64 characters'),
+    body('password').isString().isLength({ min: 8 })
+        .withMessage('Password must be at least 8 characters'),
+    body('email').isEmail().withMessage('Valid email required')
+        .custom((v) => {
+            if (!String(v).toLowerCase().endsWith(ALLOWED_DOMAIN)) {
+                throw new Error(`Only ${ALLOWED_DOMAIN} email addresses can register`);
+            }
+            return true;
+        }),
+    body('full_name').optional().isString(),
+    body('phone_number').optional().isString(),
+    async (req, res) => {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ error: errs.array()[0].msg });
+
+        const username = String(req.body.username).trim();
+        const email    = String(req.body.email).trim().toLowerCase();
+        const password = String(req.body.password);
+        const fullName = String(req.body.full_name || '').trim();
+        const phone    = String(req.body.phone_number || '').trim();
+
+        try {
+            // Reject if already registered
+            const dup = await db.query(
+                `SELECT 1 FROM users WHERE username=$1 OR LOWER(email)=$2 LIMIT 1`,
+                [username, email]
+            );
+            if (dup.rowCount) {
+                return res.status(409).json({ error: 'A user with that username or email already exists' });
+            }
+
+            // Cleanup expired pending rows for this email/username
+            await db.query(`DELETE FROM pending_registrations WHERE expires_at < NOW()`);
+
+            const pendingDup = await db.query(
+                `SELECT 1 FROM pending_registrations
+                  WHERE username=$1 OR LOWER(email)=$2 LIMIT 1`,
+                [username, email]
+            );
+            if (pendingDup.rowCount) {
+                return res.status(409).json({ error: 'A pending registration already exists for that username or email. Check your inbox or wait for it to expire.' });
+            }
+
+            const passwordHash = await bcrypt.hash(password, 10);
+            const token = crypto.randomBytes(32).toString('hex');
+            const expiresAt = new Date(Date.now() + REG_TOKEN_TTL_HOURS * 3600 * 1000);
+
+            await db.query(
+                `INSERT INTO pending_registrations(username, email, password_hash, full_name, phone_number, token, expires_at)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+                [username, email, passwordHash, fullName, phone, token, expiresAt]
+            );
+
+            const link = `${buildAppOrigin(req)}/verify-email?token=${token}`;
+            try {
+                await sendMail({
+                    to: email,
+                    subject: 'RPA Planning · Confirm your registration',
+                    text:
+`Hi ${fullName || username},
+
+Welcome to RPA Planning. Click the link below within ${REG_TOKEN_TTL_HOURS} hours to confirm your email and activate your account:
+
+${link}
+
+If you didn't request this, just ignore this email — nothing will happen.
+`,
+                    html: `
+<p>Hi ${fullName || username},</p>
+<p>Welcome to <strong>RPA Planning</strong>. Click the button below within ${REG_TOKEN_TTL_HOURS} hours to confirm your email and activate your account:</p>
+<p><a href="${link}" style="display:inline-block;padding:10px 20px;background:#6366f1;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold">Confirm my email</a></p>
+<p style="font-size:12px;color:#64748b">If the button doesn't work, copy this link into your browser:<br/><code>${link}</code></p>
+<hr/>
+<p style="font-size:12px;color:#64748b">If you didn't request this, just ignore this email — nothing will happen.</p>`
+                });
+            } catch (err) {
+                // SMTP failure: roll back the pending row so the user can retry later.
+                await db.query(`DELETE FROM pending_registrations WHERE token=$1`, [token]);
+                console.error('[register] mail failure', err);
+                if (err.code === 'SMTP_NOT_CONFIGURED') {
+                    return res.status(503).json({ error: err.message });
+                }
+                return res.status(500).json({ error: 'Could not send confirmation email. Please try again later.' });
+            }
+
+            res.json({ ok: true, message: `A confirmation link has been sent to ${email}. Click it within ${REG_TOKEN_TTL_HOURS} hours to activate your account.` });
+        } catch (err) {
+            console.error('[register]', err);
+            res.status(500).json({ error: 'Registration failed' });
+        }
+    }
+);
+
+router.get('/verify-email',
+    query('token').isString().isLength({ min: 32, max: 128 }),
+    async (req, res) => {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ error: 'Invalid token' });
+
+        try {
+            const { rows } = await db.query(
+                `SELECT * FROM pending_registrations WHERE token=$1`, [req.query.token]
+            );
+            const pending = rows[0];
+            if (!pending) return res.status(400).json({ error: 'Invalid or already-used confirmation link' });
+            if (new Date(pending.expires_at) < new Date()) {
+                await db.query(`DELETE FROM pending_registrations WHERE id=$1`, [pending.id]);
+                return res.status(400).json({ error: 'This confirmation link has expired. Please register again.' });
+            }
+
+            // Final dup check before insert (someone may have signed up via admin in the meantime)
+            const dup = await db.query(
+                `SELECT 1 FROM users WHERE username=$1 OR LOWER(email)=LOWER($2) LIMIT 1`,
+                [pending.username, pending.email]
+            );
+            if (dup.rowCount) {
+                await db.query(`DELETE FROM pending_registrations WHERE id=$1`, [pending.id]);
+                return res.status(409).json({ error: 'This username or email was registered separately. Please log in.' });
+            }
+
+            await db.query(
+                `INSERT INTO users(username, password_hash, full_name, email, phone_number, role)
+                 VALUES ($1,$2,$3,$4,$5,'user')`,
+                [pending.username, pending.password_hash, pending.full_name, pending.email, pending.phone_number]
+            );
+            await db.query(`DELETE FROM pending_registrations WHERE id=$1`, [pending.id]);
+
+            res.json({
+                ok: true,
+                username: pending.username,
+                message: 'Your account has been activated. You can now log in.'
+            });
+        } catch (err) {
+            console.error('[verify-email]', err);
+            res.status(500).json({ error: 'Verification failed' });
+        }
     }
 );
 

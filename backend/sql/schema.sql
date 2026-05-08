@@ -20,6 +20,21 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+-- Self-registration: pending records waiting for email confirmation.
+-- A row becomes a real `users` row once the recipient clicks the verify link.
+CREATE TABLE IF NOT EXISTS pending_registrations (
+    id              SERIAL PRIMARY KEY,
+    username        VARCHAR(64)  NOT NULL,
+    email           VARCHAR(255) NOT NULL,
+    password_hash   VARCHAR(255) NOT NULL,
+    full_name       VARCHAR(255) NOT NULL DEFAULT '',
+    phone_number    VARCHAR(64)  NOT NULL DEFAULT '',
+    token           VARCHAR(128) NOT NULL UNIQUE,
+    expires_at      TIMESTAMP    NOT NULL,
+    created_at      TIMESTAMP    NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_pending_reg_email ON pending_registrations(email);
+
 CREATE TABLE IF NOT EXISTS login_logs (
     id              SERIAL PRIMARY KEY,
     username        VARCHAR(64)  NOT NULL,

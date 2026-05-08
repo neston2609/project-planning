@@ -1,5 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
+const nodemailer = require('nodemailer');
 const { body, param, validationResult } = require('express-validator');
 const db = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
@@ -126,6 +127,69 @@ router.get('/smtp', async (_req, res) => {
     // Hide password from responses
     res.json({ ...r, password: r.password ? '********' : '' });
 });
+
+router.post('/smtp/test',
+    body('recipient').isEmail().withMessage('Valid recipient email required'),
+    async (req, res) => {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ error: errs.array()[0].msg });
+
+        const { rows } = await db.query('SELECT * FROM smtp_config WHERE id=1');
+        const cfg = rows[0];
+        if (!cfg || !cfg.host) {
+            return res.status(400).json({ error: 'SMTP not configured. Please save settings first.' });
+        }
+        if (!cfg.username || !cfg.password) {
+            return res.status(400).json({ error: 'SMTP username/password missing. Save credentials first.' });
+        }
+
+        try {
+            const transporter = nodemailer.createTransport({
+                host: cfg.host,
+                port: Number(cfg.port) || 587,
+                secure: !!cfg.secure,
+                auth: { user: cfg.username, pass: cfg.password }
+            });
+
+            // verify() catches connection / auth issues before send
+            await transporter.verify();
+
+            const info = await transporter.sendMail({
+                from: `"${cfg.from_name || 'RPA Planning'}" <${cfg.from_email || cfg.username}>`,
+                to: req.body.recipient,
+                subject: 'RPA Planning · SMTP test',
+                text:
+`Hello,
+
+This is a test email sent from RPA Planning to verify your SMTP configuration.
+
+If you can read this, your SMTP settings work correctly.
+
+Sent at ${new Date().toISOString()}
+By: ${req.user?.username || 'unknown'}
+`,
+                html: `
+<p>Hello,</p>
+<p>This is a <strong>test email</strong> sent from RPA Planning to verify your SMTP configuration.</p>
+<p>If you can read this, your SMTP settings work correctly. ✅</p>
+<hr/>
+<p style="color:#64748b;font-size:12px">
+Sent at ${new Date().toISOString()}<br/>
+By: ${req.user?.username || 'unknown'}
+</p>`
+            });
+
+            res.json({ ok: true, messageId: info.messageId, accepted: info.accepted });
+        } catch (err) {
+            console.error('[smtp test]', err);
+            // nodemailer errors carry useful info — surface a tidy message
+            const msg = err.code
+                ? `${err.code}: ${err.message}`
+                : (err.message || 'SMTP test failed');
+            res.status(500).json({ error: msg });
+        }
+    }
+);
 
 router.put('/smtp', async (req, res) => {
     const b = req.body || {};
