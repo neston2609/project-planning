@@ -150,27 +150,10 @@ router.post('/register',
                 [username, email, passwordHash, fullName, phone, token, expiresAt]
             );
 
-            const link = `${buildAppOrigin(req)}/verify-email?token=${token}`;
             try {
-                await sendMail({
-                    to: email,
-                    subject: 'RPA Planning · Confirm your registration',
-                    text:
-`Hi ${fullName || username},
-
-Welcome to RPA Planning. Click the link below within ${REG_TOKEN_TTL_HOURS} hours to confirm your email and activate your account:
-
-${link}
-
-If you didn't request this, just ignore this email — nothing will happen.
-`,
-                    html: `
-<p>Hi ${fullName || username},</p>
-<p>Welcome to <strong>RPA Planning</strong>. Click the button below within ${REG_TOKEN_TTL_HOURS} hours to confirm your email and activate your account:</p>
-<p><a href="${link}" style="display:inline-block;padding:10px 20px;background:#6366f1;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold">Confirm my email</a></p>
-<p style="font-size:12px;color:#64748b">If the button doesn't work, copy this link into your browser:<br/><code>${link}</code></p>
-<hr/>
-<p style="font-size:12px;color:#64748b">If you didn't request this, just ignore this email — nothing will happen.</p>`
+                await sendVerificationEmail({
+                    to: email, fullName, username, token,
+                    origin: buildAppOrigin(req)
                 });
             } catch (err) {
                 // SMTP failure: roll back the pending row so the user can retry later.
@@ -186,6 +169,106 @@ If you didn't request this, just ignore this email — nothing will happen.
         } catch (err) {
             console.error('[register]', err);
             res.status(500).json({ error: 'Registration failed' });
+        }
+    }
+);
+
+// Send the confirmation email for a pending row. Used by both /register and
+// /resend-verification so the wording stays consistent.
+async function sendVerificationEmail({ to, fullName, username, token, origin }) {
+    const link = `${origin}/verify-email?token=${token}`;
+    await sendMail({
+        to,
+        subject: 'RPA Planning · Confirm your registration',
+        text:
+`Hi ${fullName || username},
+
+Welcome to RPA Planning. Click the link below within ${REG_TOKEN_TTL_HOURS} hours to confirm your email and activate your account:
+
+${link}
+
+If you didn't request this, just ignore this email — nothing will happen.
+`,
+        html: `
+<p>Hi ${fullName || username},</p>
+<p>Welcome to <strong>RPA Planning</strong>. Click the button below within ${REG_TOKEN_TTL_HOURS} hours to confirm your email and activate your account:</p>
+<p><a href="${link}" style="display:inline-block;padding:10px 20px;background:#6366f1;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold">Confirm my email</a></p>
+<p style="font-size:12px;color:#64748b">If the button doesn't work, copy this link into your browser:<br/><code>${link}</code></p>
+<hr/>
+<p style="font-size:12px;color:#64748b">If you didn't request this, just ignore this email — nothing will happen.</p>`
+    });
+}
+
+const RESEND_COOLDOWN_SEC = 60;
+
+router.post('/resend-verification',
+    body('email').isEmail().withMessage('Valid email required')
+        .custom((v) => {
+            if (!String(v).toLowerCase().endsWith(ALLOWED_DOMAIN)) {
+                throw new Error(`Only ${ALLOWED_DOMAIN} email addresses can register`);
+            }
+            return true;
+        }),
+    async (req, res) => {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ error: errs.array()[0].msg });
+
+        const email = String(req.body.email).trim().toLowerCase();
+
+        try {
+            // Already a real user? Tell them to log in.
+            const existing = await db.query(`SELECT 1 FROM users WHERE LOWER(email)=$1 LIMIT 1`, [email]);
+            if (existing.rowCount) {
+                return res.status(409).json({ error: 'This email is already activated. Please log in.' });
+            }
+
+            // Drop expired pendings, then find the pending row for this email.
+            await db.query(`DELETE FROM pending_registrations WHERE expires_at < NOW()`);
+            const { rows } = await db.query(
+                `SELECT * FROM pending_registrations WHERE LOWER(email)=$1 LIMIT 1`, [email]
+            );
+            const pending = rows[0];
+            if (!pending) {
+                return res.status(404).json({ error: 'No pending registration found for that email. Please register first.' });
+            }
+
+            // Rate limit
+            const ageSec = (Date.now() - new Date(pending.created_at).getTime()) / 1000;
+            if (ageSec < RESEND_COOLDOWN_SEC) {
+                const wait = Math.ceil(RESEND_COOLDOWN_SEC - ageSec);
+                return res.status(429).json({ error: `Please wait ${wait} seconds before requesting another email.` });
+            }
+
+            // Roll the token and refresh expiry, then send.
+            const newToken     = crypto.randomBytes(32).toString('hex');
+            const newExpiresAt = new Date(Date.now() + REG_TOKEN_TTL_HOURS * 3600 * 1000);
+            await db.query(
+                `UPDATE pending_registrations
+                    SET token=$1, expires_at=$2, created_at=NOW()
+                  WHERE id=$3`,
+                [newToken, newExpiresAt, pending.id]
+            );
+
+            try {
+                await sendVerificationEmail({
+                    to: pending.email,
+                    fullName: pending.full_name,
+                    username: pending.username,
+                    token: newToken,
+                    origin: buildAppOrigin(req)
+                });
+            } catch (err) {
+                console.error('[resend-verification] mail failure', err);
+                if (err.code === 'SMTP_NOT_CONFIGURED') {
+                    return res.status(503).json({ error: err.message });
+                }
+                return res.status(500).json({ error: 'Could not send confirmation email. Please try again later.' });
+            }
+
+            res.json({ ok: true, message: `A new confirmation link has been sent to ${pending.email}.` });
+        } catch (err) {
+            console.error('[resend-verification]', err);
+            res.status(500).json({ error: 'Resend failed' });
         }
     }
 );

@@ -9,10 +9,32 @@ const ALLOWED_DOMAIN = '@mfec.co.th';
 export default function Register() {
     const nav = useNavigate();
     const [f, setF] = useState({ username: '', password: '', confirm: '', email: '', full_name: '', phone_number: '' });
-    const [busy, setBusy]   = useState(false);
-    const [done, setDone]   = useState(null); // success message after registration
+    const [busy, setBusy]     = useState(false);
+    const [done, setDone]     = useState(null); // success message after registration
+    const [sentEmail, setSentEmail] = useState(''); // remember what email we sent to
+    const [resending, setResending] = useState(false);
+    const [cooldown, setCooldown]   = useState(0);
 
     function update(k) { return e => setF(s => ({ ...s, [k]: e.target.value })); }
+
+    async function resendNow() {
+        if (!sentEmail || cooldown > 0) return;
+        setResending(true);
+        try {
+            const r = await api.post('/auth/resend-verification', { email: sentEmail });
+            toast.success(r.data.message || `Confirmation re-sent to ${sentEmail}`);
+            // Disable the button for 60s
+            setCooldown(60);
+            const tick = setInterval(() => {
+                setCooldown(c => {
+                    if (c <= 1) { clearInterval(tick); return 0; }
+                    return c - 1;
+                });
+            }, 1000);
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Resend failed');
+        } finally { setResending(false); }
+    }
 
     async function submit(e) {
         e.preventDefault();
@@ -28,6 +50,7 @@ export default function Register() {
                 username: f.username, password: f.password, email: f.email,
                 full_name: f.full_name, phone_number: f.phone_number
             });
+            setSentEmail(f.email);
             setDone(r.data.message || `Confirmation email sent to ${f.email}.`);
         } catch (err) {
             toast.error(err.response?.data?.error || 'Registration failed');
@@ -47,6 +70,20 @@ export default function Register() {
                     <h1 className="text-xl font-bold text-slate-800">Check your inbox</h1>
                     <p className="text-sm text-slate-600">{done}</p>
                     <p className="text-xs text-slate-400">The link expires in 24 hours. Don't forget the spam folder.</p>
+
+                    <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-3 space-y-2">
+                        <p className="text-xs text-slate-600">Didn't receive it?</p>
+                        <button type="button" className="btn-ghost w-full justify-center"
+                                disabled={resending || cooldown > 0}
+                                onClick={resendNow}>
+                            {resending
+                                ? 'Sending…'
+                                : cooldown > 0
+                                    ? `Resend available in ${cooldown}s`
+                                    : 'Resend confirmation email'}
+                        </button>
+                    </div>
+
                     <button className="btn-primary w-full justify-center" onClick={() => nav('/login')}>
                         Back to login
                     </button>
