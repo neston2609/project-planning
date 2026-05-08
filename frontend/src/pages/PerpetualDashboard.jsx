@@ -4,14 +4,16 @@ import { useYear } from '../YearContext';
 import StatusPill from '../components/StatusPill';
 import DashboardHeader from '../components/DashboardHeader';
 import ProgressCell from '../components/ProgressCell';
-import { baht, formatDate, splitTotals } from '../format';
-import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
+import { baht, formatDate, splitTotals, applyFiltersAndSort } from '../format';
+import FilterBar from '../components/FilterBar';
 
 export default function PerpetualDashboard() {
     const { year } = useYear();
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
+    const [status, setStatus] = useState('all');
+    const [sortBy, setSortBy] = useState('project_code');
     const [typeFilter, setTypeFilter] = useState('All');
 
     useEffect(() => {
@@ -21,15 +23,14 @@ export default function PerpetualDashboard() {
             .finally(() => setLoading(false));
     }, [year]);
 
-    const filtered = useMemo(() => rows.filter(r => {
-        if (typeFilter !== 'All' && r.item_type !== typeFilter) return false;
-        if (!search) return true;
-        const q = search.toLowerCase();
-        return (r.project_code || '').toLowerCase().includes(q) ||
-               (r.description || '').toLowerCase().includes(q) ||
-               (r.customer || '').toLowerCase().includes(q) ||
-               (r.item_name || '').toLowerCase().includes(q);
-    }), [rows, search, typeFilter]);
+    const filtered = useMemo(() => {
+        const typed = typeFilter === 'All' ? rows : rows.filter(r => r.item_type === typeFilter);
+        return applyFiltersAndSort(typed, {
+            search, status, sortBy,
+            revenueField: 'revenue',
+            searchFields: ['project_code', 'description', 'customer', 'item_name']
+        });
+    }, [rows, search, status, sortBy, typeFilter]);
 
     const t = splitTotals(filtered, 'revenue');
 
@@ -45,11 +46,11 @@ export default function PerpetualDashboard() {
                     { label: 'Win · Rec. Gross Margin', value: t.winGm, accent: 'blue' }
                 ]} />
 
-            <div className="card p-3 flex items-center gap-3">
-                <MagnifyingGlassIcon className="w-5 h-5 text-slate-400" />
-                <input className="input !border-0 !bg-transparent !p-0 focus:!ring-0 flex-1"
-                    placeholder="Search code / description / customer / item name..."
-                    value={search} onChange={e => setSearch(e.target.value)} />
+            <FilterBar
+                search={search} onSearchChange={setSearch}
+                searchPlaceholder="Search code / description / customer / item name..."
+                status={status} onStatusChange={setStatus}
+                sortBy={sortBy} onSortByChange={setSortBy}>
                 <div className="flex bg-slate-100 rounded-lg p-1 text-xs">
                     {['All', 'License', 'MA'].map(t => (
                         <button key={t} onClick={() => setTypeFilter(t)}
@@ -60,7 +61,7 @@ export default function PerpetualDashboard() {
                         </button>
                     ))}
                 </div>
-            </div>
+            </FilterBar>
 
             <div className="card overflow-x-auto">
                 <table className="table-clean">

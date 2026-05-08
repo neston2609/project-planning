@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import Modal from '../../components/Modal';
-import { PencilSquareIcon, TrashIcon, PlusIcon } from '@heroicons/react/24/outline';
+import { PencilSquareIcon, TrashIcon, PlusIcon, PhotoIcon, ArrowUpTrayIcon } from '@heroicons/react/24/outline';
 
 export default function Customers() {
     const [list, setList] = useState([]);
@@ -14,7 +14,7 @@ export default function Customers() {
     async function save(f) {
         try {
             if (f.id) await api.put(`/customers/${f.id}`, f);
-            else await api.post('/customers', f);
+            else      await api.post('/customers', f);
             toast.success('Saved'); setEdit(null); load();
         } catch (err) { toast.error(err.response?.data?.error || 'Save failed'); }
     }
@@ -27,15 +27,24 @@ export default function Customers() {
     return (
         <div className="space-y-4">
             <div className="flex items-center"><h1 className="text-2xl font-bold">Customers</h1>
-                <button className="btn-primary ml-auto" onClick={() => setEdit({ alias: '', full_name: '', contact_name: '', contact_email: '', contact_phone: '', color_hex: '#3b82f6' })}>
+                <button className="btn-primary ml-auto" onClick={() => setEdit({ alias: '', full_name: '', contact_name: '', contact_email: '', contact_phone: '', color_hex: '#3b82f6', logo_data: null })}>
                     <PlusIcon className="w-4 h-4" /> Add</button>
             </div>
             <div className="card overflow-x-auto">
                 <table className="table-clean">
-                    <thead><tr><th>Alias</th><th>Full Name</th><th>Contact</th><th>Email</th><th>Phone</th><th>Color</th><th></th></tr></thead>
+                    <thead><tr><th>Logo</th><th>Alias</th><th>Full Name</th><th>Contact</th><th>Email</th><th>Phone</th><th>Color</th><th></th></tr></thead>
                     <tbody>
                         {list.map(c => (
                             <tr key={c.id}>
+                                <td>
+                                    {c.logo_data
+                                        ? <img src={c.logo_data} alt={c.alias}
+                                               className="w-10 h-10 rounded-lg object-contain border border-slate-200 bg-white" />
+                                        : <div className="w-10 h-10 rounded-lg flex items-center justify-center text-xs font-bold text-white"
+                                               style={{ backgroundColor: c.color_hex }}>
+                                              {(c.alias || '').slice(0, 2).toUpperCase()}
+                                          </div>}
+                                </td>
                                 <td className="font-medium">{c.alias}</td>
                                 <td>{c.full_name}</td>
                                 <td>{c.contact_name}</td>
@@ -48,7 +57,7 @@ export default function Customers() {
                                 </td>
                             </tr>
                         ))}
-                        {list.length === 0 && <tr><td colSpan={7} className="text-center text-slate-400 py-6">No customers.</td></tr>}
+                        {list.length === 0 && <tr><td colSpan={8} className="text-center text-slate-400 py-6">No customers.</td></tr>}
                     </tbody>
                 </table>
             </div>
@@ -59,10 +68,61 @@ export default function Customers() {
 
 function CustomerForm({ initial, onClose, onSave }) {
     const [f, setF] = useState({ ...initial });
+    const fileRef = useRef(null);
+
+    function pickLogo() { fileRef.current?.click(); }
+
+    function onLogoChange(e) {
+        const file = e.target.files?.[0];
+        e.target.value = '';   // allow re-selecting same file later
+        if (!file) return;
+        if (!file.type.startsWith('image/')) {
+            return toast.error('Please choose an image file (PNG, JPG, SVG, etc.)');
+        }
+        // 2 MB cap on the raw file. After base64 it's ~2.7 MB, well below the
+        // backend's 10 MB validator and the express body limit.
+        if (file.size > 2 * 1024 * 1024) {
+            return toast.error('Image must be 2 MB or smaller');
+        }
+        const reader = new FileReader();
+        reader.onload = () => setF(s => ({ ...s, logo_data: String(reader.result) }));
+        reader.onerror = () => toast.error('Could not read file');
+        reader.readAsDataURL(file);
+    }
+
+    function clearLogo() {
+        setF(s => ({ ...s, logo_data: null }));
+    }
+
     return (
         <Modal open onClose={onClose} title={f.id ? `Edit Customer — ${f.alias}` : 'New Customer'}
                footer={<><button className="btn-ghost" onClick={onClose}>Cancel</button><button className="btn-primary" onClick={() => onSave(f)}>Save</button></>}>
             <div className="grid grid-cols-2 gap-3">
+                {/* ---------- Logo uploader ---------- */}
+                <div className="col-span-2">
+                    <label className="label">Logo</label>
+                    <div className="flex items-center gap-4 p-3 rounded-lg border border-slate-200 bg-gradient-to-br from-indigo-50/40 to-pink-50/40">
+                        <div className="w-20 h-20 rounded-lg flex items-center justify-center bg-white border border-slate-200 overflow-hidden">
+                            {f.logo_data
+                                ? <img src={f.logo_data} alt="logo" className="w-full h-full object-contain" />
+                                : <PhotoIcon className="w-10 h-10 text-slate-300" />}
+                        </div>
+                        <div className="flex-1 space-y-2">
+                            <button type="button" className="btn-ghost" onClick={pickLogo}>
+                                <ArrowUpTrayIcon className="w-4 h-4" /> {f.logo_data ? 'Replace logo' : 'Upload logo'}
+                            </button>
+                            {f.logo_data && (
+                                <button type="button" className="btn-ghost ml-2" onClick={clearLogo}>
+                                    <TrashIcon className="w-4 h-4 text-red-500" /> Remove
+                                </button>
+                            )}
+                            <p className="text-xs text-slate-500">PNG, JPG, or SVG · max 2 MB. Square images look best.</p>
+                            <input ref={fileRef} type="file" accept="image/*"
+                                className="hidden" onChange={onLogoChange} />
+                        </div>
+                    </div>
+                </div>
+
                 <div><label className="label">Alias *</label><input className="input" value={f.alias} onChange={e => setF({ ...f, alias: e.target.value })} /></div>
                 <div><label className="label">Color (hex)</label><input className="input" value={f.color_hex} onChange={e => setF({ ...f, color_hex: e.target.value })} /></div>
                 <div className="col-span-2"><label className="label">Full Name</label><input className="input" value={f.full_name} onChange={e => setF({ ...f, full_name: e.target.value })} /></div>

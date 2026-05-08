@@ -4,14 +4,16 @@ import { useYear } from '../YearContext';
 import StatusPill from '../components/StatusPill';
 import DashboardHeader from '../components/DashboardHeader';
 import ProgressCell from '../components/ProgressCell';
-import { baht, formatDate, splitTotals } from '../format';
-import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
+import { baht, formatDate, splitTotals, applyFiltersAndSort } from '../format';
+import FilterBar from '../components/FilterBar';
 
 export default function SubscriptionDashboard() {
     const { year } = useYear();
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
+    const [status, setStatus] = useState('all');
+    const [sortBy, setSortBy] = useState('project_code');
 
     useEffect(() => {
         setLoading(true);
@@ -20,14 +22,11 @@ export default function SubscriptionDashboard() {
             .finally(() => setLoading(false));
     }, [year]);
 
-    const filtered = useMemo(() => rows.filter(r => {
-        if (!search) return true;
-        const q = search.toLowerCase();
-        return (r.project_code || '').toLowerCase().includes(q) ||
-               (r.description || '').toLowerCase().includes(q) ||
-               (r.customer || '').toLowerCase().includes(q) ||
-               (r.license_name || '').toLowerCase().includes(q);
-    }), [rows, search]);
+    const filtered = useMemo(() => applyFiltersAndSort(rows, {
+        search, status, sortBy,
+        revenueField: 'license_revenue',
+        searchFields: ['project_code', 'description', 'customer', 'license_name']
+    }), [rows, search, status, sortBy]);
 
     const t = splitTotals(filtered, 'license_revenue');
 
@@ -43,12 +42,11 @@ export default function SubscriptionDashboard() {
                     { label: 'Win · Rec. Gross Margin', value: t.winGm, accent: 'blue' }
                 ]} />
 
-            <div className="card p-3 flex items-center gap-2">
-                <MagnifyingGlassIcon className="w-5 h-5 text-slate-400" />
-                <input className="input !border-0 !bg-transparent !p-0 focus:!ring-0"
-                    placeholder="Search by code, description, customer, license name..."
-                    value={search} onChange={e => setSearch(e.target.value)} />
-            </div>
+            <FilterBar
+                search={search} onSearchChange={setSearch}
+                searchPlaceholder="Search by code / description / customer / license name..."
+                status={status} onStatusChange={setStatus}
+                sortBy={sortBy} onSortByChange={setSortBy} />
 
             <div className="card overflow-x-auto">
                 <table className="table-clean">

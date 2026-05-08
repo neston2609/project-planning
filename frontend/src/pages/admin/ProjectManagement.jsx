@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import { useYear } from '../../YearContext';
 import StatusPill from '../../components/StatusPill';
 import Modal from '../../components/Modal';
 import { baht, formatDate } from '../../format';
-import { PencilSquareIcon, TrashIcon, PlusIcon } from '@heroicons/react/24/outline';
+import { PencilSquareIcon, TrashIcon, PlusIcon, MagnifyingGlassIcon, FunnelIcon, ArrowsUpDownIcon } from '@heroicons/react/24/outline';
 
 export default function ProjectManagement() {
     const { year } = useYear();
@@ -14,6 +14,8 @@ export default function ProjectManagement() {
     const [editing, setEditing] = useState(null); // project being edited
     const [creating, setCreating] = useState(false);
     const [search, setSearch] = useState('');
+    const [statusFilter, setStatusFilter] = useState('all');
+    const [sortBy, setSortBy] = useState('project_code_asc');
 
     async function load() {
         const [p, c] = await Promise.all([api.get('/projects'), api.get('/customers')]);
@@ -33,13 +35,41 @@ export default function ProjectManagement() {
         load();
     }
 
-    const filtered = list.filter(p => {
-        if (!search) return true;
-        const q = search.toLowerCase();
-        return p.project_code.toLowerCase().includes(q) ||
-               (p.description || '').toLowerCase().includes(q) ||
-               (p.customer_alias || '').toLowerCase().includes(q);
-    });
+    const filtered = useMemo(() => {
+        let out = list;
+        if (statusFilter !== 'all') {
+            if (statusFilter === 'Win') out = out.filter(p => p.status === 'Win' || p.status === 'Backlog');
+            else                        out = out.filter(p => p.status === statusFilter);
+        }
+        if (search) {
+            const q = search.toLowerCase();
+            out = out.filter(p =>
+                (p.project_code || '').toLowerCase().includes(q) ||
+                (p.description || '').toLowerCase().includes(q) ||
+                (p.customer_alias || '').toLowerCase().includes(q)
+            );
+        }
+        const cmpStr = (a, b) => (a || '').localeCompare(b || '');
+        const cmpDate = (a, b) => {
+            const da = a ? new Date(a).getTime() : 0;
+            const db = b ? new Date(b).getTime() : 0;
+            return da - db;
+        };
+        const sorted = [...out];
+        switch (sortBy) {
+            case 'project_code_asc':  sorted.sort((a, b) => cmpStr(a.project_code, b.project_code)); break;
+            case 'project_code_desc': sorted.sort((a, b) => cmpStr(b.project_code, a.project_code)); break;
+            case 'customer_asc':      sorted.sort((a, b) => cmpStr(a.customer_alias, b.customer_alias) ||
+                                                            cmpStr(a.project_code, b.project_code)); break;
+            case 'status':            sorted.sort((a, b) => cmpStr(a.status, b.status) ||
+                                                            cmpStr(a.project_code, b.project_code)); break;
+            case 'start_date_asc':    sorted.sort((a, b) => cmpDate(a.project_start_date, b.project_start_date)); break;
+            case 'start_date_desc':   sorted.sort((a, b) => cmpDate(b.project_start_date, a.project_start_date)); break;
+            case 'end_date_asc':      sorted.sort((a, b) => cmpDate(a.project_end_date, b.project_end_date)); break;
+            case 'end_date_desc':     sorted.sort((a, b) => cmpDate(b.project_end_date, a.project_end_date)); break;
+        }
+        return sorted;
+    }, [list, search, statusFilter, sortBy]);
 
     return (
         <div className="space-y-4">
@@ -50,8 +80,37 @@ export default function ProjectManagement() {
                 </button>
             </div>
 
-            <div className="card p-3">
-                <input className="input" placeholder="Search code / description / customer..." value={search} onChange={e => setSearch(e.target.value)} />
+            <div className="card p-3 flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2 flex-1 min-w-[240px]">
+                    <MagnifyingGlassIcon className="w-5 h-5 text-slate-400" />
+                    <input className="input !border-0 !bg-transparent !p-0 focus:!ring-0 flex-1"
+                        placeholder="Search code / description / customer..."
+                        value={search} onChange={e => setSearch(e.target.value)} />
+                </div>
+                <div className="flex items-center gap-1.5">
+                    <FunnelIcon className="w-4 h-4 text-indigo-500" />
+                    <select className="input !w-auto !py-1.5 font-medium"
+                            value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+                        <option value="all">All Status</option>
+                        <option value="Win">Win / Backlog</option>
+                        <option value="Pipeline">Pipeline</option>
+                        <option value="Loss">Loss</option>
+                    </select>
+                </div>
+                <div className="flex items-center gap-1.5">
+                    <ArrowsUpDownIcon className="w-4 h-4 text-indigo-500" />
+                    <select className="input !w-auto !py-1.5 font-medium"
+                            value={sortBy} onChange={e => setSortBy(e.target.value)}>
+                        <option value="project_code_asc">Project Code (A → Z)</option>
+                        <option value="project_code_desc">Project Code (Z → A)</option>
+                        <option value="customer_asc">Customer (A → Z)</option>
+                        <option value="status">Status</option>
+                        <option value="start_date_desc">Start Date (newest first)</option>
+                        <option value="start_date_asc">Start Date (oldest first)</option>
+                        <option value="end_date_desc">End Date (newest first)</option>
+                        <option value="end_date_asc">End Date (oldest first)</option>
+                    </select>
+                </div>
             </div>
 
             <div className="card overflow-x-auto">

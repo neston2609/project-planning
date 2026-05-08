@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS customers (
     contact_email       VARCHAR(255) NOT NULL DEFAULT '',
     contact_phone       VARCHAR(64)  NOT NULL DEFAULT '',
     color_hex           VARCHAR(7)   NOT NULL DEFAULT '#3b82f6',
+    logo_data           TEXT,            -- data URL (e.g. data:image/png;base64,...)
     created_at          TIMESTAMP    NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMP    NOT NULL DEFAULT NOW()
 );

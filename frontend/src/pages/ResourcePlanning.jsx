@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import api from '../api';
 import toast from 'react-hot-toast';
 import { useYear } from '../YearContext';
@@ -33,13 +33,21 @@ function buildWeeks(year) {
         if (end.getUTCFullYear() < year) {
             cur.setUTCDate(cur.getUTCDate() + 7); continue;
         }
+        // Pick the month for the band header. For year-boundary weeks,
+        // prefer the month that lies *inside* the selected year so we never
+        // show e.g. "Jan" hanging off the end of a December.
+        const startInYear = start.getUTCFullYear() === year;
+        const endInYear   = end.getUTCFullYear()   === year;
+        const month = startInYear && endInYear
+            ? end.getUTCMonth()
+            : (startInYear ? start.getUTCMonth() : end.getUTCMonth());
         weeks.push({
             weekIdx: idx++,
             startISO: start.toISOString().slice(0, 10),
             endISO:   end.toISOString().slice(0, 10),
             startMs:  start.getTime(),
             endMs:    end.getTime(),
-            month:    end.getUTCMonth()
+            month
         });
         if (idx > 53) break;
         cur.setUTCDate(cur.getUTCDate() + 7);
@@ -89,9 +97,32 @@ export default function ResourcePlanning() {
     const [assigns,   setAssigns]   = useState([]);
     const [loading, setLoading]     = useState(true);
     const [modal, setModal]         = useState(null);
+    const [viewMode, setViewMode]   = useState('all');   // 'all' | 'ongoing'
 
-    const weeks = useMemo(() => buildWeeks(year), [year]);
+    // Refs for the duplicated horizontal scrollbar (top + main).
+    const topScrollRef  = useRef(null);
+    const mainScrollRef = useRef(null);
+    const onTopScroll = (e) => {
+        const m = mainScrollRef.current;
+        if (m && m.scrollLeft !== e.target.scrollLeft) m.scrollLeft = e.target.scrollLeft;
+    };
+    const onMainScroll = (e) => {
+        const t = topScrollRef.current;
+        if (t && t.scrollLeft !== e.target.scrollLeft) t.scrollLeft = e.target.scrollLeft;
+    };
+
+    const allWeeks = useMemo(() => buildWeeks(year), [year]);
+    // When "ongoing" is selected, drop every week that ended before the start
+    // of the current calendar month.
+    const weeks = useMemo(() => {
+        if (viewMode === 'all') return allWeeks;
+        const now = new Date();
+        const monthStartMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+        return allWeeks.filter(w => w.endMs >= monthStartMs);
+    }, [allWeeks, viewMode]);
     const totalWidth = weeks.length * WEEK_W;
+    const visStartMs = weeks[0]?.startMs ?? 0;
+    const visEndMs   = weeks[weeks.length - 1]?.endMs ?? 0;
 
     async function reload() {
         setLoading(true);
@@ -195,17 +226,34 @@ export default function ResourcePlanning() {
 
     return (
         <div className="space-y-5">
-            <div className="flex items-end gap-3">
+            <div className="flex flex-wrap items-end gap-3">
                 <h1 className="text-3xl font-extrabold">
                     <span className="brand-mark">Resource Planning</span> · {year}
                 </h1>
                 {canEdit && <span className="text-xs text-slate-500">Click any row to add an assignment, or click an existing bar to edit.</span>}
+                <div className="ml-auto flex items-center gap-2">
+                    <label className="text-xs uppercase tracking-wider font-bold text-slate-500">View</label>
+                    <select className="input !w-auto !py-1.5 font-medium"
+                            value={viewMode} onChange={e => setViewMode(e.target.value)}>
+                        <option value="all">Show All</option>
+                        <option value="ongoing">Only On-Going Month</option>
+                    </select>
+                </div>
             </div>
 
             {loading ? (
                 <p className="text-slate-500 animate-pulse">Loading...</p>
             ) : (
-                <div className="card overflow-x-auto overflow-y-visible">
+                <>
+                {/* Top horizontal scrollbar — mirrors the gantt's scroll so users
+                    can swipe across the year without scrolling to the bottom. */}
+                <div ref={topScrollRef} onScroll={onTopScroll}
+                     className="overflow-x-auto overflow-y-hidden rounded-t-xl border border-slate-200/70 bg-white/60"
+                     style={{ height: 16 }}>
+                    <div style={{ width: RESOURCE_W + totalWidth, height: 1 }} />
+                </div>
+                <div ref={mainScrollRef} onScroll={onMainScroll}
+                     className="card !rounded-t-none overflow-x-auto overflow-y-hidden">
                     <div className="relative" style={{ minWidth: RESOURCE_W + totalWidth }}>
                         {/* Today vertical line — spans the full grid below the header */}
                         {todayLeft >= 0 && (
@@ -318,6 +366,10 @@ export default function ResourcePlanning() {
                                         {/* Bars per lane */}
                                         {lanes.map((lane, laneIdx) => (
                                             lane.map(a => {
+                                                // Skip bars entirely outside the visible week range
+                                                const aStart = new Date(a.start_date).getTime();
+                                                const aEnd   = new Date(a.end_date).getTime();
+                                                if (aEnd < visStartMs || aStart > visEndMs) return null;
                                                 const s = weekIndexFor(a.start_date, weeks);
                                                 const e = weekIndexFor(a.end_date, weeks);
                                                 if (s < 0 || e < 0) return null;
@@ -351,6 +403,7 @@ export default function ResourcePlanning() {
                         )}
                     </div>
                 </div>
+                </>
             )}
 
             {/* Edit / add modal */}

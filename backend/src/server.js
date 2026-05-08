@@ -30,7 +30,7 @@ app.use(cors({
     origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : '*',
     credentials: false
 }));
-app.use(express.json({ limit: '5mb' }));
+app.use(express.json({ limit: '15mb' }));   // raised to comfortably fit base64 logos
 app.use(morgan('tiny'));
 app.use(softAuth);
 
