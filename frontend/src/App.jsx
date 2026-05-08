@@ -10,6 +10,7 @@ import ImplementationDash from './pages/ImplementationDashboard';
 import ServiceMADash    from './pages/ServiceMADashboard';
 import OutsourceDash    from './pages/OutsourceDashboard';
 import ResourcePlanning from './pages/ResourcePlanning';
+import ResourceInformation from './pages/ResourceInformation';
 
 import ProjectManagement from './pages/admin/ProjectManagement';
 import Customers        from './pages/admin/Customers';
@@ -51,8 +52,9 @@ export default function App() {
                 <Route path="implementation"    element={<ImplementationDash />} />
                 <Route path="service-ma"        element={<ServiceMADash />} />
                 <Route path="outsource"         element={<OutsourceDash />} />
-                <Route path="resource-planning" element={<ResourcePlanning />} />
-                <Route path="change-password"   element={<ChangePassword />} />
+                <Route path="resource-planning"    element={<ResourcePlanning />} />
+                <Route path="resource-information" element={<ResourceInformation />} />
+                <Route path="change-password"      element={<ChangePassword />} />
 
                 <Route path="admin/projects"   element={<RequireAdmin><ProjectManagement /></RequireAdmin>} />
                 <Route path="admin/customers"  element={<RequireAdmin><Customers /></RequireAdmin>} />

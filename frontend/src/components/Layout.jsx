@@ -7,7 +7,8 @@ import {
     ChartPieIcon, RectangleStackIcon, CubeIcon, WrenchScrewdriverIcon,
     LifebuoyIcon, BriefcaseIcon, UserGroupIcon, BuildingOffice2Icon,
     UsersIcon, IdentificationIcon, CalendarDaysIcon, Cog6ToothIcon,
-    EnvelopeIcon, ShieldCheckIcon, DocumentTextIcon, UserCircleIcon
+    EnvelopeIcon, ShieldCheckIcon, DocumentTextIcon, UserCircleIcon,
+    UserIcon
 } from '@heroicons/react/24/outline';
 
 const mainNav = [
@@ -16,8 +17,9 @@ const mainNav = [
     { to: '/perpetual-ma',      label: 'Perpetual / SW MA', icon: CubeIcon },
     { to: '/implementation',    label: 'Implementation',    icon: WrenchScrewdriverIcon },
     { to: '/service-ma',        label: 'Service MA',        icon: LifebuoyIcon },
-    { to: '/outsource',         label: 'Outsource',         icon: BriefcaseIcon },
-    { to: '/resource-planning', label: 'Resource Planning', icon: UserGroupIcon }
+    { to: '/outsource',            label: 'Outsource',            icon: BriefcaseIcon },
+    { to: '/resource-planning',    label: 'Resource Planning',    icon: UserGroupIcon },
+    { to: '/resource-information', label: 'Resource Information', icon: UserIcon }
 ];
 
 const adminNav = [

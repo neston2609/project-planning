@@ -1,10 +1,17 @@
 import { MagnifyingGlassIcon, FunnelIcon, ArrowsUpDownIcon } from '@heroicons/react/24/outline';
 
 const SORT_OPTIONS = [
-    { value: 'project_code', label: 'Project Code (A → Z)' },
-    { value: 'customer',     label: 'Customer (A → Z)' },
-    { value: 'revenue_desc', label: 'Revenue High → Low' },
-    { value: 'revenue_asc',  label: 'Revenue Low → High' }
+    { value: 'project_code',      label: 'Project Code (A → Z)' },
+    { value: 'project_code_desc', label: 'Project Code (Z → A)' },
+    { value: 'customer',          label: 'Customer (A → Z)' },
+    { value: 'customer_desc',     label: 'Customer (Z → A)' },
+    { value: 'status',            label: 'Status' },
+    { value: 'revenue_desc',      label: 'Revenue High → Low' },
+    { value: 'revenue_asc',       label: 'Revenue Low → High' },
+    { value: 'rec_revenue_desc',  label: 'Recognized Revenue High → Low' },
+    { value: 'rec_revenue_asc',   label: 'Recognized Revenue Low → High' },
+    { value: 'rec_gm_desc',       label: 'Recognized GM High → Low' },
+    { value: 'rec_gm_asc',        label: 'Recognized GM Low → High' }
 ];
 
 const STATUS_OPTIONS = [
