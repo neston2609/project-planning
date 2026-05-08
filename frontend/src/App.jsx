@@ -20,16 +20,23 @@ import SmtpPage         from './pages/admin/Smtp';
 import UsersPage        from './pages/admin/Users';
 import LoginLogsPage    from './pages/admin/LoginLogs';
 
-import { useAuth, isAdmin, isSuperadmin } from './auth';
+import { useAuth, isAdmin, isSuperadmin, isAuthenticated } from './auth';
 
+function RequireAuth({ children }) {
+    const { user } = useAuth();
+    if (!isAuthenticated(user)) return <Navigate to="/login" replace />;
+    return children;
+}
 function RequireAdmin({ children }) {
     const { user } = useAuth();
-    if (!isAdmin(user)) return <Navigate to="/login" replace />;
+    if (!isAuthenticated(user)) return <Navigate to="/login" replace />;
+    if (!isAdmin(user))         return <Navigate to="/" replace />;
     return children;
 }
 function RequireSuper({ children }) {
     const { user } = useAuth();
-    if (!isSuperadmin(user)) return <Navigate to="/" replace />;
+    if (!isAuthenticated(user)) return <Navigate to="/login" replace />;
+    if (!isSuperadmin(user))    return <Navigate to="/" replace />;
     return children;
 }
 
@@ -37,7 +44,7 @@ export default function App() {
     return (
         <Routes>
             <Route path="/login" element={<Login />} />
-            <Route element={<Layout />}>
+            <Route element={<RequireAuth><Layout /></RequireAuth>}>
                 <Route index element={<Summary />} />
                 <Route path="subscription"      element={<SubscriptionDash />} />
                 <Route path="perpetual-ma"      element={<PerpetualDash />} />

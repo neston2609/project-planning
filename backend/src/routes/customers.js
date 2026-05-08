@@ -5,12 +5,12 @@ const { requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
 
-router.get('/', async (_req, res) => {
+router.get('/', requireAuth, async (_req, res) => {
     const { rows } = await db.query('SELECT * FROM customers ORDER BY alias');
     res.json(rows);
 });
 
-router.get('/:id', param('id').isInt(), async (req, res) => {
+router.get('/:id', requireAuth, param('id').isInt(), async (req, res) => {
     const { rows } = await db.query('SELECT * FROM customers WHERE id=$1', [req.params.id]);
     if (!rows[0]) return res.status(404).json({ error: 'Not found' });
     res.json(rows[0]);

@@ -43,7 +43,7 @@ async function loadProject(id) {
 }
 
 // ---------- list ----------
-router.get('/', async (_req, res) => {
+router.get('/', requireAuth, async (_req, res) => {
     const { rows } = await db.query(
         `SELECT p.*, c.alias AS customer_alias
            FROM projects p LEFT JOIN customers c ON c.id = p.customer_id
@@ -52,7 +52,7 @@ router.get('/', async (_req, res) => {
     res.json(rows);
 });
 
-router.get('/:id', param('id').isInt(), async (req, res) => {
+router.get('/:id', requireAuth, param('id').isInt(), async (req, res) => {
     const proj = await loadProject(req.params.id);
     if (!proj) return res.status(404).json({ error: 'Not found' });
     res.json(proj);

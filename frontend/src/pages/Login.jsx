@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth';
 import toast from 'react-hot-toast';
 import { ChartPieIcon } from '@heroicons/react/24/outline';
@@ -55,9 +55,6 @@ export default function Login() {
                 <button className="btn-primary w-full justify-center" disabled={busy}>
                     {busy ? 'Signing in...' : 'Sign in'}
                 </button>
-                <div className="text-center text-xs text-slate-500">
-                    <Link to="/" className="hover:text-indigo-600 transition-colors">← Continue as Guest</Link>
-                </div>
             </form>
         </div>
     );

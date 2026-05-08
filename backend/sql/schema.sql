@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
     full_name       VARCHAR(255) NOT NULL DEFAULT '',
     email           VARCHAR(255) NOT NULL DEFAULT '',
     phone_number    VARCHAR(64)  NOT NULL DEFAULT '',
-    role            VARCHAR(32)  NOT NULL CHECK (role IN ('admin', 'superadmin')),
+    role            VARCHAR(32)  NOT NULL CHECK (role IN ('user', 'admin', 'superadmin')),
     must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
     created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMP NOT NULL DEFAULT NOW()

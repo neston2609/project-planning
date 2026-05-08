@@ -5,12 +5,12 @@ const { requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
 
-router.get('/', async (_req, res) => {
+router.get('/', requireAuth, async (_req, res) => {
     const { rows } = await db.query('SELECT * FROM resources ORDER BY first_name, last_name');
     res.json(rows);
 });
 
-router.get('/:id', param('id').isInt(), async (req, res) => {
+router.get('/:id', requireAuth, param('id').isInt(), async (req, res) => {
     const { rows } = await db.query('SELECT * FROM resources WHERE id=$1', [req.params.id]);
     if (!rows[0]) return res.status(404).json({ error: 'Not found' });
     res.json(rows[0]);
@@ -65,7 +65,7 @@ router.delete('/:id', requireAuth, param('id').isInt(), async (req, res) => {
 });
 
 // --- Resource assignments (Gantt) ---
-router.get('/assignments/all', async (req, res) => {
+router.get('/assignments/all', requireAuth, async (req, res) => {
     const year = Number(req.query.year) || new Date().getUTCFullYear();
     const yearStart = `${year}-01-01`;
     const yearEnd   = `${year}-12-31`;

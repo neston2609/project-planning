@@ -39,5 +39,11 @@ export function AuthProvider({ children }) {
 }
 
 export const useAuth = () => useContext(AuthCtx);
-export const isAdmin = (u) => u && (u.role === 'admin' || u.role === 'superadmin');
-export const isSuperadmin = (u) => u && u.role === 'superadmin';
+export const isAdmin       = (u) => u && (u.role === 'admin' || u.role === 'superadmin');
+export const isSuperadmin  = (u) => u && u.role === 'superadmin';
+export const isAuthenticated = (u) => !!u;
+export const roleLabel = (role) => ({
+    user: 'User (View only)',
+    admin: 'Admin',
+    superadmin: 'Superadmin'
+}[role] || role || '');

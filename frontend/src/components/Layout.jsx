@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavLink, Outlet, Link, useNavigate } from 'react-router-dom';
-import { useAuth, isAdmin, isSuperadmin } from '../auth';
+import { useAuth, isAdmin, isSuperadmin, roleLabel } from '../auth';
 import { useYear } from '../YearContext';
 import {
     ArrowLeftOnRectangleIcon, KeyIcon, Bars3Icon, XMarkIcon,
@@ -101,7 +101,7 @@ export default function Layout() {
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <div className="text-sm font-semibold truncate">{user.full_name || user.username}</div>
-                                    <div className="text-[10px] uppercase tracking-wider text-slate-500">{user.role}</div>
+                                    <div className="text-[10px] uppercase tracking-wider text-slate-500">{roleLabel(user.role)}</div>
                                 </div>
                             </div>
                             <div className="mt-2 flex gap-1">
@@ -135,8 +135,7 @@ export default function Layout() {
                             <Bars3Icon className="w-6 h-6" />
                         </button>
                         <div className="text-sm text-slate-500 hidden sm:block">
-                            {user ? <>Signed in as <span className="font-semibold text-slate-700">{user.username}</span></>
-                                  : <span>Guest — view-only</span>}
+                            {user && <>Signed in as <span className="font-semibold text-slate-700">{user.username}</span> · {roleLabel(user.role)}</>}
                         </div>
                         <div className="ml-auto flex items-center gap-2">
                             <CalendarDaysIcon className="w-5 h-5 text-indigo-500" />

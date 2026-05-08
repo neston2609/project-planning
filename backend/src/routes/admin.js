@@ -19,7 +19,7 @@ router.get('/users', requireRole('superadmin'), async (_req, res) => {
 router.post('/users', requireRole('superadmin'),
     body('username').isString().isLength({ min: 1, max: 64 }),
     body('password').isString().isLength({ min: 8 }),
-    body('role').isIn(['admin','superadmin']),
+    body('role').isIn(['user','admin','superadmin']),
     async (req, res) => {
         const errs = validationResult(req);
         if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });

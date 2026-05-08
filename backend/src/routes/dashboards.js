@@ -1,11 +1,14 @@
 const express = require('express');
 const db = require('../db');
+const { requireAuth } = require('../middleware/auth');
 const {
     recognizeSubscription, recognizePerpetualMA, recognizeServiceMA,
     recognizeImplementation, recognizeOutsource
 } = require('../utils/revenue');
 
 const router = express.Router();
+// All dashboard endpoints require any logged-in user (user/admin/superadmin).
+router.use(requireAuth);
 
 function pickYear(req) {
     const y = Number(req.query.year);
