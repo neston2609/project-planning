@@ -150,6 +150,16 @@ export default function ResourcePlanning() {
         return out;
     }, [resources, assigns]);
 
+    // Counts by role for the summary chips at the top
+    const roleCounts = useMemo(() => {
+        const m = new Map();
+        for (const r of resources) {
+            const role = (r.role || '').trim() || 'No Role';
+            m.set(role, (m.get(role) || 0) + 1);
+        }
+        return Array.from(m.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    }, [resources]);
+
     // "Today" indicator
     const todayIdx = useMemo(() => {
         const today = new Date();
@@ -240,6 +250,25 @@ export default function ResourcePlanning() {
                     </select>
                 </div>
             </div>
+
+            {/* Role count chips */}
+            {resources.length > 0 && (
+                <div className="card p-3 flex flex-wrap items-center gap-2">
+                    <span className="text-xs uppercase tracking-wider font-bold text-slate-500 mr-1">By Role</span>
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-white text-sm font-semibold shadow"
+                          style={{ backgroundImage: 'var(--grad-brand)' }}>
+                        <span className="text-base font-extrabold">{resources.length}</span>
+                        <span className="opacity-90">Total</span>
+                    </span>
+                    {roleCounts.map(([role, count]) => (
+                        <span key={role}
+                              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white border border-slate-200 text-sm hover:border-indigo-300 hover:shadow-sm transition">
+                            <span className="font-bold text-indigo-700 tabular-nums">{count}</span>
+                            <span className="text-slate-600">{role}</span>
+                        </span>
+                    ))}
+                </div>
+            )}
 
             {loading ? (
                 <p className="text-slate-500 animate-pulse">Loading...</p>

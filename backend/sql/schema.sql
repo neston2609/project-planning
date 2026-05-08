@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS resources (
     email           VARCHAR(255) NOT NULL DEFAULT '',
     erp_username    VARCHAR(128) NOT NULL DEFAULT '',
     skill           TEXT         NOT NULL DEFAULT '',
+    picture_data    TEXT,             -- data URL (e.g. data:image/png;base64,...)
     created_at      TIMESTAMP    NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMP    NOT NULL DEFAULT NOW()
 );

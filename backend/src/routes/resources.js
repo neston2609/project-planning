@@ -24,7 +24,14 @@ const resourceValidators = [
     body('role').optional().isString(),
     body('email').optional().isString(),
     body('erp_username').optional().isString(),
-    body('skill').optional().isString()
+    body('skill').optional().isString(),
+    body('picture_data').optional({ nullable: true }).custom((v) => {
+        if (v === null || v === '') return true;
+        if (typeof v !== 'string') throw new Error('picture_data must be a string or null');
+        if (!v.startsWith('data:image/')) throw new Error('picture_data must be a data:image/* URL');
+        if (v.length > 10 * 1024 * 1024) throw new Error('picture_data exceeds 10MB');
+        return true;
+    })
 ];
 
 router.post('/', requireAuth, resourceValidators, async (req, res) => {
@@ -33,10 +40,11 @@ router.post('/', requireAuth, resourceValidators, async (req, res) => {
     const b = req.body;
     try {
         const { rows } = await db.query(
-            `INSERT INTO resources(emp_id, first_name, last_name, nick_name, role, email, erp_username, skill)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+            `INSERT INTO resources(emp_id, first_name, last_name, nick_name, role, email, erp_username, skill, picture_data)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
             [b.emp_id || null, b.first_name || '', b.last_name || '', b.nick_name || '',
-             b.role || '', b.email || '', b.erp_username || '', b.skill || '']
+             b.role || '', b.email || '', b.erp_username || '', b.skill || '',
+             b.picture_data || null]
         );
         res.status(201).json(rows[0]);
     } catch (err) {
@@ -47,12 +55,19 @@ router.post('/', requireAuth, resourceValidators, async (req, res) => {
 
 router.put('/:id', requireAuth, param('id').isInt(), resourceValidators, async (req, res) => {
     const b = req.body;
+    // picture_data semantics: undefined → keep, null/empty → clear, string → replace.
+    const newPic = (b.picture_data === undefined) ? '__KEEP__' : (b.picture_data || null);
     const { rows } = await db.query(
         `UPDATE resources SET emp_id=$1, first_name=$2, last_name=$3, nick_name=$4,
-                              role=$5, email=$6, erp_username=$7, skill=$8
-         WHERE id=$9 RETURNING *`,
+                              role=$5, email=$6, erp_username=$7, skill=$8,
+                              picture_data = CASE WHEN $9::text = '__KEEP__' THEN picture_data
+                                                  ELSE NULLIF($10::text, '__NULL__') END
+         WHERE id=$11 RETURNING *`,
         [b.emp_id || null, b.first_name || '', b.last_name || '', b.nick_name || '',
-         b.role || '', b.email || '', b.erp_username || '', b.skill || '', req.params.id]
+         b.role || '', b.email || '', b.erp_username || '', b.skill || '',
+         newPic === '__KEEP__' ? '__KEEP__' : 'replace',
+         newPic === '__KEEP__' ? null : (newPic === null ? '__NULL__' : newPic),
+         req.params.id]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Not found' });
     res.json(rows[0]);
