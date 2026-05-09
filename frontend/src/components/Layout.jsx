@@ -6,6 +6,7 @@ import {
     ArrowLeftOnRectangleIcon, KeyIcon, Bars3Icon, XMarkIcon,
     ChartPieIcon, RectangleStackIcon, CubeIcon, WrenchScrewdriverIcon,
     LifebuoyIcon, BriefcaseIcon, UserGroupIcon, BuildingOffice2Icon,
+    BuildingOfficeIcon,
     UsersIcon, IdentificationIcon, CalendarDaysIcon, Cog6ToothIcon,
     EnvelopeIcon, ShieldCheckIcon, DocumentTextIcon, UserCircleIcon,
     UserIcon
@@ -19,7 +20,8 @@ const mainNav = [
     { to: '/service-ma',        label: 'Service MA',        icon: LifebuoyIcon },
     { to: '/outsource',            label: 'Outsource',            icon: BriefcaseIcon },
     { to: '/resource-planning',    label: 'Resource Planning',    icon: UserGroupIcon },
-    { to: '/resource-information', label: 'Resource Information', icon: UserIcon }
+    { to: '/resource-information', label: 'Resource Information', icon: UserIcon },
+    { to: '/customer-information', label: 'Customer Information', icon: BuildingOfficeIcon }
 ];
 
 const adminNav = [

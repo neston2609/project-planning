@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import Modal from '../../components/Modal';
+import HoverImage from '../../components/HoverImage';
 import { PencilSquareIcon, TrashIcon, PlusIcon, PhotoIcon, ArrowUpTrayIcon } from '@heroicons/react/24/outline';
 
 export default function Customers() {
@@ -37,13 +38,15 @@ export default function Customers() {
                         {list.map(c => (
                             <tr key={c.id}>
                                 <td>
-                                    {c.logo_data
-                                        ? <img src={c.logo_data} alt={c.alias}
-                                               className="w-10 h-10 rounded-lg object-contain border border-slate-200 bg-white" />
-                                        : <div className="w-10 h-10 rounded-lg flex items-center justify-center text-xs font-bold text-white"
-                                               style={{ backgroundColor: c.color_hex }}>
-                                              {(c.alias || '').slice(0, 2).toUpperCase()}
-                                          </div>}
+                                    <HoverImage previewSrc={c.logo_data} previewAlt={c.alias} previewSize={320}>
+                                        {c.logo_data
+                                            ? <img src={c.logo_data} alt={c.alias}
+                                                   className="w-10 h-10 rounded-lg object-contain border border-slate-200 bg-white" />
+                                            : <div className="w-10 h-10 rounded-lg flex items-center justify-center text-xs font-bold text-white"
+                                                   style={{ backgroundColor: c.color_hex }}>
+                                                  {(c.alias || '').slice(0, 2).toUpperCase()}
+                                              </div>}
+                                    </HoverImage>
                                 </td>
                                 <td className="font-medium">{c.alias}</td>
                                 <td>{c.full_name}</td>

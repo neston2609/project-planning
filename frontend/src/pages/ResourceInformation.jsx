@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import api from '../api';
+import HoverImage from '../components/HoverImage';
 import {
     UserCircleIcon, MagnifyingGlassIcon, FunnelIcon,
     EnvelopeIcon, IdentificationIcon, BriefcaseIcon
@@ -9,7 +10,19 @@ export default function ResourceInformation() {
     const [list, setList]       = useState([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch]   = useState('');
-    const [roleFilter, setRoleFilter] = useState('all');
+    // Multi-select role filter. Empty Set ⇒ "all roles" (no filtering).
+    // Members may be a role name (e.g. "Developer") or the sentinel
+    // '__none__' which represents resources with a blank role.
+    const [roleFilter, setRoleFilter] = useState(() => new Set());
+
+    function toggleRole(value) {
+        setRoleFilter(prev => {
+            const next = new Set(prev);
+            if (next.has(value)) next.delete(value); else next.add(value);
+            return next;
+        });
+    }
+    function clearRoles() { setRoleFilter(new Set()); }
 
     useEffect(() => {
         setLoading(true);
@@ -26,9 +39,11 @@ export default function ResourceInformation() {
 
     const filtered = useMemo(() => {
         let out = list;
-        if (roleFilter !== 'all') {
-            if (roleFilter === '__none__') out = out.filter(r => !(r.role || '').trim());
-            else                            out = out.filter(r => r.role === roleFilter);
+        if (roleFilter.size > 0) {
+            out = out.filter(r => {
+                const role = (r.role || '').trim();
+                return role ? roleFilter.has(role) : roleFilter.has('__none__');
+            });
         }
         if (search) {
             const q = search.toLowerCase();
@@ -70,10 +85,10 @@ export default function ResourceInformation() {
                 <div className="card p-3 flex flex-wrap items-center gap-2">
                     <span className="text-xs uppercase tracking-wider font-bold text-slate-500 mr-1">By Role</span>
 
-                    {/* Total resets to all */}
-                    <button type="button" onClick={() => setRoleFilter('all')}
+                    {/* Total clears the filter (selecting nothing = all) */}
+                    <button type="button" onClick={clearRoles}
                             className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-semibold shadow transition ${
-                                roleFilter === 'all'
+                                roleFilter.size === 0
                                     ? 'text-white ring-2 ring-offset-2 ring-indigo-400'
                                     : 'text-white hover:brightness-110'
                             }`}
@@ -85,10 +100,10 @@ export default function ResourceInformation() {
                     {roleCounts.map(([role, count]) => {
                         // The chip labeled "No Role" maps to the special filter value '__none__'.
                         const filterValue = role === 'No Role' ? '__none__' : role;
-                        const active = roleFilter === filterValue;
+                        const active = roleFilter.has(filterValue);
                         return (
                             <button key={role} type="button"
-                                onClick={() => setRoleFilter(active ? 'all' : filterValue)}
+                                onClick={() => toggleRole(filterValue)}
                                 className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm transition ${
                                     active
                                         ? 'bg-indigo-600 text-white border border-indigo-600 shadow ring-2 ring-offset-2 ring-indigo-300'
@@ -113,11 +128,22 @@ export default function ResourceInformation() {
                 <div className="flex items-center gap-1.5">
                     <FunnelIcon className="w-4 h-4 text-indigo-500" />
                     <select className="input !w-auto !py-1.5 font-medium"
-                            value={roleFilter} onChange={e => setRoleFilter(e.target.value)}>
-                        <option value="all">All Roles</option>
-                        {roles.map(r => <option key={r} value={r}>{r}</option>)}
-                        <option value="__none__">— No Role —</option>
+                            value=""
+                            onChange={e => {
+                                const v = e.target.value;
+                                if (v) toggleRole(v);
+                            }}>
+                        <option value="">{roleFilter.size === 0 ? 'All Roles' : '+ Add role…'}</option>
+                        {roles.filter(r => !roleFilter.has(r)).map(r =>
+                            <option key={r} value={r}>{r}</option>)}
+                        {!roleFilter.has('__none__') && <option value="__none__">— No Role —</option>}
                     </select>
+                    {roleFilter.size > 0 && (
+                        <button type="button" onClick={clearRoles}
+                                className="text-xs text-slate-500 hover:text-indigo-600 underline whitespace-nowrap">
+                            Clear ({roleFilter.size})
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -140,15 +166,19 @@ function ResourceCard({ r }) {
     return (
         <div className="card p-5 fade-in hover:-translate-y-0.5 hover:shadow-lg transition-all">
             <div className="flex items-start gap-4">
-                {r.picture_data ? (
-                    <img src={r.picture_data} alt={`${r.first_name} ${r.last_name}`}
-                         className="w-16 h-16 rounded-full object-cover border-2 border-white shadow" />
-                ) : (
-                    <div className="w-16 h-16 rounded-full flex items-center justify-center text-white text-xl font-bold shadow"
-                         style={{ backgroundImage: 'var(--grad-brand)' }}>
-                        {initials}
-                    </div>
-                )}
+                <HoverImage previewSrc={r.picture_data}
+                            previewAlt={`${r.first_name} ${r.last_name}`}
+                            previewSize={320}>
+                    {r.picture_data ? (
+                        <img src={r.picture_data} alt={`${r.first_name} ${r.last_name}`}
+                             className="w-16 h-16 rounded-full object-cover border-2 border-white shadow" />
+                    ) : (
+                        <div className="w-16 h-16 rounded-full flex items-center justify-center text-white text-xl font-bold shadow"
+                             style={{ backgroundImage: 'var(--grad-brand)' }}>
+                            {initials}
+                        </div>
+                    )}
+                </HoverImage>
                 <div className="flex-1 min-w-0">
                     <div className="font-bold text-slate-900 truncate" title={`${r.first_name} ${r.last_name}`}>
                         {r.first_name} {r.last_name}

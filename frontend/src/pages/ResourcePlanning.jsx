@@ -5,7 +5,7 @@ import { useYear } from '../YearContext';
 import { useAuth, isAdmin } from '../auth';
 import Modal from '../components/Modal';
 import { formatDate } from '../format';
-import { PlusIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, FunnelIcon } from '@heroicons/react/24/outline';
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const WEEK_W = 28;     // px per week column
@@ -98,6 +98,18 @@ export default function ResourcePlanning() {
     const [loading, setLoading]     = useState(true);
     const [modal, setModal]         = useState(null);
     const [viewMode, setViewMode]   = useState('all');   // 'all' | 'ongoing'
+    // Multi-select role filter. Empty Set ⇒ "all roles" (no filtering).
+    // Members may be a role name (e.g. "Developer") or '__none__' for blank role.
+    const [roleFilter, setRoleFilter] = useState(() => new Set());
+
+    function toggleRole(value) {
+        setRoleFilter(prev => {
+            const next = new Set(prev);
+            if (next.has(value)) next.delete(value); else next.add(value);
+            return next;
+        });
+    }
+    function clearRoles() { setRoleFilter(new Set()); }
 
     // Refs for the duplicated horizontal scrollbar (top + main).
     const topScrollRef  = useRef(null);
@@ -160,6 +172,23 @@ export default function ResourcePlanning() {
         return Array.from(m.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
     }, [resources]);
 
+    // Sorted unique role list for the filter dropdown
+    const roles = useMemo(() => {
+        const set = new Set(resources.map(r => (r.role || '').trim()).filter(Boolean));
+        return Array.from(set).sort();
+    }, [resources]);
+
+    // Resources visible in the gantt after applying the role filter.
+    // The chips/counts above keep showing totals for the full team — only the
+    // rows below collapse down to the selected roles.
+    const displayResources = useMemo(() => {
+        if (roleFilter.size === 0) return resources;
+        return resources.filter(r => {
+            const role = (r.role || '').trim();
+            return role ? roleFilter.has(role) : roleFilter.has('__none__');
+        });
+    }, [resources, roleFilter]);
+
     // "Today" indicator
     const todayIdx = useMemo(() => {
         const today = new Date();
@@ -171,14 +200,14 @@ export default function ResourcePlanning() {
     // Total grid height for the today line
     const gridHeight = useMemo(() => {
         let h = 60; // months + weeks header
-        for (const r of resources) {
+        for (const r of displayResources) {
             const lanes = byResource.get(r.id) || [];
             const laneCount = Math.max(1, lanes.length);
             const rowH = Math.max(MIN_ROW_H, laneCount * (LANE_H + LANE_GAP) + 6);
             h += rowH;
         }
         return h;
-    }, [resources, byResource]);
+    }, [displayResources, byResource]);
 
     function openAdd(resource) {
         if (!canEdit) return;
@@ -241,8 +270,27 @@ export default function ResourcePlanning() {
                     <span className="brand-mark">Resource Planning</span> · {year}
                 </h1>
                 {canEdit && <span className="text-xs text-slate-500">Click any row to add an assignment, or click an existing bar to edit.</span>}
-                <div className="ml-auto flex items-center gap-2">
-                    <label className="text-xs uppercase tracking-wider font-bold text-slate-500">View</label>
+                <div className="ml-auto flex items-center gap-2 flex-wrap">
+                    <FunnelIcon className="w-4 h-4 text-indigo-500" />
+                    <label className="text-xs uppercase tracking-wider font-bold text-slate-500">Role</label>
+                    <select className="input !w-auto !py-1.5 font-medium"
+                            value=""
+                            onChange={e => {
+                                const v = e.target.value;
+                                if (v) toggleRole(v);
+                            }}>
+                        <option value="">{roleFilter.size === 0 ? 'All Roles' : '+ Add role…'}</option>
+                        {roles.filter(r => !roleFilter.has(r)).map(r =>
+                            <option key={r} value={r}>{r}</option>)}
+                        {!roleFilter.has('__none__') && <option value="__none__">— No Role —</option>}
+                    </select>
+                    {roleFilter.size > 0 && (
+                        <button type="button" onClick={clearRoles}
+                                className="text-xs text-slate-500 hover:text-indigo-600 underline whitespace-nowrap">
+                            Clear ({roleFilter.size})
+                        </button>
+                    )}
+                    <label className="text-xs uppercase tracking-wider font-bold text-slate-500 ml-2">View</label>
                     <select className="input !w-auto !py-1.5 font-medium"
                             value={viewMode} onChange={e => setViewMode(e.target.value)}>
                         <option value="all">Show All</option>
@@ -251,22 +299,40 @@ export default function ResourcePlanning() {
                 </div>
             </div>
 
-            {/* Role count chips */}
+            {/* Role count chips — click to filter */}
             {resources.length > 0 && (
                 <div className="card p-3 flex flex-wrap items-center gap-2">
                     <span className="text-xs uppercase tracking-wider font-bold text-slate-500 mr-1">By Role</span>
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-white text-sm font-semibold shadow"
-                          style={{ backgroundImage: 'var(--grad-brand)' }}>
+
+                    {/* Total clears the filter (selecting nothing = all) */}
+                    <button type="button" onClick={clearRoles}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-semibold shadow transition ${
+                                roleFilter.size === 0
+                                    ? 'text-white ring-2 ring-offset-2 ring-indigo-400'
+                                    : 'text-white hover:brightness-110'
+                            }`}
+                            style={{ backgroundImage: 'var(--grad-brand)' }}>
                         <span className="text-base font-extrabold">{resources.length}</span>
                         <span className="opacity-90">Total</span>
-                    </span>
-                    {roleCounts.map(([role, count]) => (
-                        <span key={role}
-                              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white border border-slate-200 text-sm hover:border-indigo-300 hover:shadow-sm transition">
-                            <span className="font-bold text-indigo-700 tabular-nums">{count}</span>
-                            <span className="text-slate-600">{role}</span>
-                        </span>
-                    ))}
+                    </button>
+
+                    {roleCounts.map(([role, count]) => {
+                        // The chip labeled "No Role" maps to the special filter value '__none__'.
+                        const filterValue = role === 'No Role' ? '__none__' : role;
+                        const active = roleFilter.has(filterValue);
+                        return (
+                            <button key={role} type="button"
+                                onClick={() => toggleRole(filterValue)}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm transition ${
+                                    active
+                                        ? 'bg-indigo-600 text-white border border-indigo-600 shadow ring-2 ring-offset-2 ring-indigo-300'
+                                        : 'bg-white border border-slate-200 hover:border-indigo-300 hover:shadow-sm'
+                                }`}>
+                                <span className={`font-bold tabular-nums ${active ? 'text-white' : 'text-indigo-700'}`}>{count}</span>
+                                <span className={active ? 'text-white' : 'text-slate-600'}>{role}</span>
+                            </button>
+                        );
+                    })}
                 </div>
             )}
 
@@ -346,7 +412,7 @@ export default function ResourcePlanning() {
                         </div>
 
                         {/* Resource rows */}
-                        {resources.map((r, rIdx) => {
+                        {displayResources.map((r, rIdx) => {
                             const lanes = byResource.get(r.id) || [];
                             const laneCount = Math.max(1, lanes.length);
                             const rowHeight = Math.max(MIN_ROW_H, laneCount * (LANE_H + LANE_GAP) + 4);
@@ -429,6 +495,16 @@ export default function ResourcePlanning() {
 
                         {resources.length === 0 && (
                             <div className="text-center text-slate-400 py-10">No resources defined.</div>
+                        )}
+                        {resources.length > 0 && displayResources.length === 0 && (
+                            <div className="text-center text-slate-400 py-10">
+                                No resources match the selected roles.
+                                <button type="button"
+                                        className="ml-2 text-indigo-600 hover:underline font-medium"
+                                        onClick={clearRoles}>
+                                    Clear filter
+                                </button>
+                            </div>
                         )}
                     </div>
                 </div>
