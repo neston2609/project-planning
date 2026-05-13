@@ -21,13 +21,15 @@ const mainNav = [
     { to: '/outsource',            label: 'Outsource',            icon: BriefcaseIcon },
     { to: '/resource-planning',    label: 'Resource Planning',    icon: UserGroupIcon },
     { to: '/resource-information', label: 'Resource Information', icon: UserIcon },
-    { to: '/customer-information', label: 'Customer Information', icon: BuildingOfficeIcon }
+    { to: '/customer-information', label: 'Customer Information', icon: BuildingOfficeIcon },
+    { to: '/license-dashboard',    label: 'License Dashboard',    icon: KeyIcon }
 ];
 
 const adminNav = [
     { to: '/admin/projects',  label: 'Project Management', icon: DocumentTextIcon },
     { to: '/admin/customers', label: 'Customers',          icon: BuildingOffice2Icon },
     { to: '/admin/resources', label: 'Resources',          icon: IdentificationIcon },
+    { to: '/admin/licenses',  label: 'License Management', icon: KeyIcon },
     { to: '/admin/year',      label: 'Year Config',        icon: CalendarDaysIcon },
     { to: '/admin/app',       label: 'App Config',         icon: Cog6ToothIcon },
     { to: '/admin/smtp',      label: 'SMTP',               icon: EnvelopeIcon }

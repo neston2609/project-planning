@@ -14,6 +14,7 @@ import OutsourceDash    from './pages/OutsourceDashboard';
 import ResourcePlanning from './pages/ResourcePlanning';
 import ResourceInformation from './pages/ResourceInformation';
 import CustomerInformation from './pages/CustomerInformation';
+import LicenseDashboard  from './pages/LicenseDashboard';
 
 import ProjectManagement from './pages/admin/ProjectManagement';
 import Customers        from './pages/admin/Customers';
@@ -23,6 +24,7 @@ import AppConfigPage    from './pages/admin/AppConfig';
 import SmtpPage         from './pages/admin/Smtp';
 import UsersPage        from './pages/admin/Users';
 import LoginLogsPage    from './pages/admin/LoginLogs';
+import LicenseManagement from './pages/admin/LicenseManagement';
 
 import { useAuth, isAdmin, isSuperadmin, isAuthenticated } from './auth';
 
@@ -60,6 +62,7 @@ export default function App() {
                 <Route path="resource-planning"    element={<ResourcePlanning />} />
                 <Route path="resource-information" element={<ResourceInformation />} />
                 <Route path="customer-information" element={<CustomerInformation />} />
+                <Route path="license-dashboard"    element={<LicenseDashboard />} />
                 <Route path="change-password"      element={<ChangePassword />} />
 
                 <Route path="admin/projects"   element={<RequireAdmin><ProjectManagement /></RequireAdmin>} />
@@ -68,6 +71,7 @@ export default function App() {
                 <Route path="admin/year"       element={<RequireAdmin><YearConfigPage /></RequireAdmin>} />
                 <Route path="admin/app"        element={<RequireAdmin><AppConfigPage /></RequireAdmin>} />
                 <Route path="admin/smtp"       element={<RequireAdmin><SmtpPage /></RequireAdmin>} />
+                <Route path="admin/licenses"   element={<RequireAdmin><LicenseManagement /></RequireAdmin>} />
 
                 <Route path="admin/users"      element={<RequireSuper><UsersPage /></RequireSuper>} />
                 <Route path="admin/login-logs" element={<RequireSuper><LoginLogsPage /></RequireSuper>} />
