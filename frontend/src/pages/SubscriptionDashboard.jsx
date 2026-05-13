@@ -1,26 +1,34 @@
 import { useEffect, useMemo, useState } from 'react';
 import api from '../api';
 import { useYear } from '../YearContext';
+import { useAuth, isAdmin } from '../auth';
 import StatusPill from '../components/StatusPill';
 import DashboardHeader from '../components/DashboardHeader';
 import ProgressCell from '../components/ProgressCell';
 import { baht, formatDate, splitTotals, applyFiltersAndSort } from '../format';
 import FilterBar from '../components/FilterBar';
+import CopyProjectModal from '../components/CopyProjectModal';
+import { DocumentDuplicateIcon } from '@heroicons/react/24/outline';
 
 export default function SubscriptionDashboard() {
     const { year } = useYear();
+    const { user } = useAuth();
+    const canCopy = isAdmin(user);
+
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [status, setStatus] = useState('all');
     const [sortBy, setSortBy] = useState('project_code');
+    const [copySourceId, setCopySourceId] = useState(null);
 
-    useEffect(() => {
+    function reload() {
         setLoading(true);
         api.get(`/dashboards/subscriptions?year=${year}`)
             .then(r => setRows(r.data.rows))
             .finally(() => setLoading(false));
-    }, [year]);
+    }
+    useEffect(() => { reload(); }, [year]);
 
     const filtered = useMemo(() => applyFiltersAndSort(rows, {
         search, status, sortBy,
@@ -52,7 +60,9 @@ export default function SubscriptionDashboard() {
                 <table className="table-clean">
                     <thead>
                         <tr>
-                            <th>Code</th><th>Description</th><th>Customer</th><th>Status</th>
+                            <th>Code</th>
+                            {canCopy && <th className="w-12"></th>}
+                            <th>Description</th><th>Customer</th><th>Status</th>
                             <th>License Name</th><th>Period</th>
                             <th className="text-right">Revenue</th><th className="text-right">Cost</th><th className="text-right">GM</th>
                             <th className="min-w-[150px]">% Recognize</th>
@@ -60,11 +70,21 @@ export default function SubscriptionDashboard() {
                         </tr>
                     </thead>
                     <tbody>
-                        {loading && <tr><td colSpan={12} className="text-center py-10 text-slate-400 animate-pulse">Loading...</td></tr>}
-                        {!loading && filtered.length === 0 && <tr><td colSpan={12} className="text-center py-10 text-slate-400">No data</td></tr>}
+                        {loading && <tr><td colSpan={canCopy ? 13 : 12} className="text-center py-10 text-slate-400 animate-pulse">Loading...</td></tr>}
+                        {!loading && filtered.length === 0 && <tr><td colSpan={canCopy ? 13 : 12} className="text-center py-10 text-slate-400">No data</td></tr>}
                         {filtered.map(r => (
                             <tr key={r.project_id}>
                                 <td className="font-mono text-xs font-semibold text-indigo-600">{r.project_code}</td>
+                                {canCopy && (
+                                    <td>
+                                        <button type="button"
+                                                className="btn-ghost !p-1 !h-7"
+                                                title="Copy this project (creates DUM-prefixed dummy with dates +1 year)"
+                                                onClick={() => setCopySourceId(r.project_id)}>
+                                            <DocumentDuplicateIcon className="w-4 h-4 text-indigo-500" />
+                                        </button>
+                                    </td>
+                                )}
                                 <td className="max-w-[240px] truncate" title={r.description}>{r.description}</td>
                                 <td className="font-medium">{r.customer || '-'}</td>
                                 <td><StatusPill status={r.status} /></td>
@@ -82,7 +102,7 @@ export default function SubscriptionDashboard() {
                         ))}
                         {!loading && filtered.length > 0 && (
                             <tr className="bg-gradient-to-r from-indigo-50 to-pink-50 sticky bottom-0">
-                                <td colSpan={6} className="text-right font-bold">Totals</td>
+                                <td colSpan={canCopy ? 7 : 6} className="text-right font-bold">Totals</td>
                                 <td className="text-right tabular-nums font-bold">{baht(t.gross)}</td>
                                 <td colSpan={3}></td>
                                 <td className="text-right tabular-nums font-extrabold text-emerald-700">{baht(t.totalRev)}</td>
@@ -92,6 +112,14 @@ export default function SubscriptionDashboard() {
                     </tbody>
                 </table>
             </div>
+
+            {copySourceId && (
+                <CopyProjectModal
+                    sourceProjectId={copySourceId}
+                    onClose={() => setCopySourceId(null)}
+                    onCreated={() => { setCopySourceId(null); reload(); }}
+                />
+            )}
         </div>
     );
 }

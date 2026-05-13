@@ -96,7 +96,8 @@ router.get('/perpetual-ma', async (req, res) => {
 router.get('/service-ma', async (req, res) => {
     const year = pickYear(req);
     const { rows } = await db.query(`
-        SELECT p.id AS project_id, p.project_code, p.description, p.status,
+        SELECT p.id AS project_id, p.project_code, p.status,
+               p.description AS project_description,
                c.alias AS customer_alias,
                s.*
           FROM project_service_ma s
@@ -107,11 +108,15 @@ router.get('/service-ma', async (req, res) => {
     `);
     const out = rows.map(r => {
         const calc = recognizeServiceMA(r, year);
+        // CR#3: fall back to the main project's description when the sub-row's
+        // description is empty/blank.
+        const subDesc = (r.description || '').trim();
+        const desc    = subDesc || r.project_description || '';
         return {
             project_id: r.project_id, project_code: r.project_code,
-            description: r.description, customer: r.customer_alias,
+            description: desc, customer: r.customer_alias,
             status: r.status,
-            service_ma_description: r.description ? r.description : '',
+            service_ma_description: subDesc,
             start_date: r.start_date, end_date: r.end_date,
             revenue: Number(r.revenue), cost: Number(r.cost),
             gross_margin: calc.gross_margin,
@@ -127,7 +132,8 @@ router.get('/service-ma', async (req, res) => {
 router.get('/implementation', async (req, res) => {
     const year = pickYear(req);
     const { rows } = await db.query(`
-        SELECT p.id AS project_id, p.project_code, p.description, p.status, p.pipeline_target_date,
+        SELECT p.id AS project_id, p.project_code, p.status, p.pipeline_target_date,
+               p.description AS project_description,
                c.alias AS customer_alias,
                i.*
           FROM project_implementation i
@@ -138,9 +144,12 @@ router.get('/implementation', async (req, res) => {
     `);
     const out = rows.map(r => {
         const calc = recognizeImplementation(r, year);
+        // CR#3: fall back to project description if implementation row's is empty.
+        const subDesc = (r.description || '').trim();
+        const desc    = subDesc || r.project_description || '';
         return {
             project_id: r.project_id, project_code: r.project_code,
-            description: r.description, customer: r.customer_alias,
+            description: desc, customer: r.customer_alias,
             status: r.status, pipeline_target_date: r.pipeline_target_date,
             revenue: Number(r.revenue), cost: Number(r.cost),
             gross_margin: calc.gross_margin,
@@ -158,7 +167,8 @@ router.get('/implementation', async (req, res) => {
 router.get('/outsource', async (req, res) => {
     const year = pickYear(req);
     const { rows: outsRows } = await db.query(`
-        SELECT p.id AS project_id, p.project_code, p.description, p.status,
+        SELECT p.id AS project_id, p.project_code, p.status,
+               p.description AS project_description,
                c.alias AS customer_alias,
                o.*
           FROM project_outsource o
@@ -186,9 +196,12 @@ router.get('/outsource', async (req, res) => {
             cost    = Number(m ? m.cost    : 0);
         }
         const calc = recognizeOutsource({ ...r, revenue, cost }, year);
+        // CR#3: fall back to project description if outsource row's is empty.
+        const subDesc = (r.description || '').trim();
+        const desc    = subDesc || r.project_description || '';
         return {
             project_id: r.project_id, project_code: r.project_code,
-            description: r.description, customer: r.customer_alias,
+            description: desc, customer: r.customer_alias,
             status: r.status,
             outsource_type: r.outsource_type,
             start_date: r.start_date, end_date: r.end_date,

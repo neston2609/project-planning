@@ -88,11 +88,15 @@ CREATE TABLE IF NOT EXISTS customers (
     contact_name        VARCHAR(255) NOT NULL DEFAULT '',
     contact_email       VARCHAR(255) NOT NULL DEFAULT '',
     contact_phone       VARCHAR(64)  NOT NULL DEFAULT '',
+    account_manager     VARCHAR(255) NOT NULL DEFAULT '',
     color_hex           VARCHAR(7)   NOT NULL DEFAULT '#3b82f6',
     logo_data           TEXT,            -- data URL (e.g. data:image/png;base64,...)
     created_at          TIMESTAMP    NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMP    NOT NULL DEFAULT NOW()
 );
+-- CR#2: account_manager column for existing databases.
+ALTER TABLE customers
+    ADD COLUMN IF NOT EXISTS account_manager VARCHAR(255) NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS resources (
     id              SERIAL PRIMARY KEY,

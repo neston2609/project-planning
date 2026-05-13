@@ -5,7 +5,7 @@ import { useYear } from '../YearContext';
 import { baht } from '../format';
 import {
     MagnifyingGlassIcon, EnvelopeIcon, PhoneIcon, UserIcon,
-    BanknotesIcon, ClockIcon
+    BanknotesIcon, ClockIcon, BriefcaseIcon
 } from '@heroicons/react/24/outline';
 
 /**
@@ -86,10 +86,11 @@ export default function CustomerInformation() {
         if (search) {
             const q = search.toLowerCase();
             out = out.filter(c =>
-                (c.alias         || '').toLowerCase().includes(q) ||
-                (c.full_name     || '').toLowerCase().includes(q) ||
-                (c.contact_name  || '').toLowerCase().includes(q) ||
-                (c.contact_email || '').toLowerCase().includes(q)
+                (c.alias           || '').toLowerCase().includes(q) ||
+                (c.full_name       || '').toLowerCase().includes(q) ||
+                (c.contact_name    || '').toLowerCase().includes(q) ||
+                (c.contact_email   || '').toLowerCase().includes(q) ||
+                (c.account_manager || '').toLowerCase().includes(q)
             );
         }
         return [...out].sort((a, b) => (a.alias || '').localeCompare(b.alias || ''));
@@ -152,7 +153,7 @@ export default function CustomerInformation() {
                 <div className="flex items-center gap-2 flex-1 min-w-[240px]">
                     <MagnifyingGlassIcon className="w-5 h-5 text-slate-400" />
                     <input className="input !border-0 !bg-transparent !p-0 focus:!ring-0 flex-1"
-                        placeholder="Search by alias / full name / contact / email..."
+                        placeholder="Search by alias / full name / account manager / contact / email..."
                         value={search} onChange={e => setSearch(e.target.value)} />
                 </div>
             </div>
@@ -212,6 +213,13 @@ function CustomerCard({ c, agg }) {
 
             {/* Contact block */}
             <div className="mt-4 space-y-1.5 text-sm">
+                {c.account_manager && (
+                    <div className="flex items-center gap-2 text-slate-600">
+                        <BriefcaseIcon className="w-4 h-4 text-indigo-400 shrink-0" />
+                        <span className="text-xs uppercase tracking-wider text-slate-400">AM:</span>
+                        <span className="truncate font-medium text-slate-700">{c.account_manager}</span>
+                    </div>
+                )}
                 {c.contact_name && (
                     <div className="flex items-center gap-2 text-slate-600">
                         <UserIcon className="w-4 h-4 text-slate-400 shrink-0" />
@@ -232,7 +240,7 @@ function CustomerCard({ c, agg }) {
                         <span className="truncate">{c.contact_phone}</span>
                     </div>
                 )}
-                {!c.contact_name && !c.contact_email && !c.contact_phone && (
+                {!c.account_manager && !c.contact_name && !c.contact_email && !c.contact_phone && (
                     <div className="text-xs text-slate-400 italic">No contact information.</div>
                 )}
             </div>

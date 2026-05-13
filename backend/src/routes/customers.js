@@ -22,6 +22,7 @@ const customerValidators = [
     body('contact_name').optional().isString(),
     body('contact_email').optional().isString(),
     body('contact_phone').optional().isString(),
+    body('account_manager').optional().isString(),
     body('color_hex').optional().matches(/^#[0-9a-fA-F]{6}$/),
     // Logo: data URL up to ~10MB (about 7.5MB raw image after base64 expansion).
     body('logo_data').optional({ nullable: true }).custom((v) => {
@@ -38,10 +39,11 @@ router.post('/', requireAuth, customerValidators, async (req, res) => {
     if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
     try {
         const { rows } = await db.query(
-            `INSERT INTO customers(alias, full_name, contact_name, contact_email, contact_phone, color_hex, logo_data)
-             VALUES ($1,$2,$3,$4,$5,COALESCE($6,'#3b82f6'),$7) RETURNING *`,
+            `INSERT INTO customers(alias, full_name, contact_name, contact_email, contact_phone, account_manager, color_hex, logo_data)
+             VALUES ($1,$2,$3,$4,$5,$6,COALESCE($7,'#3b82f6'),$8) RETURNING *`,
             [req.body.alias, req.body.full_name || '', req.body.contact_name || '',
              req.body.contact_email || '', req.body.contact_phone || '',
+             req.body.account_manager || '',
              req.body.color_hex || null, req.body.logo_data || null]
         );
         res.status(201).json(rows[0]);
@@ -62,11 +64,13 @@ router.put('/:id', requireAuth, param('id').isInt(), customerValidators, async (
                   : (req.body.logo_data || null);
     const { rows } = await db.query(
         `UPDATE customers SET alias=$1, full_name=$2, contact_name=$3, contact_email=$4,
-                              contact_phone=$5, color_hex=COALESCE($6, color_hex),
-                              logo_data = CASE WHEN $7::text = '__KEEP__' THEN logo_data ELSE NULLIF($8::text, '__NULL__') END
-         WHERE id=$9 RETURNING *`,
+                              contact_phone=$5, account_manager=$6,
+                              color_hex=COALESCE($7, color_hex),
+                              logo_data = CASE WHEN $8::text = '__KEEP__' THEN logo_data ELSE NULLIF($9::text, '__NULL__') END
+         WHERE id=$10 RETURNING *`,
         [req.body.alias, req.body.full_name || '', req.body.contact_name || '',
          req.body.contact_email || '', req.body.contact_phone || '',
+         req.body.account_manager || '',
          req.body.color_hex || null,
          newLogo === '__KEEP__' ? '__KEEP__' : 'replace',
          newLogo === '__KEEP__' ? null : (newLogo === null ? '__NULL__' : newLogo),

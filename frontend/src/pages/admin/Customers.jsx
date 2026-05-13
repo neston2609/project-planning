@@ -28,12 +28,12 @@ export default function Customers() {
     return (
         <div className="space-y-4">
             <div className="flex items-center"><h1 className="text-2xl font-bold">Customers</h1>
-                <button className="btn-primary ml-auto" onClick={() => setEdit({ alias: '', full_name: '', contact_name: '', contact_email: '', contact_phone: '', color_hex: '#3b82f6', logo_data: null })}>
+                <button className="btn-primary ml-auto" onClick={() => setEdit({ alias: '', full_name: '', contact_name: '', contact_email: '', contact_phone: '', account_manager: '', color_hex: '#3b82f6', logo_data: null })}>
                     <PlusIcon className="w-4 h-4" /> Add</button>
             </div>
             <div className="card overflow-x-auto">
                 <table className="table-clean">
-                    <thead><tr><th>Logo</th><th>Alias</th><th>Full Name</th><th>Contact</th><th>Email</th><th>Phone</th><th>Color</th><th></th></tr></thead>
+                    <thead><tr><th>Logo</th><th>Alias</th><th>Full Name</th><th>Account Mgr</th><th>Contact</th><th>Email</th><th>Phone</th><th>Color</th><th></th></tr></thead>
                     <tbody>
                         {list.map(c => (
                             <tr key={c.id}>
@@ -50,6 +50,7 @@ export default function Customers() {
                                 </td>
                                 <td className="font-medium">{c.alias}</td>
                                 <td>{c.full_name}</td>
+                                <td>{c.account_manager}</td>
                                 <td>{c.contact_name}</td>
                                 <td>{c.contact_email}</td>
                                 <td>{c.contact_phone}</td>
@@ -60,7 +61,7 @@ export default function Customers() {
                                 </td>
                             </tr>
                         ))}
-                        {list.length === 0 && <tr><td colSpan={8} className="text-center text-slate-400 py-6">No customers.</td></tr>}
+                        {list.length === 0 && <tr><td colSpan={9} className="text-center text-slate-400 py-6">No customers.</td></tr>}
                     </tbody>
                 </table>
             </div>
@@ -77,13 +78,11 @@ function CustomerForm({ initial, onClose, onSave }) {
 
     function onLogoChange(e) {
         const file = e.target.files?.[0];
-        e.target.value = '';   // allow re-selecting same file later
+        e.target.value = '';
         if (!file) return;
         if (!file.type.startsWith('image/')) {
             return toast.error('Please choose an image file (PNG, JPG, SVG, etc.)');
         }
-        // 2 MB cap on the raw file. After base64 it's ~2.7 MB, well below the
-        // backend's 10 MB validator and the express body limit.
         if (file.size > 2 * 1024 * 1024) {
             return toast.error('Image must be 2 MB or smaller');
         }
@@ -101,7 +100,6 @@ function CustomerForm({ initial, onClose, onSave }) {
         <Modal open onClose={onClose} title={f.id ? `Edit Customer — ${f.alias}` : 'New Customer'}
                footer={<><button className="btn-ghost" onClick={onClose}>Cancel</button><button className="btn-primary" onClick={() => onSave(f)}>Save</button></>}>
             <div className="grid grid-cols-2 gap-3">
-                {/* ---------- Logo uploader ---------- */}
                 <div className="col-span-2">
                     <label className="label">Logo</label>
                     <div className="flex items-center gap-4 p-3 rounded-lg border border-slate-200 bg-gradient-to-br from-indigo-50/40 to-pink-50/40">
@@ -129,6 +127,7 @@ function CustomerForm({ initial, onClose, onSave }) {
                 <div><label className="label">Alias *</label><input className="input" value={f.alias} onChange={e => setF({ ...f, alias: e.target.value })} /></div>
                 <div><label className="label">Color (hex)</label><input className="input" value={f.color_hex} onChange={e => setF({ ...f, color_hex: e.target.value })} /></div>
                 <div className="col-span-2"><label className="label">Full Name</label><input className="input" value={f.full_name} onChange={e => setF({ ...f, full_name: e.target.value })} /></div>
+                <div className="col-span-2"><label className="label">Account Manager</label><input className="input" value={f.account_manager || ''} onChange={e => setF({ ...f, account_manager: e.target.value })} /></div>
                 <div><label className="label">Contact Name</label><input className="input" value={f.contact_name} onChange={e => setF({ ...f, contact_name: e.target.value })} /></div>
                 <div><label className="label">Contact Email</label><input className="input" value={f.contact_email} onChange={e => setF({ ...f, contact_email: e.target.value })} /></div>
                 <div><label className="label">Contact Phone</label><input className="input" value={f.contact_phone} onChange={e => setF({ ...f, contact_phone: e.target.value })} /></div>
