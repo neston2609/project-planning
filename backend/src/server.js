@@ -23,6 +23,7 @@ const resourcesRouter = require('./routes/resources');
 const projectsRouter  = require('./routes/projects').router;
 const dashboardsRouter= require('./routes/dashboards');
 const adminRouter     = require('./routes/admin');
+const licensesRouter  = require('./routes/licenses');
 
 const app = express();
 
@@ -42,6 +43,7 @@ app.use('/api/resources',  resourcesRouter);
 app.use('/api/projects',   projectsRouter);
 app.use('/api/dashboards', dashboardsRouter);
 app.use('/api/admin',      adminRouter);
+app.use('/api/licenses',   licensesRouter);
 
 // ---------- Optional: serve the built frontend from the backend ----------
 // If frontend/dist exists (i.e. you ran `npm --prefix frontend run build`),

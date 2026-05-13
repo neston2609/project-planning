@@ -208,6 +208,29 @@ CREATE TABLE IF NOT EXISTS project_outsource_monthly (
     UNIQUE (project_outsource_id, year, month)
 );
 
+-- ---------- Customer Licenses (CR#4) ----------
+-- One customer can have many licenses. license_name may repeat within
+-- a single customer (per spec).
+CREATE TABLE IF NOT EXISTS customer_licenses (
+    id              SERIAL PRIMARY KEY,
+    customer_id     INT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    license_name    VARCHAR(255) NOT NULL DEFAULT '',
+    vendor          VARCHAR(255) NOT NULL DEFAULT '',
+    quantity        INT          NOT NULL DEFAULT 1,
+    license_key     TEXT         NOT NULL DEFAULT '',
+    note            TEXT         NOT NULL DEFAULT '',
+    start_date      DATE,
+    expired_date    DATE,
+    created_at      TIMESTAMP    NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMP    NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_customer_licenses_customer ON customer_licenses(customer_id);
+CREATE INDEX IF NOT EXISTS idx_customer_licenses_expired  ON customer_licenses(expired_date);
+
+-- Configurable "expiring soon" threshold (days). Default 30.
+INSERT INTO app_config(key, value) VALUES ('license_expiring_days', '30')
+ON CONFLICT (key) DO NOTHING;
+
 -- ---------- Resource assignments (Gantt) ----------
 CREATE TABLE IF NOT EXISTS resource_assignments (
     id              SERIAL PRIMARY KEY,
@@ -236,7 +259,7 @@ DECLARE
     t TEXT;
 BEGIN
     FOR t IN SELECT unnest(ARRAY[
-        'users','customers','resources','projects','smtp_config','year_config'
+        'users','customers','resources','projects','smtp_config','year_config','customer_licenses'
     ]) LOOP
         EXECUTE format(
             'DROP TRIGGER IF EXISTS trg_%s_upd ON %I; '
