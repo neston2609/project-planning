@@ -8,7 +8,8 @@ import ProgressCell from '../components/ProgressCell';
 import { baht, formatDate, splitTotals, applyFiltersAndSort } from '../format';
 import FilterBar from '../components/FilterBar';
 import CopyProjectModal from '../components/CopyProjectModal';
-import { DocumentDuplicateIcon } from '@heroicons/react/24/outline';
+import CustomerLicensesModal from '../components/CustomerLicensesModal';
+import { DocumentDuplicateIcon, KeyIcon } from '@heroicons/react/24/outline';
 
 export default function SubscriptionDashboard() {
     const { year } = useYear();
@@ -21,6 +22,7 @@ export default function SubscriptionDashboard() {
     const [status, setStatus] = useState('all');
     const [sortBy, setSortBy] = useState('project_code');
     const [copySourceId, setCopySourceId] = useState(null);
+    const [licensesCustomerId, setLicensesCustomerId] = useState(null);
 
     function reload() {
         setLoading(true);
@@ -33,7 +35,7 @@ export default function SubscriptionDashboard() {
     const filtered = useMemo(() => applyFiltersAndSort(rows, {
         search, status, sortBy,
         revenueField: 'license_revenue',
-        searchFields: ['project_code', 'description', 'customer', 'license_name']
+        searchFields: ['project_code', 'description', 'customer']
     }), [rows, search, status, sortBy]);
 
     const t = splitTotals(filtered, 'license_revenue');
@@ -52,7 +54,7 @@ export default function SubscriptionDashboard() {
 
             <FilterBar
                 search={search} onSearchChange={setSearch}
-                searchPlaceholder="Search by code / description / customer / license name..."
+                searchPlaceholder="Search by code / description / customer..."
                 status={status} onStatusChange={setStatus}
                 sortBy={sortBy} onSortByChange={setSortBy} />
 
@@ -63,7 +65,7 @@ export default function SubscriptionDashboard() {
                             <th>Code</th>
                             {canCopy && <th className="w-12"></th>}
                             <th>Description</th><th>Customer</th><th>Status</th>
-                            <th>License Name</th><th>Period</th>
+                            <th className="text-center">Licenses</th><th>Period</th>
                             <th className="text-right">Revenue</th><th className="text-right">Cost</th><th className="text-right">GM</th>
                             <th className="min-w-[150px]">% Recognize</th>
                             <th className="text-right">Rec. Revenue</th><th className="text-right">Rec. GM</th>
@@ -88,7 +90,18 @@ export default function SubscriptionDashboard() {
                                 <td className="max-w-[240px] truncate" title={r.description}>{r.description}</td>
                                 <td className="font-medium">{r.customer || '-'}</td>
                                 <td><StatusPill status={r.status} /></td>
-                                <td>{r.license_name}</td>
+                                <td className="text-center">
+                                    {r.customer_id ? (
+                                        <button type="button"
+                                                className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-indigo-50 hover:bg-indigo-100 hover:scale-110 active:scale-95 ring-1 ring-indigo-200 text-indigo-700 transition shadow-sm"
+                                                title={`View licenses of ${r.customer || 'this customer'}`}
+                                                onClick={() => setLicensesCustomerId(r.customer_id)}>
+                                            <KeyIcon className="w-5 h-5" />
+                                        </button>
+                                    ) : (
+                                        <span className="text-slate-300" title="No customer">—</span>
+                                    )}
+                                </td>
                                 <td className="text-xs text-slate-500 whitespace-nowrap">
                                     {formatDate(r.license_start_date)}<br/>{formatDate(r.license_end_date)}
                                 </td>
@@ -118,6 +131,13 @@ export default function SubscriptionDashboard() {
                     sourceProjectId={copySourceId}
                     onClose={() => setCopySourceId(null)}
                     onCreated={() => { setCopySourceId(null); reload(); }}
+                />
+            )}
+
+            {licensesCustomerId && (
+                <CustomerLicensesModal
+                    customerId={licensesCustomerId}
+                    onClose={() => setLicensesCustomerId(null)}
                 />
             )}
         </div>

@@ -26,6 +26,7 @@ router.get('/subscriptions', async (req, res) => {
     const year = pickYear(req);
     const { rows } = await db.query(`
         SELECT p.id AS project_id, p.project_code, p.description, p.status,
+               p.customer_id,
                c.alias AS customer_alias, c.full_name AS customer_full_name,
                s.*
           FROM project_subscriptions s
@@ -40,6 +41,7 @@ router.get('/subscriptions', async (req, res) => {
             project_id: r.project_id,
             project_code: r.project_code,
             description: r.description,
+            customer_id: r.customer_id,
             customer: r.customer_alias,
             status: r.status,
             license_name: r.license_name,

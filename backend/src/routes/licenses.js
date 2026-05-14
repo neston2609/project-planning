@@ -2,29 +2,28 @@ const express = require('express');
 const { body, param, query, validationResult } = require('express-validator');
 const db = require('../db');
 const { requireAuth } = require('../middleware/auth');
+const { parseLicensePdf } = require('../utils/parseLicensePdf');
 
 const router = express.Router();
 
 /**
- * License Management routes (CR#4)
+ * License Management routes (CR#4 + CR#5 + CR#7)
  *
- * - GET  /api/licenses                       List all (optional ?customer_id=N)
- * - GET  /api/licenses/dashboard             Aggregated per-customer summary for the dashboard
- *                                             (uses configurable threshold, default 30 days)
- * - GET  /api/licenses/customer/:customerId  Drill-in: customer details + their licenses
- * - GET  /api/licenses/:id                   Single license
- * - POST /api/licenses                       Create
- * - PUT  /api/licenses/:id                   Update
- * - DELETE /api/licenses/:id                 Delete
- *
- * All routes require auth. Following the pattern of customers.js / resources.js,
- * write operations are not further role-gated here; the frontend hides write
- * controls for the 'user' role.
+ * - GET    /api/licenses                      List (optional ?customer_id=N)
+ * - GET    /api/licenses/dashboard            Aggregated per-customer summary
+ * - GET    /api/licenses/customer/:id         Drill-in: customer + licenses
+ * - GET    /api/licenses/:id                  Single license
+ * - POST   /api/licenses                      Create
+ * - PUT    /api/licenses/:id                  Update
+ * - DELETE /api/licenses/:id                  Delete
+ * - POST   /api/licenses/parse-pdf            Parse a License Certificate PDF (CR#5)
+ * - POST   /api/licenses/bulk                 Bulk insert (used by Import PDF) (CR#5)
+ * - POST   /api/licenses/extend-bulk          Atomic bulk-update of dates (CR#7)
  */
 
 router.use(requireAuth);
 
-// --- Helpers ---
+// ---------- Helpers ----------
 
 function pickThresholdDays(rawValue, fallback = 30) {
     const n = Number(rawValue);
@@ -39,25 +38,7 @@ async function getThresholdDays() {
     return pickThresholdDays(r.rows[0]?.value);
 }
 
-// --- Aggregation endpoint for the License Dashboard ---
-//
-// Returns:
-// {
-//   threshold_days: 30,
-//   today: 'YYYY-MM-DD',
-//   customers: [
-//     {
-//       customer_id, alias, full_name, color_hex, logo_data, account_manager, contact_email, contact_phone,
-//       total_licenses, latest_start_date, latest_expired_date,
-//       expired_count, expiring_soon_count
-//     }, ...
-//   ],
-//   totals: {
-//     total_customers,
-//     customers_with_expired,
-//     customers_with_expiring_soon
-//   }
-// }
+// ---------- Aggregation endpoint for the License Dashboard ----------
 router.get('/dashboard', async (req, res) => {
     const overrideDays = req.query.days != null ? pickThresholdDays(req.query.days, null) : null;
     const thresholdDays = overrideDays ?? await getThresholdDays();
@@ -117,7 +98,7 @@ router.get('/dashboard', async (req, res) => {
     });
 });
 
-// --- Drill-in: customer + their licenses ---
+// ---------- Drill-in: customer + their licenses ----------
 router.get('/customer/:customerId',
     param('customerId').isInt(),
     async (req, res) => {
@@ -144,7 +125,141 @@ router.get('/customer/:customerId',
     }
 );
 
-// --- Plain list (CRUD support) ---
+// ---------- CR#5: Parse a License Certificate PDF ----------
+router.post('/parse-pdf',
+    body('file_base64').isString().isLength({ min: 100 })
+        .withMessage('file_base64 (PDF bytes, base64-encoded) is required'),
+    async (req, res) => {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ error: errs.array()[0].msg });
+
+        let raw = String(req.body.file_base64);
+        const commaIdx = raw.indexOf(',');
+        if (raw.startsWith('data:') && commaIdx > 0) raw = raw.slice(commaIdx + 1);
+
+        let buffer;
+        try {
+            buffer = Buffer.from(raw, 'base64');
+        } catch {
+            return res.status(400).json({ error: 'Invalid base64 payload' });
+        }
+        if (buffer.length < 5 || buffer.slice(0, 5).toString('latin1') !== '%PDF-') {
+            return res.status(400).json({ error: 'Payload does not look like a PDF (missing %PDF- header)' });
+        }
+
+        try {
+            const result = await parseLicensePdf(buffer);
+            res.json(result);
+        } catch (err) {
+            console.error('[licenses/parse-pdf]', err);
+            res.status(500).json({ error: 'Failed to parse PDF: ' + (err.message || 'unknown error') });
+        }
+    }
+);
+
+// ---------- CR#5: Bulk insert (used by Import PDF) ----------
+router.post('/bulk',
+    body('customer_id').isInt(),
+    body('licenses').isArray({ min: 1 }),
+    async (req, res) => {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+
+        const customerId = Number(req.body.customer_id);
+        const rowsIn     = req.body.licenses;
+
+        const client = await db.getClient();
+        try {
+            await client.query('BEGIN');
+            const c = await client.query('SELECT 1 FROM customers WHERE id=$1', [customerId]);
+            if (!c.rowCount) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: 'Customer does not exist' });
+            }
+            const inserted = [];
+            for (const r of rowsIn) {
+                const { rows } = await client.query(
+                    `INSERT INTO customer_licenses(customer_id, license_name, vendor, quantity,
+                                                   license_key, note, start_date, expired_date)
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+                    [customerId,
+                     r.license_name || '', r.vendor || '',
+                     r.quantity != null ? Number(r.quantity) : 1,
+                     r.license_key || '', r.note || '',
+                     r.start_date   || null, r.expired_date || null]
+                );
+                inserted.push(rows[0]);
+            }
+            await client.query('COMMIT');
+            res.status(201).json({ inserted: inserted.length, rows: inserted });
+        } catch (err) {
+            await client.query('ROLLBACK');
+            console.error('[licenses/bulk]', err);
+            res.status(500).json({ error: 'Bulk insert failed: ' + (err.message || 'unknown error') });
+        } finally {
+            client.release();
+        }
+    }
+);
+
+// ---------- CR#7: Extend many licenses at once (atomic) ----------
+// Body: {
+//   customer_id,
+//   items: [{ id, start_date: 'YYYY-MM-DD'|null, expired_date: 'YYYY-MM-DD'|null }, ...]
+// }
+// Each item updates ONLY that license's start_date and expired_date.
+// All updates run in a single transaction (rollback on any failure).
+router.post('/extend-bulk',
+    body('customer_id').isInt(),
+    body('items').isArray({ min: 1 }),
+    async (req, res) => {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+
+        const customerId = Number(req.body.customer_id);
+        const items      = req.body.items;
+        const dateRe     = /^\d{4}-\d{2}-\d{2}$/;
+
+        for (const it of items) {
+            if (!Number.isInteger(it?.id) || it.id <= 0) {
+                return res.status(400).json({ error: 'Each item needs a positive integer id' });
+            }
+            if (it.start_date != null && it.start_date !== '' && !dateRe.test(it.start_date)) {
+                return res.status(400).json({ error: `Bad start_date for license ${it.id}` });
+            }
+            if (it.expired_date != null && it.expired_date !== '' && !dateRe.test(it.expired_date)) {
+                return res.status(400).json({ error: `Bad expired_date for license ${it.id}` });
+            }
+        }
+
+        const client = await db.getClient();
+        try {
+            await client.query('BEGIN');
+            const updated = [];
+            for (const it of items) {
+                // The customer_id condition prevents cross-tenant writes.
+                const { rows } = await client.query(
+                    `UPDATE customer_licenses
+                        SET start_date=$1, expired_date=$2
+                      WHERE id=$3 AND customer_id=$4
+                      RETURNING *`,
+                    [it.start_date || null, it.expired_date || null, it.id, customerId]
+                );
+                if (rows[0]) updated.push(rows[0]);
+            }
+            await client.query('COMMIT');
+            res.json({ updated: updated.length, rows: updated });
+        } catch (err) {
+            await client.query('ROLLBACK');
+            console.error('[licenses/extend-bulk]', err);
+            res.status(500).json({ error: 'Extend failed: ' + (err.message || 'unknown error') });
+        } finally {
+            client.release();
+        }
+    }
+);
+
+// ---------- Plain list (CRUD support) ----------
 router.get('/',
     query('customer_id').optional().isInt(),
     async (req, res) => {

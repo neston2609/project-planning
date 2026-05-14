@@ -50,7 +50,7 @@ export default function ServiceMADashboard() {
                     <thead>
                         <tr>
                             <th>Code</th><th>Description</th><th>Customer</th><th>Status</th>
-                            <th>Service MA Description</th><th>Period</th>
+                            <th>Period</th>
                             <th className="text-right">Revenue</th><th className="text-right">Cost</th>
                             <th className="text-right">GM</th>
                             <th className="min-w-[150px]">% Recognize</th>
@@ -59,15 +59,14 @@ export default function ServiceMADashboard() {
                         </tr>
                     </thead>
                     <tbody>
-                        {loading && <tr><td colSpan={12} className="text-center py-10 text-slate-400 animate-pulse">Loading...</td></tr>}
-                        {!loading && filtered.length === 0 && <tr><td colSpan={12} className="text-center py-10 text-slate-400">No data</td></tr>}
+                        {loading && <tr><td colSpan={11} className="text-center py-10 text-slate-400 animate-pulse">Loading...</td></tr>}
+                        {!loading && filtered.length === 0 && <tr><td colSpan={11} className="text-center py-10 text-slate-400">No data</td></tr>}
                         {filtered.map(r => (
                             <tr key={r.id}>
                                 <td className="font-mono text-xs font-semibold text-indigo-600">{r.project_code}</td>
                                 <td className="max-w-[200px] truncate" title={r.description}>{r.description}</td>
                                 <td className="font-medium">{r.customer || '-'}</td>
                                 <td><StatusPill status={r.status} /></td>
-                                <td>{r.service_ma_description}</td>
                                 <td className="text-xs text-slate-500 whitespace-nowrap">
                                     {formatDate(r.start_date)}<br/>{formatDate(r.end_date)}
                                 </td>
@@ -81,7 +80,7 @@ export default function ServiceMADashboard() {
                         ))}
                         {!loading && filtered.length > 0 && (
                             <tr className="bg-gradient-to-r from-indigo-50 to-pink-50 sticky bottom-0">
-                                <td colSpan={6} className="text-right font-bold">Totals</td>
+                                <td colSpan={5} className="text-right font-bold">Totals</td>
                                 <td className="text-right tabular-nums font-bold">{baht(t.gross)}</td>
                                 <td colSpan={3}></td>
                                 <td className="text-right tabular-nums font-extrabold text-emerald-700">{baht(t.totalRev)}</td>

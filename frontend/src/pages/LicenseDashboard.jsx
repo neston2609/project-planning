@@ -99,7 +99,7 @@ export default function LicenseDashboard() {
                     <thead><tr>
                         <th></th>
                         <th>Customer</th>
-                        <th className="text-right">Total License</th>
+                        <th className="text-center">Licenses</th>
                         <th>Latest Start</th>
                         <th>Latest Expired</th>
                         <th className="text-right">Expired</th>
@@ -163,7 +163,14 @@ function DashboardRow({ c, onOpen }) {
                 <div className="font-semibold">{c.alias}</div>
                 <div className="text-xs text-slate-500 truncate max-w-[260px]">{c.full_name}</div>
             </td>
-            <td className="text-right tabular-nums font-bold">{c.total_licenses}</td>
+            <td className="text-center">
+                <button type="button"
+                        className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-indigo-50 hover:bg-indigo-100 hover:scale-110 active:scale-95 ring-1 ring-indigo-200 text-indigo-700 transition shadow-sm"
+                        title={`View ${c.total_licenses} license${c.total_licenses === 1 ? '' : 's'}`}
+                        onClick={(e) => { e.stopPropagation(); onOpen(); }}>
+                    <KeyIcon className="w-5 h-5" />
+                </button>
+            </td>
             <td className="text-xs text-slate-600 whitespace-nowrap">{formatDate(c.latest_start_date) || '—'}</td>
             <td className="text-xs text-slate-600 whitespace-nowrap">{formatDate(c.latest_expired_date) || '—'}</td>
             <td className="text-right tabular-nums">
