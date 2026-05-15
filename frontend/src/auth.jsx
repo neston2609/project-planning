@@ -39,11 +39,24 @@ export function AuthProvider({ children }) {
 }
 
 export const useAuth = () => useContext(AuthCtx);
-export const isAdmin       = (u) => u && (u.role === 'admin' || u.role === 'superadmin');
-export const isSuperadmin  = (u) => u && u.role === 'superadmin';
+export const isAdmin        = (u) => u && (u.role === 'admin' || u.role === 'superadmin');
+export const isSuperadmin   = (u) => u && u.role === 'superadmin';
+export const isTenantAdmin  = (u) => u && u.role === 'tenantadmin';
 export const isAuthenticated = (u) => !!u;
 export const roleLabel = (role) => ({
     user: 'User (View only)',
     admin: 'Admin',
-    superadmin: 'Superadmin'
+    superadmin: 'Superadmin',
+    tenantadmin: 'Tenant Admin (Platform)'
 }[role] || role || '');
+
+/**
+ * The product name shown across the UI. Each tenant brands the app with its
+ * own name, e.g. tenant "Automation Excellence" -> "Automation Excellence
+ * Planning". Falls back to "RPA Planning" when there's no tenant context
+ * (login screen, or the global TenantAdmin).
+ */
+export const appTitle = (u) => {
+    const name = u && u.tenant_name ? String(u.tenant_name).trim() : '';
+    return name ? `${name} Planning` : 'RPA Planning';
+};

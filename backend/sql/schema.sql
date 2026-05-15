@@ -2,28 +2,51 @@
 -- RPA Planning Management - PostgreSQL Schema
 -- Target: PostgreSQL 13+
 -- Run with:  psql -h <host> -U postgres -d <database> -f schema.sql
+--
+-- Multi-tenant (Phase 1): one Team = one Tenant. Business data is scoped
+-- by tenant_id. The global 'tenantadmin' role (tenant_id IS NULL) manages
+-- tenants. app_config and smtp_config remain GLOBAL platform config.
+-- Existing single-tenant databases are migrated automatically by
+-- bootstrap.js (backfill + year_config PK swap + unique-constraint swaps).
 -- =====================================================================
 
 BEGIN;
 
+-- ---------- Tenants (Teams) ----------
+CREATE TABLE IF NOT EXISTS tenants (
+    id          SERIAL PRIMARY KEY,
+    name        VARCHAR(255) NOT NULL,
+    created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
 -- ---------- Auth / users ----------
+-- tenant_id is NULL for the global 'tenantadmin' role; NOT NULL for everyone else.
 CREATE TABLE IF NOT EXISTS users (
     id              SERIAL PRIMARY KEY,
+    tenant_id       INT,
     username        VARCHAR(64)  UNIQUE NOT NULL,
     password_hash   VARCHAR(255) NOT NULL,
     full_name       VARCHAR(255) NOT NULL DEFAULT '',
     email           VARCHAR(255) NOT NULL DEFAULT '',
     phone_number    VARCHAR(64)  NOT NULL DEFAULT '',
-    role            VARCHAR(32)  NOT NULL CHECK (role IN ('user', 'admin', 'superadmin')),
+    role            VARCHAR(32)  NOT NULL CHECK (role IN ('user', 'admin', 'superadmin', 'tenantadmin')),
     must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
     created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
 );
+-- Migrate existing single-tenant databases:
+ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id INT;
+-- Widen the role CHECK to allow 'tenantadmin' (drop+recreate is idempotent).
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+ALTER TABLE users ADD  CONSTRAINT users_role_check
+    CHECK (role IN ('user', 'admin', 'superadmin', 'tenantadmin'));
+CREATE INDEX IF NOT EXISTS idx_users_tenant ON users(tenant_id);
 
 -- Self-registration: pending records waiting for email confirmation.
--- A row becomes a real `users` row once the recipient clicks the verify link.
 CREATE TABLE IF NOT EXISTS pending_registrations (
     id              SERIAL PRIMARY KEY,
+    tenant_id       INT,
     username        VARCHAR(64)  NOT NULL,
     email           VARCHAR(255) NOT NULL,
     password_hash   VARCHAR(255) NOT NULL,
@@ -33,31 +56,34 @@ CREATE TABLE IF NOT EXISTS pending_registrations (
     expires_at      TIMESTAMP    NOT NULL,
     created_at      TIMESTAMP    NOT NULL DEFAULT NOW()
 );
+ALTER TABLE pending_registrations ADD COLUMN IF NOT EXISTS tenant_id INT;
 CREATE INDEX IF NOT EXISTS idx_pending_reg_email ON pending_registrations(email);
 
 CREATE TABLE IF NOT EXISTS login_logs (
     id              SERIAL PRIMARY KEY,
+    tenant_id       INT,
     username        VARCHAR(64)  NOT NULL,
     login_at        TIMESTAMP    NOT NULL DEFAULT NOW(),
     ip_address      VARCHAR(64)  NOT NULL DEFAULT '',
     status          VARCHAR(16)  NOT NULL CHECK (status IN ('Success', 'Failed')),
     user_agent      TEXT         NOT NULL DEFAULT ''
 );
+ALTER TABLE login_logs ADD COLUMN IF NOT EXISTS tenant_id INT;
 CREATE INDEX IF NOT EXISTS idx_login_logs_username ON login_logs(username);
 CREATE INDEX IF NOT EXISTS idx_login_logs_login_at ON login_logs(login_at);
+CREATE INDEX IF NOT EXISTS idx_login_logs_tenant   ON login_logs(tenant_id);
 
--- ---------- App / year configuration ----------
+-- ---------- App configuration (GLOBAL — platform-wide) ----------
 CREATE TABLE IF NOT EXISTS app_config (
     key             VARCHAR(64) PRIMARY KEY,
     value           TEXT NOT NULL,
     updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
 );
--- Seed: default_year = current year (overridable from admin UI)
 INSERT INTO app_config(key, value)
 VALUES ('default_year', EXTRACT(YEAR FROM NOW())::TEXT)
 ON CONFLICT (key) DO NOTHING;
 
--- SMTP config (single row keyed by 'smtp')
+-- SMTP config (GLOBAL — single row keyed by id=1)
 CREATE TABLE IF NOT EXISTS smtp_config (
     id              INT PRIMARY KEY DEFAULT 1,
     host            VARCHAR(255) NOT NULL DEFAULT 'smtp.gmail.com',
@@ -72,35 +98,42 @@ CREATE TABLE IF NOT EXISTS smtp_config (
 );
 INSERT INTO smtp_config(id) VALUES (1) ON CONFLICT DO NOTHING;
 
--- Per-year team capacity (target = headcount * revenue_per_headcount)
+-- Per-year team capacity, tenant-scoped (target = headcount * revenue_per_headcount).
+-- Fresh installs get the composite PK below; existing installs are migrated by
+-- bootstrap.js (ADD COLUMN tenant_id -> backfill -> swap PK to (tenant_id, year)).
 CREATE TABLE IF NOT EXISTS year_config (
-    year                  INT PRIMARY KEY,
+    tenant_id             INT NOT NULL,
+    year                  INT NOT NULL,
     headcount             INT      NOT NULL DEFAULT 0,
     revenue_per_headcount NUMERIC(18,2) NOT NULL DEFAULT 0,
-    updated_at            TIMESTAMP NOT NULL DEFAULT NOW()
+    updated_at            TIMESTAMP NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (tenant_id, year)
 );
+ALTER TABLE year_config ADD COLUMN IF NOT EXISTS tenant_id INT;
 
 -- ---------- Customers & Resources ----------
 CREATE TABLE IF NOT EXISTS customers (
     id                  SERIAL PRIMARY KEY,
-    alias               VARCHAR(64)  UNIQUE NOT NULL,
+    tenant_id           INT,
+    alias               VARCHAR(64)  NOT NULL,
     full_name           VARCHAR(512) NOT NULL DEFAULT '',
     contact_name        VARCHAR(255) NOT NULL DEFAULT '',
     contact_email       VARCHAR(255) NOT NULL DEFAULT '',
     contact_phone       VARCHAR(64)  NOT NULL DEFAULT '',
     account_manager     VARCHAR(255) NOT NULL DEFAULT '',
     color_hex           VARCHAR(7)   NOT NULL DEFAULT '#3b82f6',
-    logo_data           TEXT,            -- data URL (e.g. data:image/png;base64,...)
+    logo_data           TEXT,
     created_at          TIMESTAMP    NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMP    NOT NULL DEFAULT NOW()
 );
--- CR#2: account_manager column for existing databases.
-ALTER TABLE customers
-    ADD COLUMN IF NOT EXISTS account_manager VARCHAR(255) NOT NULL DEFAULT '';
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS account_manager VARCHAR(255) NOT NULL DEFAULT '';
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS tenant_id INT;
+CREATE INDEX IF NOT EXISTS idx_customers_tenant ON customers(tenant_id);
 
 CREATE TABLE IF NOT EXISTS resources (
     id              SERIAL PRIMARY KEY,
-    emp_id          VARCHAR(64)  UNIQUE,
+    tenant_id       INT,
+    emp_id          VARCHAR(64),
     first_name      VARCHAR(128) NOT NULL DEFAULT '',
     last_name       VARCHAR(128) NOT NULL DEFAULT '',
     nick_name       VARCHAR(128) NOT NULL DEFAULT '',
@@ -108,18 +141,18 @@ CREATE TABLE IF NOT EXISTS resources (
     email           VARCHAR(255) NOT NULL DEFAULT '',
     erp_username    VARCHAR(128) NOT NULL DEFAULT '',
     skill           TEXT         NOT NULL DEFAULT '',
-    picture_data    TEXT,             -- data URL (e.g. data:image/png;base64,...)
+    picture_data    TEXT,
     created_at      TIMESTAMP    NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMP    NOT NULL DEFAULT NOW()
 );
+ALTER TABLE resources ADD COLUMN IF NOT EXISTS tenant_id INT;
+CREATE INDEX IF NOT EXISTS idx_resources_tenant ON resources(tenant_id);
 
 -- ---------- Projects ----------
--- Master project record. Each project may have one Subscription license,
--- one Implementation row, multiple Perpetual/SW MA rows, multiple Service MA
--- rows, and one Outsource block (with monthly children if Man-Month).
 CREATE TABLE IF NOT EXISTS projects (
     id                   SERIAL PRIMARY KEY,
-    project_code         VARCHAR(64)  UNIQUE NOT NULL,
+    tenant_id            INT,
+    project_code         VARCHAR(64)  NOT NULL,
     description          TEXT         NOT NULL DEFAULT '',
     customer_id          INT          REFERENCES customers(id) ON DELETE SET NULL,
     project_start_date   DATE,
@@ -130,8 +163,10 @@ CREATE TABLE IF NOT EXISTS projects (
     created_at           TIMESTAMP    NOT NULL DEFAULT NOW(),
     updated_at           TIMESTAMP    NOT NULL DEFAULT NOW()
 );
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS tenant_id INT;
 CREATE INDEX IF NOT EXISTS idx_projects_status   ON projects(status);
 CREATE INDEX IF NOT EXISTS idx_projects_customer ON projects(customer_id);
+CREATE INDEX IF NOT EXISTS idx_projects_tenant   ON projects(tenant_id);
 
 -- Subscription License (1 per project)
 CREATE TABLE IF NOT EXISTS project_subscriptions (
@@ -177,8 +212,8 @@ CREATE TABLE IF NOT EXISTS project_implementation (
     id                       SERIAL PRIMARY KEY,
     project_id               INT NOT NULL UNIQUE REFERENCES projects(id) ON DELETE CASCADE,
     description              TEXT          NOT NULL DEFAULT '',
-    progress_last_year_pct   NUMERIC(7,4)  NOT NULL DEFAULT 0,  -- 0..1
-    progress_this_year_pct   NUMERIC(7,4)  NOT NULL DEFAULT 0,  -- 0..1
+    progress_last_year_pct   NUMERIC(7,4)  NOT NULL DEFAULT 0,
+    progress_this_year_pct   NUMERIC(7,4)  NOT NULL DEFAULT 0,
     revenue                  NUMERIC(18,2) NOT NULL DEFAULT 0,
     cost                     NUMERIC(18,2) NOT NULL DEFAULT 0,
     erp_code                 VARCHAR(64)   NOT NULL DEFAULT ''
@@ -190,11 +225,10 @@ CREATE TABLE IF NOT EXISTS project_outsource (
     project_id          INT NOT NULL UNIQUE REFERENCES projects(id) ON DELETE CASCADE,
     outsource_type      VARCHAR(16)  NOT NULL CHECK (outsource_type IN ('Man-Month','Man-Year')),
     description         VARCHAR(512) NOT NULL DEFAULT '',
-    -- Man-Year fields
     start_date          DATE,
     end_date            DATE,
-    revenue             NUMERIC(18,2) NOT NULL DEFAULT 0, -- For Man-Year only; Man-Month uses monthly rows
-    cost                NUMERIC(18,2) NOT NULL DEFAULT 0, -- For Man-Year only
+    revenue             NUMERIC(18,2) NOT NULL DEFAULT 0,
+    cost                NUMERIC(18,2) NOT NULL DEFAULT 0,
     erp_code            VARCHAR(64)   NOT NULL DEFAULT ''
 );
 
@@ -209,10 +243,9 @@ CREATE TABLE IF NOT EXISTS project_outsource_monthly (
 );
 
 -- ---------- Customer Licenses (CR#4) ----------
--- One customer can have many licenses. license_name may repeat within
--- a single customer (per spec).
 CREATE TABLE IF NOT EXISTS customer_licenses (
     id              SERIAL PRIMARY KEY,
+    tenant_id       INT,
     customer_id     INT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
     license_name    VARCHAR(255) NOT NULL DEFAULT '',
     vendor          VARCHAR(255) NOT NULL DEFAULT '',
@@ -224,10 +257,12 @@ CREATE TABLE IF NOT EXISTS customer_licenses (
     created_at      TIMESTAMP    NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMP    NOT NULL DEFAULT NOW()
 );
+ALTER TABLE customer_licenses ADD COLUMN IF NOT EXISTS tenant_id INT;
 CREATE INDEX IF NOT EXISTS idx_customer_licenses_customer ON customer_licenses(customer_id);
 CREATE INDEX IF NOT EXISTS idx_customer_licenses_expired  ON customer_licenses(expired_date);
+CREATE INDEX IF NOT EXISTS idx_customer_licenses_tenant   ON customer_licenses(tenant_id);
 
--- Configurable "expiring soon" threshold (days). Default 30.
+-- Configurable "expiring soon" threshold (days). Default 30. (GLOBAL)
 INSERT INTO app_config(key, value) VALUES ('license_expiring_days', '30')
 ON CONFLICT (key) DO NOTHING;
 
@@ -259,7 +294,7 @@ DECLARE
     t TEXT;
 BEGIN
     FOR t IN SELECT unnest(ARRAY[
-        'users','customers','resources','projects','smtp_config','year_config','customer_licenses'
+        'tenants','users','customers','resources','projects','smtp_config','year_config','customer_licenses'
     ]) LOOP
         EXECUTE format(
             'DROP TRIGGER IF EXISTS trg_%s_upd ON %I; '

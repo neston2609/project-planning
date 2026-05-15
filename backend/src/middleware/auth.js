@@ -6,8 +6,11 @@ function getSecret() {
 
 /**
  * Soft auth — populates req.user when a valid token is present, but does NOT
- * reject anonymous requests. Used on read-only endpoints that are publicly
- * viewable but want to know who is logged in.
+ * reject anonymous requests. Used on read-only endpoints that want to know
+ * who is logged in.
+ *
+ * The JWT payload carries: { uid, username, role, tenant_id }.
+ * tenant_id is null for the global 'tenantadmin' role.
  */
 function softAuth(req, _res, next) {
     const header = req.headers.authorization || '';
@@ -42,8 +45,41 @@ function requireRole(...roles) {
     };
 }
 
+/** Only the global platform 'tenantadmin' role. */
+function requireTenantAdmin(req, res, next) {
+    if (!req.user || req.user.role !== 'tenantadmin') {
+        return res.status(403).json({ error: 'Forbidden — TenantAdmin only' });
+    }
+    next();
+}
+
+/**
+ * Ensures the request is bound to a tenant. Used on every tenant-scoped
+ * business route so a token without a tenant (the global tenantadmin, or a
+ * malformed token) can never read or write tenant data.
+ */
+function requireTenant(req, res, next) {
+    const tid = tenantOf(req);
+    if (!tid) {
+        return res.status(403).json({
+            error: 'This action requires a team (tenant) context. The global TenantAdmin manages teams, not team data.'
+        });
+    }
+    req.tenantId = tid;
+    next();
+}
+
+/** Effective tenant id for the current request, or null. */
+function tenantOf(req) {
+    const t = req.user && req.user.tenant_id;
+    return Number.isInteger(t) && t > 0 ? t : null;
+}
+
 function signToken(payload) {
     return jwt.sign(payload, getSecret(), { expiresIn: process.env.JWT_EXPIRES_IN || '8h' });
 }
 
-module.exports = { softAuth, requireAuth, requireRole, signToken };
+module.exports = {
+    softAuth, requireAuth, requireRole, requireTenantAdmin, requireTenant,
+    tenantOf, signToken
+};

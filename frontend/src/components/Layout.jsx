@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { NavLink, Outlet, Link, useNavigate } from 'react-router-dom';
-import { useAuth, isAdmin, isSuperadmin, roleLabel } from '../auth';
+import { useState, useEffect } from 'react';
+import { NavLink, Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
+import { useAuth, isAdmin, isSuperadmin, isTenantAdmin, roleLabel, appTitle } from '../auth';
 import { useYear } from '../YearContext';
 import {
     ArrowLeftOnRectangleIcon, KeyIcon, Bars3Icon, XMarkIcon,
@@ -40,6 +40,12 @@ const superadminNav = [
     { to: '/admin/login-logs', label: 'Login Logs', icon: ShieldCheckIcon }
 ];
 
+// The global TenantAdmin manages teams, not team data — so they get their
+// own (and only their own) nav section.
+const platformNav = [
+    { to: '/admin/tenants', label: 'Tenants', icon: BuildingOffice2Icon }
+];
+
 function NavItem({ to, label, icon: Icon }) {
     return (
         <NavLink to={to} end={to === '/'}
@@ -54,7 +60,28 @@ export default function Layout() {
     const { user, logout } = useAuth();
     const { year, setYear } = useYear();
     const nav = useNavigate();
+    const location = useLocation();
     const [open, setOpen] = useState(false); // mobile
+
+    const tenantAdmin = isTenantAdmin(user);
+    // Brand the whole app with the tenant's name (e.g. "Automation Excellence
+    // Planning"). The TenantAdmin has no tenant -> plain "RPA Planning".
+    const title = appTitle(user);
+
+    // Keep the document title in sync with the tenant brand.
+    useEffect(() => {
+        document.title = title;
+    }, [title]);
+
+    // The TenantAdmin can only use the platform pages — bounce them off any
+    // tenant-scoped route they reach by typing a URL directly.
+    useEffect(() => {
+        if (!tenantAdmin) return;
+        const p = location.pathname;
+        if (!p.startsWith('/admin/tenants') && p !== '/change-password') {
+            nav('/admin/tenants', { replace: true });
+        }
+    }, [tenantAdmin, location.pathname, nav]);
 
     const years = [];
     const cur = new Date().getFullYear();
@@ -72,9 +99,11 @@ export default function Layout() {
                          style={{ backgroundImage: 'var(--grad-brand)' }}>
                         <ChartPieIcon className="w-6 h-6" />
                     </div>
-                    <div>
-                        <div className="text-lg leading-tight brand-mark">RPA Planning</div>
-                        <div className="text-[10px] text-slate-400 tracking-wider uppercase">Resource &amp; Revenue</div>
+                    <div className="min-w-0">
+                        <div className="text-lg leading-tight brand-mark truncate" title={title}>{title}</div>
+                        <div className="text-[10px] text-slate-400 tracking-wider uppercase">
+                            {tenantAdmin ? 'Platform Administration' : 'Resource & Revenue'}
+                        </div>
                     </div>
                     <button className="lg:hidden ml-auto text-slate-400 hover:text-slate-600" onClick={() => setOpen(false)}>
                         <XMarkIcon className="w-5 h-5" />
@@ -82,18 +111,27 @@ export default function Layout() {
                 </div>
 
                 <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-0.5">
-                    <div className="nav-section-title">Dashboards</div>
-                    {mainNav.map(i => <NavItem key={i.to} {...i} />)}
+                    {tenantAdmin ? (
+                        <>
+                            <div className="nav-section-title">Platform</div>
+                            {platformNav.map(i => <NavItem key={i.to} {...i} />)}
+                        </>
+                    ) : (
+                        <>
+                            <div className="nav-section-title">Dashboards</div>
+                            {mainNav.map(i => <NavItem key={i.to} {...i} />)}
 
-                    {isAdmin(user) && <>
-                        <div className="nav-section-title">Administration</div>
-                        {adminNav.map(i => <NavItem key={i.to} {...i} />)}
-                    </>}
+                            {isAdmin(user) && <>
+                                <div className="nav-section-title">Administration</div>
+                                {adminNav.map(i => <NavItem key={i.to} {...i} />)}
+                            </>}
 
-                    {isSuperadmin(user) && <>
-                        <div className="nav-section-title">Superadmin</div>
-                        {superadminNav.map(i => <NavItem key={i.to} {...i} />)}
-                    </>}
+                            {isSuperadmin(user) && <>
+                                <div className="nav-section-title">Superadmin</div>
+                                {superadminNav.map(i => <NavItem key={i.to} {...i} />)}
+                            </>}
+                        </>
+                    )}
                 </nav>
 
                 {/* User box at the bottom */}
@@ -141,16 +179,20 @@ export default function Layout() {
                             <Bars3Icon className="w-6 h-6" />
                         </button>
                         <div className="text-sm text-slate-500 hidden sm:block">
-                            {user && <>Signed in as <span className="font-semibold text-slate-700">{user.username}</span> · {roleLabel(user.role)}</>}
+                            {user && <>Signed in as <span className="font-semibold text-slate-700">{user.username}</span> · {roleLabel(user.role)}
+                                {user.tenant_name && <> · <span className="font-semibold text-indigo-600">{user.tenant_name}</span></>}
+                            </>}
                         </div>
-                        <div className="ml-auto flex items-center gap-2">
-                            <CalendarDaysIcon className="w-5 h-5 text-indigo-500" />
-                            <label className="text-sm text-slate-600">Year</label>
-                            <select className="input !w-24 !py-1.5 font-semibold !text-indigo-700"
-                                    value={year} onChange={(e) => setYear(Number(e.target.value))}>
-                                {years.map(y => <option key={y} value={y}>{y}</option>)}
-                            </select>
-                        </div>
+                        {!tenantAdmin && (
+                            <div className="ml-auto flex items-center gap-2">
+                                <CalendarDaysIcon className="w-5 h-5 text-indigo-500" />
+                                <label className="text-sm text-slate-600">Year</label>
+                                <select className="input !w-24 !py-1.5 font-semibold !text-indigo-700"
+                                        value={year} onChange={(e) => setYear(Number(e.target.value))}>
+                                    {years.map(y => <option key={y} value={y}>{y}</option>)}
+                                </select>
+                            </div>
+                        )}
                     </div>
                 </header>
 
@@ -159,7 +201,7 @@ export default function Layout() {
                 </main>
 
                 <footer className="text-xs text-slate-400 text-center py-3">
-                    <span className="brand-mark">RPA Planning Management</span> · v1.0
+                    <span className="brand-mark">{title} Management</span> · v1.0
                 </footer>
             </div>
         </div>

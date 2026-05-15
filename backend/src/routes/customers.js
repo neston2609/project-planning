@@ -1,17 +1,27 @@
 const express = require('express');
 const { body, validationResult, param } = require('express-validator');
 const db = require('../db');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireTenant } = require('../middleware/auth');
 
 const router = express.Router();
 
-router.get('/', requireAuth, async (_req, res) => {
-    const { rows } = await db.query('SELECT * FROM customers ORDER BY alias');
+// Every customer route is tenant-scoped: requireAuth then requireTenant
+// (which 403s tokens without a tenant and sets req.tenantId).
+router.use(requireAuth, requireTenant);
+
+router.get('/', async (req, res) => {
+    const { rows } = await db.query(
+        'SELECT * FROM customers WHERE tenant_id=$1 ORDER BY alias',
+        [req.tenantId]
+    );
     res.json(rows);
 });
 
-router.get('/:id', requireAuth, param('id').isInt(), async (req, res) => {
-    const { rows } = await db.query('SELECT * FROM customers WHERE id=$1', [req.params.id]);
+router.get('/:id', param('id').isInt(), async (req, res) => {
+    const { rows } = await db.query(
+        'SELECT * FROM customers WHERE id=$1 AND tenant_id=$2',
+        [req.params.id, req.tenantId]
+    );
     if (!rows[0]) return res.status(404).json({ error: 'Not found' });
     res.json(rows[0]);
 });
@@ -34,14 +44,14 @@ const customerValidators = [
     })
 ];
 
-router.post('/', requireAuth, customerValidators, async (req, res) => {
+router.post('/', customerValidators, async (req, res) => {
     const errs = validationResult(req);
     if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
     try {
         const { rows } = await db.query(
-            `INSERT INTO customers(alias, full_name, contact_name, contact_email, contact_phone, account_manager, color_hex, logo_data)
-             VALUES ($1,$2,$3,$4,$5,$6,COALESCE($7,'#3b82f6'),$8) RETURNING *`,
-            [req.body.alias, req.body.full_name || '', req.body.contact_name || '',
+            `INSERT INTO customers(tenant_id, alias, full_name, contact_name, contact_email, contact_phone, account_manager, color_hex, logo_data)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,COALESCE($8,'#3b82f6'),$9) RETURNING *`,
+            [req.tenantId, req.body.alias, req.body.full_name || '', req.body.contact_name || '',
              req.body.contact_email || '', req.body.contact_phone || '',
              req.body.account_manager || '',
              req.body.color_hex || null, req.body.logo_data || null]
@@ -53,35 +63,43 @@ router.post('/', requireAuth, customerValidators, async (req, res) => {
     }
 });
 
-router.put('/:id', requireAuth, param('id').isInt(), customerValidators, async (req, res) => {
+router.put('/:id', param('id').isInt(), customerValidators, async (req, res) => {
     const errs = validationResult(req);
     if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
     // logo_data semantics:
-    //   undefined  → keep existing
-    //   null or '' → clear
-    //   'data:...' → replace
+    //   undefined  -> keep existing
+    //   null or '' -> clear
+    //   'data:...' -> replace
     const newLogo = (req.body.logo_data === undefined) ? '__KEEP__'
                   : (req.body.logo_data || null);
-    const { rows } = await db.query(
-        `UPDATE customers SET alias=$1, full_name=$2, contact_name=$3, contact_email=$4,
-                              contact_phone=$5, account_manager=$6,
-                              color_hex=COALESCE($7, color_hex),
-                              logo_data = CASE WHEN $8::text = '__KEEP__' THEN logo_data ELSE NULLIF($9::text, '__NULL__') END
-         WHERE id=$10 RETURNING *`,
-        [req.body.alias, req.body.full_name || '', req.body.contact_name || '',
-         req.body.contact_email || '', req.body.contact_phone || '',
-         req.body.account_manager || '',
-         req.body.color_hex || null,
-         newLogo === '__KEEP__' ? '__KEEP__' : 'replace',
-         newLogo === '__KEEP__' ? null : (newLogo === null ? '__NULL__' : newLogo),
-         req.params.id]
-    );
-    if (!rows[0]) return res.status(404).json({ error: 'Not found' });
-    res.json(rows[0]);
+    try {
+        const { rows } = await db.query(
+            `UPDATE customers SET alias=$1, full_name=$2, contact_name=$3, contact_email=$4,
+                                  contact_phone=$5, account_manager=$6,
+                                  color_hex=COALESCE($7, color_hex),
+                                  logo_data = CASE WHEN $8::text = '__KEEP__' THEN logo_data ELSE NULLIF($9::text, '__NULL__') END
+             WHERE id=$10 AND tenant_id=$11 RETURNING *`,
+            [req.body.alias, req.body.full_name || '', req.body.contact_name || '',
+             req.body.contact_email || '', req.body.contact_phone || '',
+             req.body.account_manager || '',
+             req.body.color_hex || null,
+             newLogo === '__KEEP__' ? '__KEEP__' : 'replace',
+             newLogo === '__KEEP__' ? null : (newLogo === null ? '__NULL__' : newLogo),
+             req.params.id, req.tenantId]
+        );
+        if (!rows[0]) return res.status(404).json({ error: 'Not found' });
+        res.json(rows[0]);
+    } catch (err) {
+        if (err.code === '23505') return res.status(409).json({ error: 'Alias already exists' });
+        throw err;
+    }
 });
 
-router.delete('/:id', requireAuth, param('id').isInt(), async (req, res) => {
-    const { rowCount } = await db.query('DELETE FROM customers WHERE id=$1', [req.params.id]);
+router.delete('/:id', param('id').isInt(), async (req, res) => {
+    const { rowCount } = await db.query(
+        'DELETE FROM customers WHERE id=$1 AND tenant_id=$2',
+        [req.params.id, req.tenantId]
+    );
     if (!rowCount) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true });
 });

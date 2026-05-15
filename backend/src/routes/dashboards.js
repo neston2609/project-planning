@@ -1,14 +1,14 @@
 const express = require('express');
 const db = require('../db');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireTenant } = require('../middleware/auth');
 const {
     recognizeSubscription, recognizePerpetualMA, recognizeServiceMA,
     recognizeImplementation, recognizeOutsource
 } = require('../utils/revenue');
 
 const router = express.Router();
-// All dashboard endpoints require any logged-in user (user/admin/superadmin).
-router.use(requireAuth);
+// All dashboard endpoints require a logged-in user bound to a tenant.
+router.use(requireAuth, requireTenant);
 
 function pickYear(req) {
     const y = Number(req.query.year);
@@ -18,7 +18,7 @@ function pickYear(req) {
 function statusBucket(status) {
     if (status === 'Pipeline') return 'Pipeline';
     if (status === 'Win' || status === 'Backlog') return 'BacklogWin';
-    return null; // Loss → excluded
+    return null; // Loss -> excluded
 }
 
 // ---------- Subscription Dashboard ----------
@@ -32,9 +32,9 @@ router.get('/subscriptions', async (req, res) => {
           FROM project_subscriptions s
           JOIN projects p  ON p.id = s.project_id
           LEFT JOIN customers c ON c.id = p.customer_id
-         WHERE p.status <> 'Loss'
+         WHERE p.status <> 'Loss' AND p.tenant_id = $1
          ORDER BY p.project_code
-    `);
+    `, [req.tenantId]);
     const out = rows.map(r => {
         const calc = recognizeSubscription(r, year);
         return {
@@ -68,9 +68,9 @@ router.get('/perpetual-ma', async (req, res) => {
           FROM project_perpetual_ma m
           JOIN projects p  ON p.id = m.project_id
           LEFT JOIN customers c ON c.id = p.customer_id
-         WHERE p.status <> 'Loss'
+         WHERE p.status <> 'Loss' AND p.tenant_id = $1
          ORDER BY p.project_code, m.id
-    `);
+    `, [req.tenantId]);
     const out = rows.map(r => {
         const calc = recognizePerpetualMA(r, year);
         return {
@@ -105,13 +105,11 @@ router.get('/service-ma', async (req, res) => {
           FROM project_service_ma s
           JOIN projects p  ON p.id = s.project_id
           LEFT JOIN customers c ON c.id = p.customer_id
-         WHERE p.status <> 'Loss'
+         WHERE p.status <> 'Loss' AND p.tenant_id = $1
          ORDER BY p.project_code, s.id
-    `);
+    `, [req.tenantId]);
     const out = rows.map(r => {
         const calc = recognizeServiceMA(r, year);
-        // CR#3: fall back to the main project's description when the sub-row's
-        // description is empty/blank.
         const subDesc = (r.description || '').trim();
         const desc    = subDesc || r.project_description || '';
         return {
@@ -141,12 +139,11 @@ router.get('/implementation', async (req, res) => {
           FROM project_implementation i
           JOIN projects p  ON p.id = i.project_id
           LEFT JOIN customers c ON c.id = p.customer_id
-         WHERE p.status <> 'Loss'
+         WHERE p.status <> 'Loss' AND p.tenant_id = $1
          ORDER BY p.project_code
-    `);
+    `, [req.tenantId]);
     const out = rows.map(r => {
         const calc = recognizeImplementation(r, year);
-        // CR#3: fall back to project description if implementation row's is empty.
         const subDesc = (r.description || '').trim();
         const desc    = subDesc || r.project_description || '';
         return {
@@ -176,16 +173,20 @@ router.get('/outsource', async (req, res) => {
           FROM project_outsource o
           JOIN projects p  ON p.id = o.project_id
           LEFT JOIN customers c ON c.id = p.customer_id
-         WHERE p.status <> 'Loss'
+         WHERE p.status <> 'Loss' AND p.tenant_id = $1
          ORDER BY p.project_code
-    `);
+    `, [req.tenantId]);
 
     const monthly = await db.query(
-        `SELECT project_outsource_id, COALESCE(SUM(revenue),0)::numeric AS revenue,
-                                       COALESCE(SUM(cost),0)::numeric    AS cost
-           FROM project_outsource_monthly
-          WHERE year = $1 GROUP BY project_outsource_id`,
-        [year]
+        `SELECT pom.project_outsource_id,
+                COALESCE(SUM(pom.revenue),0)::numeric AS revenue,
+                COALESCE(SUM(pom.cost),0)::numeric    AS cost
+           FROM project_outsource_monthly pom
+           JOIN project_outsource o ON o.id = pom.project_outsource_id
+           JOIN projects p          ON p.id = o.project_id
+          WHERE pom.year = $1 AND p.tenant_id = $2
+          GROUP BY pom.project_outsource_id`,
+        [year, req.tenantId]
     );
     const monthlySum = new Map(monthly.rows.map(r => [r.project_outsource_id, r]));
 
@@ -198,7 +199,6 @@ router.get('/outsource', async (req, res) => {
             cost    = Number(m ? m.cost    : 0);
         }
         const calc = recognizeOutsource({ ...r, revenue, cost }, year);
-        // CR#3: fall back to project description if outsource row's is empty.
         const subDesc = (r.description || '').trim();
         const desc    = subDesc || r.project_description || '';
         return {
@@ -220,19 +220,19 @@ router.get('/outsource', async (req, res) => {
 // ---------- Summarized / Total Dashboard ----------
 router.get('/summary', async (req, res) => {
     const year = pickYear(req);
+    const tenantId = req.tenantId;
 
-    // Reuse the per-section computations.
-    const subs = (await internal('subscriptions', year)).rows;
-    const perp = (await internal('perpetual-ma',  year)).rows;
-    const sv   = (await internal('service-ma',    year)).rows;
-    const impl = (await internal('implementation',year)).rows;
-    const outs = (await internal('outsource',     year)).rows;
+    const subs = (await internal('subscriptions', year, tenantId)).rows;
+    const perp = (await internal('perpetual-ma',  year, tenantId)).rows;
+    const sv   = (await internal('service-ma',    year, tenantId)).rows;
+    const impl = (await internal('implementation',year, tenantId)).rows;
+    const outs = (await internal('outsource',     year, tenantId)).rows;
 
     const buckets = {
-        pipeline_license_revenue: 0,   // sum of recognize GM for Subscription + Perpetual + SW MA, status=Pipeline
-        pipeline_service_revenue: 0,   // sum of recognize REV for Service MA + Outsource + Implementation, status=Pipeline
-        backlog_win_license_revenue: 0,// sum of recognize GM for Subscription + Perpetual,  status=Win/Backlog
-        backlog_win_service_revenue: 0 // sum of recognize REV for Service MA + Outsource + Implementation, status=Win/Backlog
+        pipeline_license_revenue: 0,
+        pipeline_service_revenue: 0,
+        backlog_win_license_revenue: 0,
+        backlog_win_service_revenue: 0
     };
 
     function add(value, sectionKey, status) {
@@ -247,11 +247,8 @@ router.get('/summary', async (req, res) => {
         }
     }
 
-    // License-side (use recognize GROSS MARGIN per spec).
-    // The recognition utility returns the GM amount as `recognize_gm`.
     for (const r of subs) add(Number(r.recognize_gm) || 0, 'license', r.status);
     for (const r of perp) add(Number(r.recognize_gm) || 0, 'license', r.status);
-    // Service-side (use recognize REVENUE)
     for (const r of sv)   add(Number(r.recognize_revenue) || 0, 'service', r.status);
     for (const r of impl) add(Number(r.recognize_revenue) || 0, 'service', r.status);
     for (const r of outs) add(Number(r.recognize_revenue) || 0, 'service', r.status);
@@ -259,8 +256,11 @@ router.get('/summary', async (req, res) => {
     const total = buckets.pipeline_license_revenue + buckets.pipeline_service_revenue +
                   buckets.backlog_win_license_revenue + buckets.backlog_win_service_revenue;
 
-    // Target = headcount * revenue_per_headcount
-    const yc = await db.query('SELECT * FROM year_config WHERE year=$1', [year]);
+    // Target = headcount * revenue_per_headcount (tenant-scoped year_config)
+    const yc = await db.query(
+        'SELECT * FROM year_config WHERE tenant_id=$1 AND year=$2',
+        [tenantId, year]
+    );
     const headcount = Number(yc.rows[0]?.headcount || 0);
     const rph       = Number(yc.rows[0]?.revenue_per_headcount || 0);
     const target_revenue = headcount * rph;
@@ -278,47 +278,50 @@ router.get('/summary', async (req, res) => {
     });
 });
 
-// Tiny helper that re-runs each handler's data fetch in-process by reaching
-// into our own request handlers. We re-implement the same SELECT here to
-// avoid the request-cycle dance.
-async function internal(kind, year) {
+// In-process data fetch for the summary roll-up. tenant-scoped.
+async function internal(kind, year, tenantId) {
     if (kind === 'subscriptions') {
         const { rows } = await db.query(`
             SELECT p.status, s.*  FROM project_subscriptions s
               JOIN projects p ON p.id = s.project_id
-             WHERE p.status <> 'Loss'`);
+             WHERE p.status <> 'Loss' AND p.tenant_id = $1`, [tenantId]);
         return { rows: rows.map(r => ({ ...recognizeSubscription(r, year), status: r.status })) };
     }
     if (kind === 'perpetual-ma') {
         const { rows } = await db.query(`
             SELECT p.status, m.*  FROM project_perpetual_ma m
               JOIN projects p ON p.id = m.project_id
-             WHERE p.status <> 'Loss'`);
+             WHERE p.status <> 'Loss' AND p.tenant_id = $1`, [tenantId]);
         return { rows: rows.map(r => ({ ...recognizePerpetualMA(r, year), status: r.status })) };
     }
     if (kind === 'service-ma') {
         const { rows } = await db.query(`
             SELECT p.status, s.*  FROM project_service_ma s
               JOIN projects p ON p.id = s.project_id
-             WHERE p.status <> 'Loss'`);
+             WHERE p.status <> 'Loss' AND p.tenant_id = $1`, [tenantId]);
         return { rows: rows.map(r => ({ ...recognizeServiceMA(r, year), status: r.status })) };
     }
     if (kind === 'implementation') {
         const { rows } = await db.query(`
             SELECT p.status, i.*  FROM project_implementation i
               JOIN projects p ON p.id = i.project_id
-             WHERE p.status <> 'Loss'`);
+             WHERE p.status <> 'Loss' AND p.tenant_id = $1`, [tenantId]);
         return { rows: rows.map(r => ({ ...recognizeImplementation(r, year), status: r.status })) };
     }
     if (kind === 'outsource') {
         const { rows: o } = await db.query(`
             SELECT p.status, o.*  FROM project_outsource o
               JOIN projects p ON p.id = o.project_id
-             WHERE p.status <> 'Loss'`);
+             WHERE p.status <> 'Loss' AND p.tenant_id = $1`, [tenantId]);
         const { rows: m } = await db.query(`
-            SELECT project_outsource_id, COALESCE(SUM(revenue),0)::numeric AS rev,
-                                          COALESCE(SUM(cost),0)::numeric    AS cst
-              FROM project_outsource_monthly WHERE year=$1 GROUP BY project_outsource_id`, [year]);
+            SELECT pom.project_outsource_id,
+                   COALESCE(SUM(pom.revenue),0)::numeric AS rev,
+                   COALESCE(SUM(pom.cost),0)::numeric    AS cst
+              FROM project_outsource_monthly pom
+              JOIN project_outsource o ON o.id = pom.project_outsource_id
+              JOIN projects p          ON p.id = o.project_id
+             WHERE pom.year = $1 AND p.tenant_id = $2
+             GROUP BY pom.project_outsource_id`, [year, tenantId]);
         const map = new Map(m.map(x => [x.project_outsource_id, x]));
         return { rows: o.map(r => {
             const isMM = r.outsource_type === 'Man-Month';

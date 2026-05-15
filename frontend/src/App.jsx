@@ -25,8 +25,9 @@ import SmtpPage         from './pages/admin/Smtp';
 import UsersPage        from './pages/admin/Users';
 import LoginLogsPage    from './pages/admin/LoginLogs';
 import LicenseManagement from './pages/admin/LicenseManagement';
+import Tenants          from './pages/admin/Tenants';
 
-import { useAuth, isAdmin, isSuperadmin, isAuthenticated } from './auth';
+import { useAuth, isAdmin, isSuperadmin, isTenantAdmin, isAuthenticated } from './auth';
 
 function RequireAuth({ children }) {
     const { user } = useAuth();
@@ -45,6 +46,20 @@ function RequireSuper({ children }) {
     if (!isSuperadmin(user))    return <Navigate to="/" replace />;
     return children;
 }
+function RequireTenantAdmin({ children }) {
+    const { user } = useAuth();
+    if (!isAuthenticated(user)) return <Navigate to="/login" replace />;
+    if (!isTenantAdmin(user))   return <Navigate to="/" replace />;
+    return children;
+}
+
+// The global TenantAdmin has no tenant, so the tenant dashboards would 403.
+// Send them straight to the Tenant Management page instead of Summary.
+function HomeRedirect() {
+    const { user } = useAuth();
+    if (isTenantAdmin(user)) return <Navigate to="/admin/tenants" replace />;
+    return <Summary />;
+}
 
 export default function App() {
     return (
@@ -53,7 +68,7 @@ export default function App() {
             <Route path="/register"      element={<Register />} />
             <Route path="/verify-email"  element={<VerifyEmail />} />
             <Route element={<RequireAuth><Layout /></RequireAuth>}>
-                <Route index element={<Summary />} />
+                <Route index element={<HomeRedirect />} />
                 <Route path="subscription"      element={<SubscriptionDash />} />
                 <Route path="perpetual-ma"      element={<PerpetualDash />} />
                 <Route path="implementation"    element={<ImplementationDash />} />
@@ -75,6 +90,8 @@ export default function App() {
 
                 <Route path="admin/users"      element={<RequireSuper><UsersPage /></RequireSuper>} />
                 <Route path="admin/login-logs" element={<RequireSuper><LoginLogsPage /></RequireSuper>} />
+
+                <Route path="admin/tenants"    element={<RequireTenantAdmin><Tenants /></RequireTenantAdmin>} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

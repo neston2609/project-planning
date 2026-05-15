@@ -11,6 +11,13 @@ const router = express.Router();
 const ALLOWED_DOMAIN = '@mfec.co.th';
 const REG_TOKEN_TTL_HOURS = 24;
 
+/** The tenant new self-registrations land in (Phase 1: the default tenant). */
+async function getDefaultTenantId() {
+    const r = await db.query("SELECT value FROM app_config WHERE key='default_tenant_id'");
+    const id = r.rows[0] ? Number(r.rows[0].value) : null;
+    return Number.isInteger(id) && id > 0 ? id : null;
+}
+
 router.post('/login',
     body('username').isString().notEmpty(),
     body('password').isString().notEmpty(),
@@ -23,18 +30,30 @@ router.post('/login',
         const ua = req.headers['user-agent'] || '';
 
         try {
-            const { rows } = await db.query('SELECT * FROM users WHERE username=$1', [username]);
+            const { rows } = await db.query(
+                `SELECT u.*, t.name AS tenant_name
+                   FROM users u
+                   LEFT JOIN tenants t ON t.id = u.tenant_id
+                  WHERE u.username = $1`,
+                [username]
+            );
             const user = rows[0];
             const ok = user && await bcrypt.compare(password, user.password_hash);
 
             await db.query(
-                `INSERT INTO login_logs(username, ip_address, status, user_agent) VALUES ($1,$2,$3,$4)`,
-                [username, ip, ok ? 'Success' : 'Failed', ua]
+                `INSERT INTO login_logs(tenant_id, username, ip_address, status, user_agent)
+                 VALUES ($1,$2,$3,$4,$5)`,
+                [user ? user.tenant_id : null, username, ip, ok ? 'Success' : 'Failed', ua]
             );
 
             if (!ok) return res.status(401).json({ error: 'Invalid username or password' });
 
-            const token = signToken({ uid: user.id, username: user.username, role: user.role });
+            const token = signToken({
+                uid: user.id,
+                username: user.username,
+                role: user.role,
+                tenant_id: user.tenant_id || null
+            });
             return res.json({
                 token,
                 user: {
@@ -42,6 +61,8 @@ router.post('/login',
                     username: user.username,
                     full_name: user.full_name,
                     role: user.role,
+                    tenant_id: user.tenant_id || null,
+                    tenant_name: user.tenant_name || null,
                     must_change_password: user.must_change_password
                 }
             });
@@ -84,10 +105,9 @@ router.post('/change-password',
 // 2) GET  /auth/verify-email?token=...   — promotes pending row to a real user
 //
 // Only @mfec.co.th emails are allowed. New users are created with the
-// 'user' (view-only) role.
+// 'user' (view-only) role, in the default tenant (Phase 1).
 
 function buildAppOrigin(req) {
-    // Prefer explicit env var if set; otherwise reconstruct from request headers.
     if (process.env.APP_ORIGIN) return process.env.APP_ORIGIN.replace(/\/$/, '');
     const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http').toString().split(',')[0];
     const host  = (req.headers['x-forwarded-host']  || req.headers['host']).toString().split(',')[0];
@@ -119,7 +139,6 @@ router.post('/register',
         const phone    = String(req.body.phone_number || '').trim();
 
         try {
-            // Reject if already registered
             const dup = await db.query(
                 `SELECT 1 FROM users WHERE username=$1 OR LOWER(email)=$2 LIMIT 1`,
                 [username, email]
@@ -128,7 +147,6 @@ router.post('/register',
                 return res.status(409).json({ error: 'A user with that username or email already exists' });
             }
 
-            // Cleanup expired pending rows for this email/username
             await db.query(`DELETE FROM pending_registrations WHERE expires_at < NOW()`);
 
             const pendingDup = await db.query(
@@ -143,11 +161,12 @@ router.post('/register',
             const passwordHash = await bcrypt.hash(password, 10);
             const token = crypto.randomBytes(32).toString('hex');
             const expiresAt = new Date(Date.now() + REG_TOKEN_TTL_HOURS * 3600 * 1000);
+            const tenantId = await getDefaultTenantId();
 
             await db.query(
-                `INSERT INTO pending_registrations(username, email, password_hash, full_name, phone_number, token, expires_at)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-                [username, email, passwordHash, fullName, phone, token, expiresAt]
+                `INSERT INTO pending_registrations(tenant_id, username, email, password_hash, full_name, phone_number, token, expires_at)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+                [tenantId, username, email, passwordHash, fullName, phone, token, expiresAt]
             );
 
             try {
@@ -156,7 +175,6 @@ router.post('/register',
                     origin: buildAppOrigin(req)
                 });
             } catch (err) {
-                // SMTP failure: roll back the pending row so the user can retry later.
                 await db.query(`DELETE FROM pending_registrations WHERE token=$1`, [token]);
                 console.error('[register] mail failure', err);
                 if (err.code === 'SMTP_NOT_CONFIGURED') {
@@ -173,8 +191,6 @@ router.post('/register',
     }
 );
 
-// Send the confirmation email for a pending row. Used by both /register and
-// /resend-verification so the wording stays consistent.
 async function sendVerificationEmail({ to, fullName, username, token, origin }) {
     const link = `${origin}/verify-email?token=${token}`;
     await sendMail({
@@ -216,13 +232,11 @@ router.post('/resend-verification',
         const email = String(req.body.email).trim().toLowerCase();
 
         try {
-            // Already a real user? Tell them to log in.
             const existing = await db.query(`SELECT 1 FROM users WHERE LOWER(email)=$1 LIMIT 1`, [email]);
             if (existing.rowCount) {
                 return res.status(409).json({ error: 'This email is already activated. Please log in.' });
             }
 
-            // Drop expired pendings, then find the pending row for this email.
             await db.query(`DELETE FROM pending_registrations WHERE expires_at < NOW()`);
             const { rows } = await db.query(
                 `SELECT * FROM pending_registrations WHERE LOWER(email)=$1 LIMIT 1`, [email]
@@ -232,14 +246,12 @@ router.post('/resend-verification',
                 return res.status(404).json({ error: 'No pending registration found for that email. Please register first.' });
             }
 
-            // Rate limit
             const ageSec = (Date.now() - new Date(pending.created_at).getTime()) / 1000;
             if (ageSec < RESEND_COOLDOWN_SEC) {
                 const wait = Math.ceil(RESEND_COOLDOWN_SEC - ageSec);
                 return res.status(429).json({ error: `Please wait ${wait} seconds before requesting another email.` });
             }
 
-            // Roll the token and refresh expiry, then send.
             const newToken     = crypto.randomBytes(32).toString('hex');
             const newExpiresAt = new Date(Date.now() + REG_TOKEN_TTL_HOURS * 3600 * 1000);
             await db.query(
@@ -290,7 +302,6 @@ router.get('/verify-email',
                 return res.status(400).json({ error: 'This confirmation link has expired. Please register again.' });
             }
 
-            // Final dup check before insert (someone may have signed up via admin in the meantime)
             const dup = await db.query(
                 `SELECT 1 FROM users WHERE username=$1 OR LOWER(email)=LOWER($2) LIMIT 1`,
                 [pending.username, pending.email]
@@ -300,10 +311,14 @@ router.get('/verify-email',
                 return res.status(409).json({ error: 'This username or email was registered separately. Please log in.' });
             }
 
+            // Fall back to the default tenant if the pending row predates the
+            // tenant_id column.
+            const tenantId = pending.tenant_id || await getDefaultTenantId();
+
             await db.query(
-                `INSERT INTO users(username, password_hash, full_name, email, phone_number, role)
-                 VALUES ($1,$2,$3,$4,$5,'user')`,
-                [pending.username, pending.password_hash, pending.full_name, pending.email, pending.phone_number]
+                `INSERT INTO users(tenant_id, username, password_hash, full_name, email, phone_number, role)
+                 VALUES ($1,$2,$3,$4,$5,$6,'user')`,
+                [tenantId, pending.username, pending.password_hash, pending.full_name, pending.email, pending.phone_number]
             );
             await db.query(`DELETE FROM pending_registrations WHERE id=$1`, [pending.id]);
 
@@ -321,8 +336,11 @@ router.get('/verify-email',
 
 router.get('/me', requireAuth, async (req, res) => {
     const { rows } = await db.query(
-        `SELECT id, username, full_name, email, phone_number, role, must_change_password
-         FROM users WHERE id=$1`,
+        `SELECT u.id, u.username, u.full_name, u.email, u.phone_number, u.role,
+                u.must_change_password, u.tenant_id, t.name AS tenant_name
+           FROM users u
+           LEFT JOIN tenants t ON t.id = u.tenant_id
+          WHERE u.id=$1`,
         [req.user.uid]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Not found' });
