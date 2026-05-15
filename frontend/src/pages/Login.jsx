@@ -58,7 +58,7 @@ export default function Login() {
                          style={{ backgroundImage: 'var(--grad-brand)' }}>
                         <ChartPieIcon className="w-8 h-8" />
                     </div>
-                    <h1 className="text-2xl brand-mark">RPA Planning</h1>
+                    <h1 className="text-2xl brand-mark">Team Revenue & Planning</h1>
                     <p className="text-xs text-slate-500 mt-1 uppercase tracking-wider">Admin Login</p>
                 </div>
                 <div>
