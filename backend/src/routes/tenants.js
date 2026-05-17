@@ -5,15 +5,27 @@ const db = require('../db');
 const { requireAuth, requireTenantAdmin } = require('../middleware/auth');
 
 const router = express.Router();
-
-// Tenant management is reserved for the global TenantAdmin role.
 router.use(requireAuth, requireTenantAdmin);
 
-/** The default tenant id (holds the originally-migrated data; cannot be deleted). */
+/** The default tenant id (cannot be deleted). */
 async function getDefaultTenantId() {
     const r = await db.query("SELECT value FROM app_config WHERE key='default_tenant_id'");
     const id = r.rows[0] ? Number(r.rows[0].value) : null;
     return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+async function seedTenantConfig(client, tenantId) {
+    const defaults = [
+        ['default_year',          String(new Date().getFullYear())],
+        ['license_expiring_days', '30']
+    ];
+    for (const [key, value] of defaults) {
+        await client.query(
+            `INSERT INTO tenant_config(tenant_id, key, value) VALUES ($1,$2,$3)
+             ON CONFLICT (tenant_id, key) DO NOTHING`,
+            [tenantId, key, value]
+        );
+    }
 }
 
 const COUNTS_SELECT = `
@@ -39,9 +51,7 @@ router.get('/:id', param('id').isInt(), async (req, res) => {
     res.json({ ...rows[0], is_default: rows[0].id === defId });
 });
 
-// ---------- Create a new tenant + its first superadmin ----------
-// Per spec: a new team starts empty (no customers/projects/resources) but with
-// one superadmin login so the team can begin adding its own data/users.
+// ---------- Create a new tenant + its first superadmin + default config ----------
 router.post('/',
     body('name').isString().trim().isLength({ min: 1, max: 255 })
         .withMessage('Team name is required'),
@@ -75,6 +85,10 @@ router.post('/',
                  RETURNING id, username, full_name, role, must_change_password`,
                 [tenant.id, username, hash, fullName]
             );
+
+            // Seed sensible per-tenant config defaults.
+            await seedTenantConfig(client, tenant.id);
+
             await client.query('COMMIT');
             res.status(201).json({
                 tenant: { ...tenant, user_count: 1, customer_count: 0, project_count: 0, is_default: false },
@@ -83,7 +97,7 @@ router.post('/',
         } catch (err) {
             await client.query('ROLLBACK');
             if (err.code === '23505') {
-                return res.status(409).json({ error: 'That admin username is already taken' });
+                return res.status(409).json({ error: 'That admin username is already taken in this team' });
             }
             console.error('[tenants/create]', err);
             res.status(500).json({ error: 'Could not create tenant' });
@@ -109,10 +123,7 @@ router.put('/:id', param('id').isInt(),
     }
 );
 
-// ---------- Delete a tenant + ALL its data (transactional cascade) ----------
-// The default tenant (home of the originally-migrated data) cannot be deleted.
-// FK ON DELETE CASCADE handles the project/customer/resource sub-tables, so we
-// only delete the tenant-scoped top-level tables here.
+// ---------- Delete a tenant + ALL its data ----------
 router.delete('/:id', param('id').isInt(), async (req, res) => {
     const id = Number(req.params.id);
     const defId = await getDefaultTenantId();
@@ -128,14 +139,12 @@ router.delete('/:id', param('id').isInt(), async (req, res) => {
             await client.query('ROLLBACK');
             return res.status(404).json({ error: 'Tenant not found' });
         }
-        // projects  -> cascades project_subscriptions/perpetual_ma/service_ma/
-        //              implementation/outsource/outsource_monthly + resource_assignments(project_id)
         await client.query('DELETE FROM projects              WHERE tenant_id=$1', [id]);
-        // customers -> cascades customer_licenses
         await client.query('DELETE FROM customers             WHERE tenant_id=$1', [id]);
-        // resources -> cascades any resource_assignments left over
         await client.query('DELETE FROM resources             WHERE tenant_id=$1', [id]);
         await client.query('DELETE FROM year_config           WHERE tenant_id=$1', [id]);
+        await client.query('DELETE FROM tenant_config         WHERE tenant_id=$1', [id]);
+        await client.query('DELETE FROM smtp_config           WHERE tenant_id=$1', [id]);
         await client.query('DELETE FROM login_logs            WHERE tenant_id=$1', [id]);
         await client.query('DELETE FROM pending_registrations WHERE tenant_id=$1', [id]);
         await client.query('DELETE FROM users                 WHERE tenant_id=$1', [id]);
@@ -150,5 +159,119 @@ router.delete('/:id', param('id').isInt(), async (req, res) => {
         client.release();
     }
 });
+
+// =====================================================================
+// User management for ANY tenant — TenantAdmin only.
+// /api/tenants/:tenantId/users[/:userId]
+// =====================================================================
+
+async function assertTenantExists(req, res, next) {
+    const r = await db.query('SELECT 1 FROM tenants WHERE id=$1', [req.params.tenantId]);
+    if (!r.rowCount) return res.status(404).json({ error: 'Tenant not found' });
+    next();
+}
+
+router.get('/:tenantId/users',
+    param('tenantId').isInt(),
+    assertTenantExists,
+    async (req, res) => {
+        const { rows } = await db.query(
+            `SELECT id, username, full_name, email, phone_number, role,
+                    must_change_password, created_at
+               FROM users WHERE tenant_id=$1 ORDER BY username`,
+            [req.params.tenantId]
+        );
+        res.json(rows);
+    }
+);
+
+router.post('/:tenantId/users',
+    param('tenantId').isInt(),
+    body('username').isString().trim().isLength({ min: 1, max: 64 }),
+    body('password').isString().isLength({ min: 8 }),
+    body('role').isIn(['user','admin','superadmin']),
+    body('full_name').optional().isString(),
+    body('email').optional().isString(),
+    body('phone_number').optional().isString(),
+    assertTenantExists,
+    async (req, res) => {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+        const { username, password, full_name, email, phone_number, role } = req.body;
+        try {
+            const hash = await bcrypt.hash(password, 10);
+            const { rows } = await db.query(
+                `INSERT INTO users(tenant_id, username, password_hash, full_name, email, phone_number, role, must_change_password)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE)
+                 RETURNING id, username, full_name, email, phone_number, role, must_change_password`,
+                [req.params.tenantId, String(username).trim(), hash,
+                 full_name || '', email || '', phone_number || '', role]
+            );
+            res.status(201).json(rows[0]);
+        } catch (err) {
+            if (err.code === '23505') {
+                return res.status(409).json({ error: 'Username already exists in this team' });
+            }
+            console.error('[tenants/users/create]', err);
+            res.status(500).json({ error: 'Could not create user' });
+        }
+    }
+);
+
+router.put('/:tenantId/users/:userId',
+    param('tenantId').isInt(),
+    param('userId').isInt(),
+    assertTenantExists,
+    async (req, res) => {
+        const { full_name, email, phone_number, role, password, username } = req.body;
+        const safeRole = (role && ['user','admin','superadmin'].includes(role)) ? role : null;
+        const args = [];
+        const sets = [];
+        function push(col, val) { sets.push(`${col}=$${args.push(val)}`); }
+        if (username != null) push('username', String(username).trim());
+        push('full_name',    full_name || '');
+        push('email',        email || '');
+        push('phone_number', phone_number || '');
+        // COALESCE so undefined role doesn't clobber existing
+        sets.push(`role = COALESCE($${args.push(safeRole)}, role)`);
+        if (password) {
+            const hash = await bcrypt.hash(password, 10);
+            sets.push(`password_hash=$${args.push(hash)}`);
+        }
+        const userIdParam = args.push(req.params.userId);
+        const tenantParam = args.push(req.params.tenantId);
+        const q = `UPDATE users SET ${sets.join(', ')}
+                    WHERE id=$${userIdParam} AND tenant_id=$${tenantParam}
+                   RETURNING id, username, full_name, email, phone_number, role, must_change_password`;
+        try {
+            const { rows } = await db.query(q, args);
+            if (!rows[0]) return res.status(404).json({ error: 'User not found in this team' });
+            res.json(rows[0]);
+        } catch (err) {
+            if (err.code === '23505') {
+                return res.status(409).json({ error: 'Username already exists in this team' });
+            }
+            console.error('[tenants/users/update]', err);
+            res.status(500).json({ error: 'Could not update user' });
+        }
+    }
+);
+
+router.delete('/:tenantId/users/:userId',
+    param('tenantId').isInt(),
+    param('userId').isInt(),
+    assertTenantExists,
+    async (req, res) => {
+        if (Number(req.params.userId) === req.user.uid) {
+            return res.status(400).json({ error: 'Cannot delete yourself' });
+        }
+        const { rowCount } = await db.query(
+            'DELETE FROM users WHERE id=$1 AND tenant_id=$2',
+            [req.params.userId, req.params.tenantId]
+        );
+        if (!rowCount) return res.status(404).json({ error: 'User not found in this team' });
+        res.json({ ok: true });
+    }
+);
 
 module.exports = router;

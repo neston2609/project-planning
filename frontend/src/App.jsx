@@ -26,6 +26,7 @@ import UsersPage        from './pages/admin/Users';
 import LoginLogsPage    from './pages/admin/LoginLogs';
 import LicenseManagement from './pages/admin/LicenseManagement';
 import Tenants          from './pages/admin/Tenants';
+import TenantUsers      from './pages/admin/TenantUsers';
 
 import { useAuth, isAdmin, isSuperadmin, isTenantAdmin, isAuthenticated } from './auth';
 
@@ -92,6 +93,8 @@ export default function App() {
                 <Route path="admin/login-logs" element={<RequireSuper><LoginLogsPage /></RequireSuper>} />
 
                 <Route path="admin/tenants"    element={<RequireTenantAdmin><Tenants /></RequireTenantAdmin>} />
+                <Route path="admin/tenants/:tenantId/users"
+                       element={<RequireTenantAdmin><TenantUsers /></RequireTenantAdmin>} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import Modal from '../../components/Modal';
@@ -130,7 +131,11 @@ export default function Tenants() {
                                 </td>
                                 <td className="text-xs text-slate-500 whitespace-nowrap">{formatDate(t.created_at)}</td>
                                 <td className="text-right whitespace-nowrap">
-                                    <button className="btn-ghost" title="Rename team"
+                                    <Link to={`/admin/tenants/${t.id}/users`} className="btn-ghost"
+                                          title="Manage users in this team">
+                                        <UsersIcon className="w-4 h-4 text-indigo-600" />
+                                    </Link>
+                                    <button className="btn-ghost ml-1" title="Rename team"
                                             onClick={() => setEditing(t)}>
                                         <PencilSquareIcon className="w-4 h-4" />
                                     </button>

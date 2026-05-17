@@ -19,10 +19,11 @@ function pickThresholdDays(rawValue, fallback = 30) {
     return Math.floor(n);
 }
 
-// app_config is GLOBAL (platform-wide) in Phase 1.
-async function getThresholdDays() {
+// Per-tenant (Phase 4): each tenant owns its 'license_expiring_days' setting.
+async function getThresholdDays(tenantId) {
     const r = await db.query(
-        "SELECT value FROM app_config WHERE key='license_expiring_days' LIMIT 1"
+        "SELECT value FROM tenant_config WHERE tenant_id=$1 AND key='license_expiring_days'",
+        [tenantId]
     );
     return pickThresholdDays(r.rows[0]?.value);
 }
@@ -38,7 +39,7 @@ async function customerInTenant(customerId, tenantId) {
 // ---------- Aggregation endpoint for the License Dashboard ----------
 router.get('/dashboard', async (req, res) => {
     const overrideDays = req.query.days != null ? pickThresholdDays(req.query.days, null) : null;
-    const thresholdDays = overrideDays ?? await getThresholdDays();
+    const thresholdDays = overrideDays ?? await getThresholdDays(req.tenantId);
 
     const { rows } = await db.query(`
         SELECT
@@ -114,7 +115,7 @@ router.get('/customer/:customerId',
             [req.params.customerId, req.tenantId]
         );
 
-        const thresholdDays = await getThresholdDays();
+        const thresholdDays = await getThresholdDays(req.tenantId);
         res.json({
             customer,
             licenses: lRows,

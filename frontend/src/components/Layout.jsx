@@ -13,26 +13,26 @@ import {
 } from '@heroicons/react/24/outline';
 
 const mainNav = [
-    { to: '/',                  label: 'Summary',           icon: ChartPieIcon },
+    { to: '/',                  label: 'Summary Dashboard',           icon: ChartPieIcon },
     { to: '/subscription',      label: 'Subscription',      icon: RectangleStackIcon },
     { to: '/perpetual-ma',      label: 'Perpetual / SW MA', icon: CubeIcon },
     { to: '/implementation',    label: 'Implementation',    icon: WrenchScrewdriverIcon },
     { to: '/service-ma',        label: 'Service MA',        icon: LifebuoyIcon },
-    { to: '/outsource',            label: 'Outsource',            icon: BriefcaseIcon },
+    { to: '/outsource',            label: 'Outsource Services',            icon: BriefcaseIcon },
     { to: '/resource-planning',    label: 'Resource Planning',    icon: UserGroupIcon },
+    { to: '/license-dashboard',    label: 'License Dashboard',    icon: KeyIcon },
     { to: '/resource-information', label: 'Resource Information', icon: UserIcon },
-    { to: '/customer-information', label: 'Customer Information', icon: BuildingOfficeIcon },
-    { to: '/license-dashboard',    label: 'License Dashboard',    icon: KeyIcon }
+    { to: '/customer-information', label: 'Customer Information', icon: BuildingOfficeIcon }
 ];
 
 const adminNav = [
     { to: '/admin/projects',  label: 'Project Management', icon: DocumentTextIcon },
-    { to: '/admin/customers', label: 'Customers',          icon: BuildingOffice2Icon },
-    { to: '/admin/resources', label: 'Resources',          icon: IdentificationIcon },
+    { to: '/admin/customers', label: 'Customers Management',          icon: BuildingOffice2Icon },
+    { to: '/admin/resources', label: 'Resources Management',          icon: IdentificationIcon },
     { to: '/admin/licenses',  label: 'License Management', icon: KeyIcon },
-    { to: '/admin/year',      label: 'Year Config',        icon: CalendarDaysIcon },
+    { to: '/admin/year',      label: 'Yearly Config',      icon: CalendarDaysIcon },
     { to: '/admin/app',       label: 'App Config',         icon: Cog6ToothIcon },
-    { to: '/admin/smtp',      label: 'SMTP',               icon: EnvelopeIcon }
+    { to: '/admin/smtp',      label: 'SMTP Config',        icon: EnvelopeIcon }
 ];
 
 const superadminNav = [

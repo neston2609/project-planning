@@ -1,20 +1,37 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../auth';
 import api from '../api';
 import toast from 'react-hot-toast';
-import { ChartPieIcon } from '@heroicons/react/24/outline';
+import { ChartPieIcon, BuildingOffice2Icon, ShieldCheckIcon } from '@heroicons/react/24/outline';
+
+const PLATFORM = '__platform__'; // sentinel for the TenantAdmin (no tenant) option
 
 export default function Login() {
     const { login } = useAuth();
     const nav = useNavigate();
     const loc = useLocation();
+    const [tenants, setTenants] = useState([]);
+    const [tenantId, setTenantId] = useState('');
     const [u, setU] = useState('');
     const [p, setP] = useState('');
     const [busy, setBusy] = useState(false);
     const [showResend, setShowResend] = useState(false);
     const [resendEmail, setResendEmail] = useState('');
     const [resending, setResending]   = useState(false);
+
+    // Fetch the public tenant list once on mount.
+    useEffect(() => {
+        api.get('/auth/tenants')
+            .then(r => {
+                const list = r.data || [];
+                setTenants(list);
+                // Default the selector to the first tenant when there's only one,
+                // otherwise leave it blank so the user picks deliberately.
+                if (list.length === 1) setTenantId(String(list[0].id));
+            })
+            .catch(() => { /* network problem — submit will fail with a clearer error */ });
+    }, []);
 
     async function resendConfirmation(e) {
         e.preventDefault();
@@ -31,9 +48,11 @@ export default function Login() {
 
     async function submit(e) {
         e.preventDefault();
+        if (!tenantId) return toast.error('Please choose a team to sign in to');
         setBusy(true);
         try {
-            const user = await login(u, p);
+            const tenantArg = tenantId === PLATFORM ? null : Number(tenantId);
+            const user = await login(u, p, tenantArg);
             toast.success(`Welcome, ${user.full_name || user.username}`);
             const to = user.must_change_password ? '/change-password' : (loc.state?.from || '/');
             nav(to, { replace: true });
@@ -46,7 +65,6 @@ export default function Login() {
 
     return (
         <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
-            {/* Decorative blobs */}
             <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full opacity-30 blur-3xl"
                  style={{ backgroundImage: 'linear-gradient(135deg, #6366f1, #ec4899)' }} />
             <div className="absolute -bottom-40 -right-40 w-[28rem] h-[28rem] rounded-full opacity-25 blur-3xl"
@@ -58,9 +76,31 @@ export default function Login() {
                          style={{ backgroundImage: 'var(--grad-brand)' }}>
                         <ChartPieIcon className="w-8 h-8" />
                     </div>
-                    <h1 className="text-2xl brand-mark">Team Revenue & Planning</h1>
-                    <p className="text-xs text-slate-500 mt-1 uppercase tracking-wider">Admin Login</p>
+                    <h1 className="text-2xl brand-mark">RPA Planning</h1>
+                    <p className="text-xs text-slate-500 mt-1 uppercase tracking-wider">Sign in</p>
                 </div>
+
+                <div>
+                    <label className="label flex items-center gap-1.5">
+                        <BuildingOffice2Icon className="w-4 h-4 text-indigo-500" />
+                        Team
+                    </label>
+                    <select className="input" value={tenantId}
+                            onChange={(e) => setTenantId(e.target.value)} required>
+                        <option value="">— Select your team —</option>
+                        {tenants.map(t => (
+                            <option key={t.id} value={t.id}>{t.name}</option>
+                        ))}
+                        <option value={PLATFORM}>— Platform Admin (TenantAdmin) —</option>
+                    </select>
+                    {tenantId === PLATFORM && (
+                        <p className="text-[11px] text-indigo-600 mt-1 flex items-center gap-1">
+                            <ShieldCheckIcon className="w-3.5 h-3.5" />
+                            Signing in as the global tenant administrator
+                        </p>
+                    )}
+                </div>
+
                 <div>
                     <label className="label">Username</label>
                     <input className="input" value={u} onChange={(e) => setU(e.target.value)} autoFocus required />
@@ -73,7 +113,6 @@ export default function Login() {
                     {busy ? 'Signing in...' : 'Sign in'}
                 </button>
 
-                {/* Resend confirmation */}
                 {!showResend ? (
                     <div className="text-center text-xs text-slate-400">
                         <button type="button" onClick={() => setShowResend(true)}

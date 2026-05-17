@@ -18,32 +18,48 @@ async function getDefaultTenantId() {
     return Number.isInteger(id) && id > 0 ? id : null;
 }
 
+// ---------- Public list of tenants (for the Login tenant picker) ----------
+// No auth required: a user needs to pick the team they're signing into.
+router.get('/tenants', async (_req, res) => {
+    const { rows } = await db.query(
+        'SELECT id, name FROM tenants ORDER BY name'
+    );
+    res.json(rows);
+});
+
 router.post('/login',
     body('username').isString().notEmpty(),
     body('password').isString().notEmpty(),
+    // tenant_id: integer for a team login; null/undefined for the global TenantAdmin.
+    body('tenant_id').optional({ nullable: true }).isInt({ min: 1 }),
     async (req, res) => {
         const errs = validationResult(req);
         if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
 
         const { username, password } = req.body;
+        const tenantId = (req.body.tenant_id == null || req.body.tenant_id === '') ? null : Number(req.body.tenant_id);
         const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').toString().split(',')[0].trim();
         const ua = req.headers['user-agent'] || '';
 
         try {
-            const { rows } = await db.query(
-                `SELECT u.*, t.name AS tenant_name
-                   FROM users u
-                   LEFT JOIN tenants t ON t.id = u.tenant_id
-                  WHERE u.username = $1`,
-                [username]
-            );
+            // Scope user lookup by tenant context. tenantadmin lives outside any tenant.
+            const userQuery = tenantId === null
+                ? `SELECT u.*, NULL::text AS tenant_name
+                     FROM users u
+                    WHERE u.username = $1 AND u.tenant_id IS NULL AND u.role = 'tenantadmin'`
+                : `SELECT u.*, t.name AS tenant_name
+                     FROM users u
+                     JOIN tenants t ON t.id = u.tenant_id
+                    WHERE u.username = $1 AND u.tenant_id = $2`;
+            const params = tenantId === null ? [username] : [username, tenantId];
+            const { rows } = await db.query(userQuery, params);
             const user = rows[0];
             const ok = user && await bcrypt.compare(password, user.password_hash);
 
             await db.query(
                 `INSERT INTO login_logs(tenant_id, username, ip_address, status, user_agent)
                  VALUES ($1,$2,$3,$4,$5)`,
-                [user ? user.tenant_id : null, username, ip, ok ? 'Success' : 'Failed', ua]
+                [user ? user.tenant_id : tenantId, username, ip, ok ? 'Success' : 'Failed', ua]
             );
 
             if (!ok) return res.status(401).json({ error: 'Invalid username or password' });
@@ -100,13 +116,7 @@ router.post('/change-password',
 );
 
 // ---------- Self-registration (email-verified) ----------
-//
-// 1) POST /auth/register   — creates a pending_registrations row + sends email
-// 2) GET  /auth/verify-email?token=...   — promotes pending row to a real user
-//
-// Only @mfec.co.th emails are allowed. New users are created with the
-// 'user' (view-only) role, in the default tenant (Phase 1).
-
+// Only @mfec.co.th emails. New users join the default tenant with role 'user'.
 function buildAppOrigin(req) {
     if (process.env.APP_ORIGIN) return process.env.APP_ORIGIN.replace(/\/$/, '');
     const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http').toString().split(',')[0];
@@ -116,7 +126,7 @@ function buildAppOrigin(req) {
 
 router.post('/register',
     body('username').isString().trim().isLength({ min: 3, max: 64 })
-        .withMessage('Username must be 3–64 characters'),
+        .withMessage('Username must be 3-64 characters'),
     body('password').isString().isLength({ min: 8 })
         .withMessage('Password must be at least 8 characters'),
     body('email').isEmail().withMessage('Valid email required')
@@ -139,20 +149,26 @@ router.post('/register',
         const phone    = String(req.body.phone_number || '').trim();
 
         try {
+            const tenantId = await getDefaultTenantId();
+
+            // Reject if username already taken WITHIN THIS TENANT, or email already used.
             const dup = await db.query(
-                `SELECT 1 FROM users WHERE username=$1 OR LOWER(email)=$2 LIMIT 1`,
-                [username, email]
+                `SELECT 1 FROM users
+                  WHERE (tenant_id=$1 AND username=$2)
+                     OR LOWER(email)=$3
+                  LIMIT 1`,
+                [tenantId, username, email]
             );
             if (dup.rowCount) {
-                return res.status(409).json({ error: 'A user with that username or email already exists' });
+                return res.status(409).json({ error: 'A user with that username (in your team) or email already exists' });
             }
 
             await db.query(`DELETE FROM pending_registrations WHERE expires_at < NOW()`);
 
             const pendingDup = await db.query(
                 `SELECT 1 FROM pending_registrations
-                  WHERE username=$1 OR LOWER(email)=$2 LIMIT 1`,
-                [username, email]
+                  WHERE LOWER(email)=$1 OR (tenant_id=$2 AND username=$3) LIMIT 1`,
+                [email, tenantId, username]
             );
             if (pendingDup.rowCount) {
                 return res.status(409).json({ error: 'A pending registration already exists for that username or email. Check your inbox or wait for it to expire.' });
@@ -161,7 +177,6 @@ router.post('/register',
             const passwordHash = await bcrypt.hash(password, 10);
             const token = crypto.randomBytes(32).toString('hex');
             const expiresAt = new Date(Date.now() + REG_TOKEN_TTL_HOURS * 3600 * 1000);
-            const tenantId = await getDefaultTenantId();
 
             await db.query(
                 `INSERT INTO pending_registrations(tenant_id, username, email, password_hash, full_name, phone_number, token, expires_at)
@@ -172,7 +187,8 @@ router.post('/register',
             try {
                 await sendVerificationEmail({
                     to: email, fullName, username, token,
-                    origin: buildAppOrigin(req)
+                    origin: buildAppOrigin(req),
+                    tenantId
                 });
             } catch (err) {
                 await db.query(`DELETE FROM pending_registrations WHERE token=$1`, [token]);
@@ -191,27 +207,28 @@ router.post('/register',
     }
 );
 
-async function sendVerificationEmail({ to, fullName, username, token, origin }) {
+async function sendVerificationEmail({ to, fullName, username, token, origin, tenantId }) {
     const link = `${origin}/verify-email?token=${token}`;
     await sendMail({
+        tenantId,
         to,
-        subject: 'RPA Planning · Confirm your registration',
+        subject: 'Planning · Confirm your registration',
         text:
 `Hi ${fullName || username},
 
-Welcome to RPA Planning. Click the link below within ${REG_TOKEN_TTL_HOURS} hours to confirm your email and activate your account:
+Welcome. Click the link below within ${REG_TOKEN_TTL_HOURS} hours to confirm your email and activate your account:
 
 ${link}
 
-If you didn't request this, just ignore this email — nothing will happen.
+If you didn't request this, just ignore this email - nothing will happen.
 `,
         html: `
 <p>Hi ${fullName || username},</p>
-<p>Welcome to <strong>RPA Planning</strong>. Click the button below within ${REG_TOKEN_TTL_HOURS} hours to confirm your email and activate your account:</p>
+<p>Welcome. Click the button below within ${REG_TOKEN_TTL_HOURS} hours to confirm your email and activate your account:</p>
 <p><a href="${link}" style="display:inline-block;padding:10px 20px;background:#6366f1;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold">Confirm my email</a></p>
 <p style="font-size:12px;color:#64748b">If the button doesn't work, copy this link into your browser:<br/><code>${link}</code></p>
 <hr/>
-<p style="font-size:12px;color:#64748b">If you didn't request this, just ignore this email — nothing will happen.</p>`
+<p style="font-size:12px;color:#64748b">If you didn't request this, just ignore this email - nothing will happen.</p>`
     });
 }
 
@@ -267,7 +284,8 @@ router.post('/resend-verification',
                     fullName: pending.full_name,
                     username: pending.username,
                     token: newToken,
-                    origin: buildAppOrigin(req)
+                    origin: buildAppOrigin(req),
+                    tenantId: pending.tenant_id
                 });
             } catch (err) {
                 console.error('[resend-verification] mail failure', err);
@@ -302,18 +320,19 @@ router.get('/verify-email',
                 return res.status(400).json({ error: 'This confirmation link has expired. Please register again.' });
             }
 
+            const tenantId = pending.tenant_id || await getDefaultTenantId();
+
+            // Username must be unique within the target tenant; email globally unique.
             const dup = await db.query(
-                `SELECT 1 FROM users WHERE username=$1 OR LOWER(email)=LOWER($2) LIMIT 1`,
-                [pending.username, pending.email]
+                `SELECT 1 FROM users
+                  WHERE (tenant_id=$1 AND username=$2)
+                     OR LOWER(email)=LOWER($3) LIMIT 1`,
+                [tenantId, pending.username, pending.email]
             );
             if (dup.rowCount) {
                 await db.query(`DELETE FROM pending_registrations WHERE id=$1`, [pending.id]);
                 return res.status(409).json({ error: 'This username or email was registered separately. Please log in.' });
             }
-
-            // Fall back to the default tenant if the pending row predates the
-            // tenant_id column.
-            const tenantId = pending.tenant_id || await getDefaultTenantId();
 
             await db.query(
                 `INSERT INTO users(tenant_id, username, password_hash, full_name, email, phone_number, role)

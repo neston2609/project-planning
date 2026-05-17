@@ -17,8 +17,12 @@ export function AuthProvider({ children }) {
             .catch(() => { /* interceptor will redirect on 401 */ });
     }, []);
 
-    const login = async (username, password) => {
-        const r = await api.post('/auth/login', { username, password });
+    const login = async (username, password, tenantId) => {
+        const r = await api.post('/auth/login', {
+            username,
+            password,
+            tenant_id: (tenantId == null || tenantId === '') ? null : Number(tenantId)
+        });
         localStorage.setItem('rpa_token', r.data.token);
         localStorage.setItem('rpa_user',  JSON.stringify(r.data.user));
         setUser(r.data.user);

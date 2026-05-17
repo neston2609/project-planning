@@ -3,11 +3,13 @@
 -- Target: PostgreSQL 13+
 -- Run with:  psql -h <host> -U postgres -d <database> -f schema.sql
 --
--- Multi-tenant (Phase 1): one Team = one Tenant. Business data is scoped
--- by tenant_id. The global 'tenantadmin' role (tenant_id IS NULL) manages
--- tenants. app_config and smtp_config remain GLOBAL platform config.
+-- Multi-tenant. One Team = one Tenant. Business data is scoped by tenant_id.
+-- Per-tenant settings (default_year, license_expiring_days, SMTP) live in
+-- tenant_config / smtp_config keyed by tenant_id. The global 'tenantadmin'
+-- role (tenant_id IS NULL) manages tenants. The 'default_tenant_id' system
+-- key in app_config (global) tracks the home of originally-migrated data.
 -- Existing single-tenant databases are migrated automatically by
--- bootstrap.js (backfill + year_config PK swap + unique-constraint swaps).
+-- bootstrap.js (backfill + PK/unique swaps + smtp_config + tenant_config).
 -- =====================================================================
 
 BEGIN;
@@ -22,10 +24,14 @@ CREATE TABLE IF NOT EXISTS tenants (
 
 -- ---------- Auth / users ----------
 -- tenant_id is NULL for the global 'tenantadmin' role; NOT NULL for everyone else.
+-- usernames are unique PER TENANT (so two tenants can each have a 'superadmin'),
+-- and globally unique among tenantadmin (tenant_id IS NULL) accounts. Enforced
+-- by two partial unique indexes below (so the in-table column declaration is
+-- NOT marked UNIQUE).
 CREATE TABLE IF NOT EXISTS users (
     id              SERIAL PRIMARY KEY,
     tenant_id       INT,
-    username        VARCHAR(64)  UNIQUE NOT NULL,
+    username        VARCHAR(64)  NOT NULL,
     password_hash   VARCHAR(255) NOT NULL,
     full_name       VARCHAR(255) NOT NULL DEFAULT '',
     email           VARCHAR(255) NOT NULL DEFAULT '',
@@ -35,13 +41,18 @@ CREATE TABLE IF NOT EXISTS users (
     created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
 );
--- Migrate existing single-tenant databases:
 ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id INT;
--- Widen the role CHECK to allow 'tenantadmin' (drop+recreate is idempotent).
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
 ALTER TABLE users ADD  CONSTRAINT users_role_check
     CHECK (role IN ('user', 'admin', 'superadmin', 'tenantadmin'));
 CREATE INDEX IF NOT EXISTS idx_users_tenant ON users(tenant_id);
+-- Partial unique indexes for the username rules. bootstrap.js drops the old
+-- global UNIQUE constraint (users_username_key) on existing databases before
+-- these are created.
+CREATE UNIQUE INDEX IF NOT EXISTS users_username_per_tenant_uq
+    ON users(tenant_id, username) WHERE tenant_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS users_username_global_uq
+    ON users(username) WHERE tenant_id IS NULL;
 
 -- Self-registration: pending records waiting for email confirmation.
 CREATE TABLE IF NOT EXISTS pending_registrations (
@@ -73,34 +84,41 @@ CREATE INDEX IF NOT EXISTS idx_login_logs_username ON login_logs(username);
 CREATE INDEX IF NOT EXISTS idx_login_logs_login_at ON login_logs(login_at);
 CREATE INDEX IF NOT EXISTS idx_login_logs_tenant   ON login_logs(tenant_id);
 
--- ---------- App configuration (GLOBAL — platform-wide) ----------
+-- ---------- App / tenant configuration ----------
+-- app_config: GLOBAL platform KV (system keys like default_tenant_id only).
 CREATE TABLE IF NOT EXISTS app_config (
     key             VARCHAR(64) PRIMARY KEY,
     value           TEXT NOT NULL,
     updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
 );
-INSERT INTO app_config(key, value)
-VALUES ('default_year', EXTRACT(YEAR FROM NOW())::TEXT)
-ON CONFLICT (key) DO NOTHING;
 
--- SMTP config (GLOBAL — single row keyed by id=1)
+-- tenant_config: PER-TENANT KV (default_year, license_expiring_days, etc.).
+-- bootstrap.js seeds default rows when a tenant is created.
+CREATE TABLE IF NOT EXISTS tenant_config (
+    tenant_id   INT NOT NULL,
+    key         VARCHAR(64) NOT NULL,
+    value       TEXT NOT NULL,
+    updated_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (tenant_id, key)
+);
+CREATE INDEX IF NOT EXISTS idx_tenant_config_tenant ON tenant_config(tenant_id);
+
+-- SMTP config — PER TENANT (was a single global row prior to Phase 4;
+-- bootstrap.js migrates it). Each tenant manages its own sending account.
 CREATE TABLE IF NOT EXISTS smtp_config (
-    id              INT PRIMARY KEY DEFAULT 1,
+    tenant_id       INT PRIMARY KEY,
     host            VARCHAR(255) NOT NULL DEFAULT 'smtp.gmail.com',
     port            INT          NOT NULL DEFAULT 587,
     secure          BOOLEAN      NOT NULL DEFAULT FALSE,
     username        VARCHAR(255) NOT NULL DEFAULT '',
     password        VARCHAR(255) NOT NULL DEFAULT '',
     from_email      VARCHAR(255) NOT NULL DEFAULT '',
-    from_name       VARCHAR(255) NOT NULL DEFAULT 'RPA Planning',
-    updated_at      TIMESTAMP    NOT NULL DEFAULT NOW(),
-    CHECK (id = 1)
+    from_name       VARCHAR(255) NOT NULL DEFAULT 'Planning',
+    updated_at      TIMESTAMP    NOT NULL DEFAULT NOW()
 );
-INSERT INTO smtp_config(id) VALUES (1) ON CONFLICT DO NOTHING;
+ALTER TABLE smtp_config ADD COLUMN IF NOT EXISTS tenant_id INT;
 
 -- Per-year team capacity, tenant-scoped (target = headcount * revenue_per_headcount).
--- Fresh installs get the composite PK below; existing installs are migrated by
--- bootstrap.js (ADD COLUMN tenant_id -> backfill -> swap PK to (tenant_id, year)).
 CREATE TABLE IF NOT EXISTS year_config (
     tenant_id             INT NOT NULL,
     year                  INT NOT NULL,
@@ -262,10 +280,6 @@ CREATE INDEX IF NOT EXISTS idx_customer_licenses_customer ON customer_licenses(c
 CREATE INDEX IF NOT EXISTS idx_customer_licenses_expired  ON customer_licenses(expired_date);
 CREATE INDEX IF NOT EXISTS idx_customer_licenses_tenant   ON customer_licenses(tenant_id);
 
--- Configurable "expiring soon" threshold (days). Default 30. (GLOBAL)
-INSERT INTO app_config(key, value) VALUES ('license_expiring_days', '30')
-ON CONFLICT (key) DO NOTHING;
-
 -- ---------- Resource assignments (Gantt) ----------
 CREATE TABLE IF NOT EXISTS resource_assignments (
     id              SERIAL PRIMARY KEY,
@@ -294,7 +308,8 @@ DECLARE
     t TEXT;
 BEGIN
     FOR t IN SELECT unnest(ARRAY[
-        'tenants','users','customers','resources','projects','smtp_config','year_config','customer_licenses'
+        'tenants','users','customers','resources','projects',
+        'smtp_config','year_config','tenant_config','customer_licenses'
     ]) LOOP
         EXECUTE format(
             'DROP TRIGGER IF EXISTS trg_%s_upd ON %I; '

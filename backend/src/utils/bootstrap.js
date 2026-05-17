@@ -6,15 +6,23 @@ const db = require('../db');
 /**
  * Startup bootstrap.
  *
- *  1. Apply schema.sql (idempotent — everything uses IF NOT EXISTS / guarded ALTERs).
- *  2. Multi-tenancy (Phase 1):
- *     a. Ensure the default tenant exists ("Automation Excellence" on first run;
- *        its id is remembered in app_config['default_tenant_id'] so renames stick).
- *     b. Backfill tenant_id on every tenant-scoped table for legacy NULL rows.
- *     c. Swap year_config to a composite (tenant_id, year) primary key.
+ *  1. Apply schema.sql (idempotent).
+ *  2. Multi-tenancy migration:
+ *     a. Ensure the default tenant ("Automation Excellence" on first run;
+ *        id remembered in app_config['default_tenant_id']).
+ *     b. Backfill tenant_id on every tenant-scoped table.
+ *     c. Swap year_config to composite PK (tenant_id, year).
  *     d. Swap customers/projects/resources unique constraints to per-tenant.
- *  3. Seed a default global TenantAdmin (tenant_id NULL) if none exists.
- *  4. Seed a default superadmin for the default tenant if the tenant has no
+ *     e. Drop the global users.username UNIQUE — partial indexes in
+ *        schema.sql now enforce per-tenant + (NULL-only) global uniqueness.
+ *     f. Move 'default_year' and 'license_expiring_days' from app_config to
+ *        per-tenant tenant_config (default tenant gets the legacy values;
+ *        every other tenant gets sensible defaults).
+ *     g. Migrate the legacy single-row smtp_config to per-tenant
+ *        (default tenant inherits the legacy values; other tenants start
+ *        with empty defaults).
+ *  3. Seed a default global TenantAdmin if none exists.
+ *  4. Seed a default superadmin for the default tenant if it has no
  *     non-tenantadmin users yet.
  */
 async function bootstrap() {
@@ -39,13 +47,10 @@ async function bootstrap() {
         );
         if (cfg.rows[0] && Number(cfg.rows[0].value)) {
             defaultTenantId = Number(cfg.rows[0].value);
-            // Safety: if the remembered tenant was deleted, fall through to re-pick.
             const exists = await db.query('SELECT 1 FROM tenants WHERE id=$1', [defaultTenantId]);
             if (!exists.rowCount) defaultTenantId = null;
         }
         if (!defaultTenantId) {
-            // Re-use the oldest tenant if one exists (partial prior migration),
-            // otherwise create "Automation Excellence".
             const existing = await db.query('SELECT id FROM tenants ORDER BY id ASC LIMIT 1');
             if (existing.rows[0]) {
                 defaultTenantId = existing.rows[0].id;
@@ -66,8 +71,6 @@ async function bootstrap() {
     }
 
     // ---- 2b) Backfill tenant_id on legacy rows ----
-    // Existing single-tenant data all belongs to the default tenant.
-    // tenantadmin users intentionally keep tenant_id = NULL.
     const backfills = [
         ['users',                 "UPDATE users SET tenant_id=$1 WHERE tenant_id IS NULL AND role <> 'tenantadmin'"],
         ['customers',             'UPDATE customers SET tenant_id=$1 WHERE tenant_id IS NULL'],
@@ -110,12 +113,11 @@ async function bootstrap() {
         throw err;
     }
 
-    // ---- 2d) customers / projects / resources: per-tenant unique constraints ----
+    // ---- 2d) Per-tenant unique constraints on alias / project_code / emp_id ----
     try {
         await db.query(`
             DO $$
             BEGIN
-                -- customers.alias : global unique -> per-tenant unique
                 IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname='customers_alias_key' AND conrelid='customers'::regclass) THEN
                     ALTER TABLE customers DROP CONSTRAINT customers_alias_key;
                 END IF;
@@ -123,7 +125,6 @@ async function bootstrap() {
                     ALTER TABLE customers ADD CONSTRAINT customers_alias_tenant_key UNIQUE (tenant_id, alias);
                 END IF;
 
-                -- projects.project_code : global unique -> per-tenant unique
                 IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname='projects_project_code_key' AND conrelid='projects'::regclass) THEN
                     ALTER TABLE projects DROP CONSTRAINT projects_project_code_key;
                 END IF;
@@ -131,7 +132,6 @@ async function bootstrap() {
                     ALTER TABLE projects ADD CONSTRAINT projects_code_tenant_key UNIQUE (tenant_id, project_code);
                 END IF;
 
-                -- resources.emp_id : global unique -> per-tenant unique
                 IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname='resources_emp_id_key' AND conrelid='resources'::regclass) THEN
                     ALTER TABLE resources DROP CONSTRAINT resources_emp_id_key;
                 END IF;
@@ -142,6 +142,114 @@ async function bootstrap() {
         `);
     } catch (err) {
         console.error('[bootstrap] unique-constraint swap failed:', err.message);
+        throw err;
+    }
+
+    // ---- 2e) users.username : drop the global UNIQUE so partial indexes can govern ----
+    // schema.sql creates the partial indexes; the legacy constraint must go.
+    try {
+        await db.query(`
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM pg_constraint
+                            WHERE conname='users_username_key' AND conrelid='users'::regclass) THEN
+                    ALTER TABLE users DROP CONSTRAINT users_username_key;
+                END IF;
+            END $$;
+        `);
+    } catch (err) {
+        console.error('[bootstrap] users.username constraint swap failed:', err.message);
+        throw err;
+    }
+
+    // ---- 2f) Move 'default_year' / 'license_expiring_days' from app_config to tenant_config ----
+    // Pre-Phase-4, these lived in the global app_config. Each tenant now owns
+    // its own copy. The default tenant inherits the legacy values; every other
+    // existing tenant gets a baseline (current year + 30 days).
+    const perTenantKeys = ['default_year', 'license_expiring_days'];
+    try {
+        for (const key of perTenantKeys) {
+            // Read legacy global value (if any).
+            const legacy = await db.query('SELECT value FROM app_config WHERE key=$1', [key]);
+            const legacyValue = legacy.rows[0]?.value || null;
+
+            // Sensible fallback per key.
+            const fallback = key === 'default_year'
+                ? String(new Date().getFullYear())
+                : '30';
+
+            // For the default tenant: take legacy if present, else fallback.
+            // For every other existing tenant: take fallback.
+            const { rows: allTenants } = await db.query('SELECT id FROM tenants');
+            for (const t of allTenants) {
+                const seedValue = (t.id === defaultTenantId && legacyValue !== null)
+                    ? legacyValue
+                    : fallback;
+                await db.query(
+                    `INSERT INTO tenant_config(tenant_id, key, value)
+                     VALUES ($1, $2, $3)
+                     ON CONFLICT (tenant_id, key) DO NOTHING`,
+                    [t.id, key, seedValue]
+                );
+            }
+            // Strip the legacy row from app_config (so reads aren't ambiguous).
+            if (legacyValue !== null) {
+                await db.query('DELETE FROM app_config WHERE key=$1', [key]);
+                console.log(`[bootstrap] migrated app_config['${key}'] -> tenant_config (default tenant value preserved)`);
+            }
+        }
+    } catch (err) {
+        console.error('[bootstrap] tenant_config migration failed:', err.message);
+        throw err;
+    }
+
+    // ---- 2g) smtp_config: legacy single-row (id=1) -> per-tenant ----
+    // Migration plan: stamp the legacy row with tenant_id = default tenant,
+    // then drop the id/CHECK/PK and swap PK to tenant_id. Subsequent tenants
+    // get empty rows lazily when they first save SMTP settings.
+    try {
+        await db.query(`
+            DO $$
+            BEGIN
+                -- Stamp the legacy row (id=1) with default tenant id.
+                IF EXISTS (SELECT 1 FROM information_schema.columns
+                             WHERE table_name='smtp_config' AND column_name='id') THEN
+                    UPDATE smtp_config SET tenant_id = $1 WHERE id = 1 AND tenant_id IS NULL;
+                    -- Drop old PK on id / CHECK.
+                    ALTER TABLE smtp_config DROP CONSTRAINT IF EXISTS smtp_config_id_check;
+                    -- 'smtp_config_pkey' might be on id; swap to tenant_id.
+                    IF EXISTS (
+                        SELECT 1 FROM pg_constraint
+                        WHERE conname = 'smtp_config_pkey'
+                          AND conrelid = 'smtp_config'::regclass
+                          AND array_length(conkey, 1) = 1
+                          AND EXISTS (
+                              SELECT 1 FROM information_schema.columns
+                              WHERE table_name='smtp_config' AND column_name='id'
+                                AND ordinal_position = ANY (
+                                    SELECT unnest(conkey) FROM pg_constraint
+                                    WHERE conname='smtp_config_pkey' AND conrelid='smtp_config'::regclass
+                                )
+                          )
+                    ) THEN
+                        ALTER TABLE smtp_config DROP CONSTRAINT smtp_config_pkey;
+                    END IF;
+                    ALTER TABLE smtp_config ALTER COLUMN tenant_id SET NOT NULL;
+                    -- Add new PK if missing.
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_constraint
+                        WHERE conname='smtp_config_pkey' AND conrelid='smtp_config'::regclass
+                    ) THEN
+                        ALTER TABLE smtp_config ADD CONSTRAINT smtp_config_pkey PRIMARY KEY (tenant_id);
+                    END IF;
+                    -- Finally drop id column.
+                    ALTER TABLE smtp_config DROP COLUMN IF EXISTS id;
+                END IF;
+            END $$;
+        `.replace(/\$1/g, String(defaultTenantId)));
+        // ^ embed defaultTenantId; DO block doesn't bind params, so we inline-format the safe int.
+    } catch (err) {
+        console.error('[bootstrap] smtp_config restructure failed:', err.message);
         throw err;
     }
 
@@ -157,14 +265,15 @@ async function bootstrap() {
             try {
                 await db.query(
                     `INSERT INTO users (tenant_id, username, password_hash, full_name, role, must_change_password)
-                     VALUES (NULL, $1, $2, $3, 'tenantadmin', TRUE)
-                     ON CONFLICT (username) DO NOTHING`,
+                     VALUES (NULL, $1, $2, $3, 'tenantadmin', TRUE)`,
                     [username, hash, 'Platform Tenant Admin']
                 );
                 console.log(`[bootstrap] created default tenantadmin: ${username} (must change password on first login)`);
             } catch (err) {
-                console.error('[bootstrap] tenantadmin seed failed:', err.message);
-                throw err;
+                if (err.code !== '23505') {
+                    console.error('[bootstrap] tenantadmin seed failed:', err.message);
+                    throw err;
+                }
             }
         }
     }
@@ -172,19 +281,23 @@ async function bootstrap() {
     // ---- 4) Seed default superadmin for the default tenant ----
     {
         const { rows } = await db.query(
-            "SELECT COUNT(*)::int AS n FROM users WHERE role <> 'tenantadmin'"
+            "SELECT COUNT(*)::int AS n FROM users WHERE tenant_id=$1 AND role <> 'tenantadmin'",
+            [defaultTenantId]
         );
         if (rows[0].n === 0) {
             const username = process.env.SUPERADMIN_USERNAME || 'superadmin';
             const password = process.env.SUPERADMIN_PASSWORD || 'bsmrpa1234';
             const hash = await bcrypt.hash(password, 10);
-            await db.query(
-                `INSERT INTO users (tenant_id, username, password_hash, full_name, role, must_change_password)
-                 VALUES ($1, $2, $3, $4, 'superadmin', TRUE)
-                 ON CONFLICT (username) DO NOTHING`,
-                [defaultTenantId, username, hash, 'System Superadmin']
-            );
-            console.log(`[bootstrap] created default superadmin: ${username} (tenant ${defaultTenantId}, must change password on first login)`);
+            try {
+                await db.query(
+                    `INSERT INTO users (tenant_id, username, password_hash, full_name, role, must_change_password)
+                     VALUES ($1, $2, $3, $4, 'superadmin', TRUE)`,
+                    [defaultTenantId, username, hash, 'System Superadmin']
+                );
+                console.log(`[bootstrap] created default superadmin: ${username} (tenant ${defaultTenantId}, must change password on first login)`);
+            } catch (err) {
+                if (err.code !== '23505') throw err;
+            }
         }
     }
 }

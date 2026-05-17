@@ -2,14 +2,19 @@ const nodemailer = require('nodemailer');
 const db = require('../db');
 
 /**
- * Create a nodemailer transport from the saved smtp_config row.
- * Throws if SMTP isn't configured yet.
+ * Create a nodemailer transport from the saved per-tenant smtp_config row.
+ * Throws SMTP_NOT_CONFIGURED if the tenant hasn't set up SMTP yet.
  */
-async function makeTransport() {
-    const { rows } = await db.query('SELECT * FROM smtp_config WHERE id=1');
+async function makeTransport(tenantId) {
+    if (!Number.isInteger(tenantId) || tenantId <= 0) {
+        const err = new Error('SMTP requires a tenant context.');
+        err.code = 'SMTP_NOT_CONFIGURED';
+        throw err;
+    }
+    const { rows } = await db.query('SELECT * FROM smtp_config WHERE tenant_id=$1', [tenantId]);
     const cfg = rows[0];
     if (!cfg || !cfg.host || !cfg.username || !cfg.password) {
-        const err = new Error('SMTP not configured. An admin needs to set credentials in Admin → SMTP first.');
+        const err = new Error('SMTP not configured for this team. An admin needs to set credentials in Admin -> SMTP first.');
         err.code = 'SMTP_NOT_CONFIGURED';
         throw err;
     }
@@ -22,9 +27,9 @@ async function makeTransport() {
     return { transporter, cfg };
 }
 
-async function sendMail({ to, subject, text, html }) {
-    const { transporter, cfg } = await makeTransport();
-    const fromName = cfg.from_name || 'RPA Planning';
+async function sendMail({ tenantId, to, subject, text, html }) {
+    const { transporter, cfg } = await makeTransport(tenantId);
+    const fromName = cfg.from_name || 'Planning';
     const fromAddr = cfg.from_email || cfg.username;
     return transporter.sendMail({
         from: `"${fromName}" <${fromAddr}>`,
