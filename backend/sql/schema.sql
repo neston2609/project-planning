@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS users (
     full_name       VARCHAR(255) NOT NULL DEFAULT '',
     email           VARCHAR(255) NOT NULL DEFAULT '',
     phone_number    VARCHAR(64)  NOT NULL DEFAULT '',
-    role            VARCHAR(32)  NOT NULL CHECK (role IN ('user', 'admin', 'superadmin', 'tenantadmin')),
+    role            VARCHAR(32)  NOT NULL CHECK (role IN ('user', 'admin', 'superadmin', 'tenantadmin', 'tenantuser')),
     must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
     created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS users (
 ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id INT;
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
 ALTER TABLE users ADD  CONSTRAINT users_role_check
-    CHECK (role IN ('user', 'admin', 'superadmin', 'tenantadmin'));
+    CHECK (role IN ('user', 'admin', 'superadmin', 'tenantadmin', 'tenantuser'));
 CREATE INDEX IF NOT EXISTS idx_users_tenant ON users(tenant_id);
 -- Partial unique indexes for the username rules. bootstrap.js drops the old
 -- global UNIQUE constraint (users_username_key) on existing databases before

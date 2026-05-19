@@ -27,8 +27,13 @@ import LoginLogsPage    from './pages/admin/LoginLogs';
 import LicenseManagement from './pages/admin/LicenseManagement';
 import Tenants          from './pages/admin/Tenants';
 import TenantUsers      from './pages/admin/TenantUsers';
+import PlatformDashboard from './pages/admin/PlatformDashboard';
+import PlatformUsers     from './pages/admin/PlatformUsers';
 
-import { useAuth, isAdmin, isSuperadmin, isTenantAdmin, isAuthenticated } from './auth';
+import {
+    useAuth, isAdmin, isSuperadmin, isTenantAdmin, isTenantUser,
+    isPlatformRole, isAuthenticated
+} from './auth';
 
 function RequireAuth({ children }) {
     const { user } = useAuth();
@@ -53,11 +58,21 @@ function RequireTenantAdmin({ children }) {
     if (!isTenantAdmin(user))   return <Navigate to="/" replace />;
     return children;
 }
+/** TenantAdmin OR TenantUser (read-only platform). */
+function RequirePlatform({ children }) {
+    const { user } = useAuth();
+    if (!isAuthenticated(user))  return <Navigate to="/login" replace />;
+    if (!isPlatformRole(user))   return <Navigate to="/" replace />;
+    return children;
+}
 
-// The global TenantAdmin has no tenant, so the tenant dashboards would 403.
-// Send them straight to the Tenant Management page instead of Summary.
+// Platform roles have no tenant -> tenant dashboards would 403. Send them to
+// the appropriate platform landing page:
+//   TenantUser  -> dashboard only (cannot manage anything)
+//   TenantAdmin -> Tenants management
 function HomeRedirect() {
     const { user } = useAuth();
+    if (isTenantUser(user))  return <Navigate to="/admin/platform-dashboard" replace />;
     if (isTenantAdmin(user)) return <Navigate to="/admin/tenants" replace />;
     return <Summary />;
 }
@@ -92,9 +107,16 @@ export default function App() {
                 <Route path="admin/users"      element={<RequireSuper><UsersPage /></RequireSuper>} />
                 <Route path="admin/login-logs" element={<RequireSuper><LoginLogsPage /></RequireSuper>} />
 
+                {/* Platform — TenantAdmin only */}
                 <Route path="admin/tenants"    element={<RequireTenantAdmin><Tenants /></RequireTenantAdmin>} />
                 <Route path="admin/tenants/:tenantId/users"
                        element={<RequireTenantAdmin><TenantUsers /></RequireTenantAdmin>} />
+                <Route path="admin/platform-users"
+                       element={<RequireTenantAdmin><PlatformUsers /></RequireTenantAdmin>} />
+
+                {/* Platform — TenantAdmin AND TenantUser */}
+                <Route path="admin/platform-dashboard"
+                       element={<RequirePlatform><PlatformDashboard /></RequirePlatform>} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

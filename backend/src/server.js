@@ -1,7 +1,6 @@
 const path = require('path');
-// Try the local backend/.env first, then fall back to default cwd lookup.
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
-require('dotenv').config(); // also load any cwd .env without overriding the above
+require('dotenv').config();
 
 console.log('[startup] env loaded — PGHOST=%s PGPORT=%s PGUSER=%s PGDATABASE=%s PGPASSWORD=%s PORT=%s',
     process.env.PGHOST || '(unset)',
@@ -25,6 +24,7 @@ const dashboardsRouter= require('./routes/dashboards');
 const adminRouter     = require('./routes/admin');
 const licensesRouter  = require('./routes/licenses');
 const tenantsRouter   = require('./routes/tenants');
+const platformRouter  = require('./routes/platform');
 
 const app = express();
 
@@ -32,7 +32,7 @@ app.use(cors({
     origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : '*',
     credentials: false
 }));
-app.use(express.json({ limit: '15mb' }));   // raised to comfortably fit base64 logos
+app.use(express.json({ limit: '15mb' }));
 app.use(morgan('tiny'));
 app.use(softAuth);
 
@@ -46,11 +46,8 @@ app.use('/api/dashboards', dashboardsRouter);
 app.use('/api/admin',      adminRouter);
 app.use('/api/licenses',   licensesRouter);
 app.use('/api/tenants',    tenantsRouter);
+app.use('/api/platform',   platformRouter);
 
-// ---------- Optional: serve the built frontend from the backend ----------
-// If frontend/dist exists (i.e. you ran `npm --prefix frontend run build`),
-// serve those static files plus an SPA fallback to index.html. This lets you
-// run the whole app from one Node process when you don't want nginx.
 const fs = require('fs');
 const distDir = path.join(__dirname, '..', '..', 'frontend', 'dist');
 if (fs.existsSync(path.join(distDir, 'index.html'))) {
@@ -59,8 +56,6 @@ if (fs.existsSync(path.join(distDir, 'index.html'))) {
     console.log('[startup] serving built frontend from', distDir);
 }
 
-// Generic error handler
-// eslint-disable-next-line no-unused-vars
 app.use((err, req, res, _next) => {
     console.error('[err]', err);
     if (res.headersSent) return;
@@ -73,7 +68,6 @@ const PORT = Number(process.env.PORT) || 6000;
         await bootstrap();
     } catch (err) {
         console.error('[startup] bootstrap failed; continuing without auto schema init.');
-        // We continue, since the operator may have applied the schema manually.
     }
     app.listen(PORT, () => console.log(`[rpa-planning] backend listening on :${PORT}`));
 })();

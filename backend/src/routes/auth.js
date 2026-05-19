@@ -11,7 +11,6 @@ const router = express.Router();
 const ALLOWED_DOMAIN = '@mfec.co.th';
 const REG_TOKEN_TTL_HOURS = 24;
 
-/** The tenant new self-registrations land in (Phase 1: the default tenant). */
 async function getDefaultTenantId() {
     const r = await db.query("SELECT value FROM app_config WHERE key='default_tenant_id'");
     const id = r.rows[0] ? Number(r.rows[0].value) : null;
@@ -19,18 +18,14 @@ async function getDefaultTenantId() {
 }
 
 // ---------- Public list of tenants (for the Login tenant picker) ----------
-// No auth required: a user needs to pick the team they're signing into.
 router.get('/tenants', async (_req, res) => {
-    const { rows } = await db.query(
-        'SELECT id, name FROM tenants ORDER BY name'
-    );
+    const { rows } = await db.query('SELECT id, name FROM tenants ORDER BY name');
     res.json(rows);
 });
 
 router.post('/login',
     body('username').isString().notEmpty(),
     body('password').isString().notEmpty(),
-    // tenant_id: integer for a team login; null/undefined for the global TenantAdmin.
     body('tenant_id').optional({ nullable: true }).isInt({ min: 1 }),
     async (req, res) => {
         const errs = validationResult(req);
@@ -42,11 +37,12 @@ router.post('/login',
         const ua = req.headers['user-agent'] || '';
 
         try {
-            // Scope user lookup by tenant context. tenantadmin lives outside any tenant.
+            // Platform roles (tenantadmin, tenantuser) live outside any tenant.
             const userQuery = tenantId === null
                 ? `SELECT u.*, NULL::text AS tenant_name
                      FROM users u
-                    WHERE u.username = $1 AND u.tenant_id IS NULL AND u.role = 'tenantadmin'`
+                    WHERE u.username = $1 AND u.tenant_id IS NULL
+                      AND u.role IN ('tenantadmin','tenantuser')`
                 : `SELECT u.*, t.name AS tenant_name
                      FROM users u
                      JOIN tenants t ON t.id = u.tenant_id
@@ -116,7 +112,6 @@ router.post('/change-password',
 );
 
 // ---------- Self-registration (email-verified) ----------
-// Only @mfec.co.th emails. New users join the default tenant with role 'user'.
 function buildAppOrigin(req) {
     if (process.env.APP_ORIGIN) return process.env.APP_ORIGIN.replace(/\/$/, '');
     const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http').toString().split(',')[0];
@@ -151,7 +146,6 @@ router.post('/register',
         try {
             const tenantId = await getDefaultTenantId();
 
-            // Reject if username already taken WITHIN THIS TENANT, or email already used.
             const dup = await db.query(
                 `SELECT 1 FROM users
                   WHERE (tenant_id=$1 AND username=$2)
@@ -322,7 +316,6 @@ router.get('/verify-email',
 
             const tenantId = pending.tenant_id || await getDefaultTenantId();
 
-            // Username must be unique within the target tenant; email globally unique.
             const dup = await db.query(
                 `SELECT 1 FROM users
                   WHERE (tenant_id=$1 AND username=$2)

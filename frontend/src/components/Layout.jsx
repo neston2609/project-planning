@@ -1,38 +1,40 @@
 import { useState, useEffect } from 'react';
 import { NavLink, Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
-import { useAuth, isAdmin, isSuperadmin, isTenantAdmin, roleLabel, appTitle } from '../auth';
+import {
+    useAuth, isAdmin, isSuperadmin, isTenantAdmin, isTenantUser,
+    isPlatformRole, roleLabel, appTitle
+} from '../auth';
 import { useYear } from '../YearContext';
 import {
     ArrowLeftOnRectangleIcon, KeyIcon, Bars3Icon, XMarkIcon,
     ChartPieIcon, RectangleStackIcon, CubeIcon, WrenchScrewdriverIcon,
     LifebuoyIcon, BriefcaseIcon, UserGroupIcon, BuildingOffice2Icon,
-    BuildingOfficeIcon,
+    BuildingOfficeIcon, PresentationChartLineIcon, ShieldCheckIcon,
     UsersIcon, IdentificationIcon, CalendarDaysIcon, Cog6ToothIcon,
-    EnvelopeIcon, ShieldCheckIcon, DocumentTextIcon, UserCircleIcon,
-    UserIcon
+    EnvelopeIcon, DocumentTextIcon, UserCircleIcon, UserIcon
 } from '@heroicons/react/24/outline';
 
 const mainNav = [
-    { to: '/',                  label: 'Summary Dashboard',           icon: ChartPieIcon },
+    { to: '/',                  label: 'Summary',           icon: ChartPieIcon },
     { to: '/subscription',      label: 'Subscription',      icon: RectangleStackIcon },
     { to: '/perpetual-ma',      label: 'Perpetual / SW MA', icon: CubeIcon },
     { to: '/implementation',    label: 'Implementation',    icon: WrenchScrewdriverIcon },
     { to: '/service-ma',        label: 'Service MA',        icon: LifebuoyIcon },
-    { to: '/outsource',            label: 'Outsource Services',            icon: BriefcaseIcon },
+    { to: '/outsource',            label: 'Outsource',            icon: BriefcaseIcon },
     { to: '/resource-planning',    label: 'Resource Planning',    icon: UserGroupIcon },
-    { to: '/license-dashboard',    label: 'License Dashboard',    icon: KeyIcon },
     { to: '/resource-information', label: 'Resource Information', icon: UserIcon },
-    { to: '/customer-information', label: 'Customer Information', icon: BuildingOfficeIcon }
+    { to: '/customer-information', label: 'Customer Information', icon: BuildingOfficeIcon },
+    { to: '/license-dashboard',    label: 'License Dashboard',    icon: KeyIcon }
 ];
 
 const adminNav = [
     { to: '/admin/projects',  label: 'Project Management', icon: DocumentTextIcon },
-    { to: '/admin/customers', label: 'Customers Management',          icon: BuildingOffice2Icon },
-    { to: '/admin/resources', label: 'Resources Management',          icon: IdentificationIcon },
+    { to: '/admin/customers', label: 'Customers',          icon: BuildingOffice2Icon },
+    { to: '/admin/resources', label: 'Resources',          icon: IdentificationIcon },
     { to: '/admin/licenses',  label: 'License Management', icon: KeyIcon },
-    { to: '/admin/year',      label: 'Yearly Config',      icon: CalendarDaysIcon },
+    { to: '/admin/year',      label: 'Year Config',        icon: CalendarDaysIcon },
     { to: '/admin/app',       label: 'App Config',         icon: Cog6ToothIcon },
-    { to: '/admin/smtp',      label: 'SMTP Config',        icon: EnvelopeIcon }
+    { to: '/admin/smtp',      label: 'SMTP',               icon: EnvelopeIcon }
 ];
 
 const superadminNav = [
@@ -40,10 +42,14 @@ const superadminNav = [
     { to: '/admin/login-logs', label: 'Login Logs', icon: ShieldCheckIcon }
 ];
 
-// The global TenantAdmin manages teams, not team data — so they get their
-// own (and only their own) nav section.
-const platformNav = [
-    { to: '/admin/tenants', label: 'Tenants', icon: BuildingOffice2Icon }
+// TenantAdmin sees all three; TenantUser sees only the dashboard entry.
+const tenantAdminNav = [
+    { to: '/admin/platform-dashboard', label: 'Platform Dashboard', icon: PresentationChartLineIcon },
+    { to: '/admin/tenants',            label: 'Tenants',            icon: BuildingOffice2Icon },
+    { to: '/admin/platform-users',     label: 'Platform Users',     icon: ShieldCheckIcon }
+];
+const tenantUserNav = [
+    { to: '/admin/platform-dashboard', label: 'Platform Dashboard', icon: PresentationChartLineIcon }
 ];
 
 function NavItem({ to, label, icon: Icon }) {
@@ -61,27 +67,34 @@ export default function Layout() {
     const { year, setYear } = useYear();
     const nav = useNavigate();
     const location = useLocation();
-    const [open, setOpen] = useState(false); // mobile
+    const [open, setOpen] = useState(false);
 
     const tenantAdmin = isTenantAdmin(user);
-    // Brand the whole app with the tenant's name (e.g. "Automation Excellence
-    // Planning"). The TenantAdmin has no tenant -> plain "RPA Planning".
+    const tenantUser  = isTenantUser(user);
+    const platform    = isPlatformRole(user);
     const title = appTitle(user);
 
-    // Keep the document title in sync with the tenant brand.
-    useEffect(() => {
-        document.title = title;
-    }, [title]);
+    useEffect(() => { document.title = title; }, [title]);
 
-    // The TenantAdmin can only use the platform pages — bounce them off any
-    // tenant-scoped route they reach by typing a URL directly.
+    // Platform roles can only use platform pages.
+    // TenantUser is further restricted to the platform dashboard only.
     useEffect(() => {
-        if (!tenantAdmin) return;
+        if (!platform) return;
         const p = location.pathname;
-        if (!p.startsWith('/admin/tenants') && p !== '/change-password') {
-            nav('/admin/tenants', { replace: true });
+        if (p === '/change-password') return;
+
+        if (tenantUser) {
+            if (p !== '/admin/platform-dashboard') {
+                nav('/admin/platform-dashboard', { replace: true });
+            }
+        } else {
+            // tenantadmin
+            const allowedPrefixes = ['/admin/tenants', '/admin/platform-dashboard', '/admin/platform-users'];
+            if (!allowedPrefixes.some(pref => p === pref || p.startsWith(pref + '/'))) {
+                nav('/admin/tenants', { replace: true });
+            }
         }
-    }, [tenantAdmin, location.pathname, nav]);
+    }, [platform, tenantUser, location.pathname, nav]);
 
     const years = [];
     const cur = new Date().getFullYear();
@@ -89,7 +102,6 @@ export default function Layout() {
 
     return (
         <div className="min-h-screen flex">
-            {/* ---------- Sidebar ---------- */}
             <aside
                 className={`fixed lg:static z-40 inset-y-0 left-0 w-64 transform transition-transform duration-300
                             ${open ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0
@@ -102,7 +114,9 @@ export default function Layout() {
                     <div className="min-w-0">
                         <div className="text-lg leading-tight brand-mark truncate" title={title}>{title}</div>
                         <div className="text-[10px] text-slate-400 tracking-wider uppercase">
-                            {tenantAdmin ? 'Platform Administration' : 'Resource & Revenue'}
+                            {tenantAdmin ? 'Platform Administration'
+                              : tenantUser ? 'Platform (Read-only)'
+                              : 'Resource & Revenue'}
                         </div>
                     </div>
                     <button className="lg:hidden ml-auto text-slate-400 hover:text-slate-600" onClick={() => setOpen(false)}>
@@ -111,12 +125,19 @@ export default function Layout() {
                 </div>
 
                 <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-0.5">
-                    {tenantAdmin ? (
+                    {tenantAdmin && (
                         <>
                             <div className="nav-section-title">Platform</div>
-                            {platformNav.map(i => <NavItem key={i.to} {...i} />)}
+                            {tenantAdminNav.map(i => <NavItem key={i.to} {...i} />)}
                         </>
-                    ) : (
+                    )}
+                    {tenantUser && (
+                        <>
+                            <div className="nav-section-title">Platform</div>
+                            {tenantUserNav.map(i => <NavItem key={i.to} {...i} />)}
+                        </>
+                    )}
+                    {!platform && (
                         <>
                             <div className="nav-section-title">Dashboards</div>
                             {mainNav.map(i => <NavItem key={i.to} {...i} />)}
@@ -134,7 +155,6 @@ export default function Layout() {
                     )}
                 </nav>
 
-                {/* User box at the bottom */}
                 <div className="p-3 border-t border-slate-200/70">
                     {user ? (
                         <div className="rounded-xl p-3 bg-gradient-to-br from-indigo-50 to-pink-50 border border-white">
@@ -165,14 +185,11 @@ export default function Layout() {
                 </div>
             </aside>
 
-            {/* Mobile backdrop */}
             {open && (
                 <div className="fixed inset-0 z-30 bg-slate-900/40 lg:hidden" onClick={() => setOpen(false)} />
             )}
 
-            {/* ---------- Main column ---------- */}
             <div className="flex-1 flex flex-col min-w-0">
-                {/* Top bar */}
                 <header className="sticky top-0 z-20 bg-white/70 backdrop-blur-xl border-b border-slate-200/70">
                     <div className="px-4 lg:px-6 py-3 flex items-center gap-4">
                         <button className="lg:hidden text-slate-600" onClick={() => setOpen(true)}>
@@ -183,7 +200,7 @@ export default function Layout() {
                                 {user.tenant_name && <> · <span className="font-semibold text-indigo-600">{user.tenant_name}</span></>}
                             </>}
                         </div>
-                        {!tenantAdmin && (
+                        {!platform && (
                             <div className="ml-auto flex items-center gap-2">
                                 <CalendarDaysIcon className="w-5 h-5 text-indigo-500" />
                                 <label className="text-sm text-slate-600">Year</label>

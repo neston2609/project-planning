@@ -10,7 +10,7 @@ function getSecret() {
  * who is logged in.
  *
  * The JWT payload carries: { uid, username, role, tenant_id }.
- * tenant_id is null for the global 'tenantadmin' role.
+ * tenant_id is null for the global 'tenantadmin' / 'tenantuser' roles.
  */
 function softAuth(req, _res, next) {
     const header = req.headers.authorization || '';
@@ -53,16 +53,25 @@ function requireTenantAdmin(req, res, next) {
     next();
 }
 
+/** Any platform-level role: 'tenantadmin' (full) or 'tenantuser' (read-only platform dashboard). */
+function requirePlatformRole(req, res, next) {
+    const role = req.user && req.user.role;
+    if (role !== 'tenantadmin' && role !== 'tenantuser') {
+        return res.status(403).json({ error: 'Forbidden — platform-level role required' });
+    }
+    next();
+}
+
 /**
  * Ensures the request is bound to a tenant. Used on every tenant-scoped
- * business route so a token without a tenant (the global tenantadmin, or a
- * malformed token) can never read or write tenant data.
+ * business route so a token without a tenant (the global tenantadmin/tenantuser,
+ * or a malformed token) can never read or write tenant data.
  */
 function requireTenant(req, res, next) {
     const tid = tenantOf(req);
     if (!tid) {
         return res.status(403).json({
-            error: 'This action requires a team (tenant) context. The global TenantAdmin manages teams, not team data.'
+            error: 'This action requires a team (tenant) context.'
         });
     }
     req.tenantId = tid;
@@ -80,6 +89,6 @@ function signToken(payload) {
 }
 
 module.exports = {
-    softAuth, requireAuth, requireRole, requireTenantAdmin, requireTenant,
-    tenantOf, signToken
+    softAuth, requireAuth, requireRole, requireTenantAdmin, requirePlatformRole,
+    requireTenant, tenantOf, signToken
 };
