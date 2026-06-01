@@ -141,7 +141,7 @@ export default function ResourcePlanning() {
         try {
             const [r, p, a] = await Promise.all([
                 api.get('/resources'),
-                api.get('/projects'),
+                api.get(`/projects?year=${year}`),
                 api.get(`/resources/assignments/all?year=${year}`)
             ]);
             setResources(r.data); setProjects(p.data); setAssigns(a.data);

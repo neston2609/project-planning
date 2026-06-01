@@ -9,6 +9,11 @@ const router = express.Router();
 router.use(requireAuth, requireTenant);
 
 // ---------- helpers ----------
+function pickYear(req) {
+    const y = Number(req.query.year);
+    return Number.isInteger(y) && y > 1900 ? y : null;
+}
+
 async function loadProject(id, tenantId) {
     const { rows: pRows } = await db.query(
         `SELECT p.*, c.alias AS customer_alias, c.full_name AS customer_full_name
@@ -64,12 +69,26 @@ async function customerInTenant(customerId, tenantId) {
 
 // ---------- list ----------
 router.get('/', async (req, res) => {
+    const year = pickYear(req);
+    const params = [req.tenantId];
+    let yearFilter = '';
+    if (year) {
+        params.push(`${year}-01-01`, `${year}-12-31`);
+        yearFilter = `
+            AND (
+                (p.project_start_date IS NOT NULL OR p.project_end_date IS NOT NULL)
+                AND COALESCE(p.project_start_date, p.project_end_date) <= $3::date
+                AND COALESCE(p.project_end_date, p.project_start_date) >= $2::date
+            )`;
+    }
+
     const { rows } = await db.query(
         `SELECT p.*, c.alias AS customer_alias
            FROM projects p LEFT JOIN customers c ON c.id = p.customer_id
           WHERE p.tenant_id=$1
+          ${yearFilter}
           ORDER BY p.project_code`,
-        [req.tenantId]
+        params
     );
     res.json(rows);
 });

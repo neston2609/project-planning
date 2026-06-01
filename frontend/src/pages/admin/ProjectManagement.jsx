@@ -18,10 +18,10 @@ export default function ProjectManagement() {
     const [sortBy, setSortBy] = useState('project_code_asc');
 
     async function load() {
-        const [p, c] = await Promise.all([api.get('/projects'), api.get('/customers')]);
+        const [p, c] = await Promise.all([api.get(`/projects?year=${year}`), api.get('/customers')]);
         setList(p.data); setCustomers(c.data);
     }
-    useEffect(() => { load(); }, []);
+    useEffect(() => { load(); }, [year]);
 
     async function openProject(id) {
         const r = await api.get(`/projects/${id}`);

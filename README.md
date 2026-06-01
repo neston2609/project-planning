@@ -18,14 +18,14 @@ The whole project is split into two npm workspaces (`backend/` and `frontend/`) 
 - PostgreSQL accessible at the host configured in `backend/.env`
 - (Optional) A Gmail App Password if you want the SMTP feature to send mail
 
-The DB credentials in the spec are:
+Configure database credentials in `backend/.env`. Use a dedicated database user
+for the application rather than committing shared or production credentials.
 
 ```
-Host (Production):  103.40.118.129
-Host (Development): 10.98.68.254
+Host: <database-host>
 Port: 5432
-Username: postgres
-Password: LEpooh2901#
+Username: <database-user>
+Password: <database-password>
 Database: rpa_planning   (create it once: CREATE DATABASE rpa_planning;)
 ```
 
@@ -81,7 +81,7 @@ npm --prefix frontend run dev     # http://localhost:3000
 Open <http://localhost:3000>. The app boots in **View-Only Guest mode** — every dashboard is visible. Click **Login** (top-right) with:
 
 - **Username:** `superadmin`
-- **Password:** `bsmrpa1234`
+- **Password:** value of `SUPERADMIN_PASSWORD` in `backend/.env`
 
 You'll be forced to change the password on first sign-in.
 

@@ -21,6 +21,33 @@ function statusBucket(status) {
     return null; // Loss -> excluded
 }
 
+function hasRecognition(calc) {
+    return Number(calc?.pct_recognize || 0) > 0;
+}
+
+function toDate(d) {
+    if (d === null || d === undefined || d === '') return null;
+    if (d instanceof Date) return isNaN(d.getTime()) ? null : d;
+    const s = String(d);
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+    const dt = new Date(s);
+    return isNaN(dt.getTime()) ? null : dt;
+}
+
+function overlapsYear(start, end, year) {
+    start = toDate(start);
+    end = toDate(end);
+    if (!start && !end) return false;
+
+    const yearStart = new Date(Date.UTC(year, 0, 1));
+    const yearEnd = new Date(Date.UTC(year, 11, 31));
+    const effectiveStart = start || end;
+    const effectiveEnd = end || start;
+
+    return effectiveStart <= yearEnd && effectiveEnd >= yearStart;
+}
+
 // ---------- Subscription Dashboard ----------
 router.get('/subscriptions', async (req, res) => {
     const year = pickYear(req);
@@ -54,7 +81,7 @@ router.get('/subscriptions', async (req, res) => {
             recognize_revenue:    calc.recognize_revenue,
             recognize_gross_margin: calc.recognize_gm
         };
-    });
+    }).filter(r => r.pct_recognize > 0);
     res.json({ year, rows: out });
 });
 
@@ -90,7 +117,7 @@ router.get('/perpetual-ma', async (req, res) => {
             recognize_revenue: calc.recognize_revenue,
             recognize_gross_margin: calc.recognize_gm
         };
-    });
+    }).filter(r => r.pct_recognize > 0);
     res.json({ year, rows: out });
 });
 
@@ -124,7 +151,7 @@ router.get('/service-ma', async (req, res) => {
             recognize_revenue: calc.recognize_revenue,
             recognize_gross_margin: calc.recognize_gm
         };
-    });
+    }).filter(r => r.pct_recognize > 0);
     res.json({ year, rows: out });
 });
 
@@ -133,6 +160,7 @@ router.get('/implementation', async (req, res) => {
     const year = pickYear(req);
     const { rows } = await db.query(`
         SELECT p.id AS project_id, p.project_code, p.status, p.pipeline_target_date,
+               p.project_start_date, p.project_end_date,
                p.description AS project_description,
                c.alias AS customer_alias,
                i.*
@@ -150,6 +178,8 @@ router.get('/implementation', async (req, res) => {
             project_id: r.project_id, project_code: r.project_code,
             description: desc, customer: r.customer_alias,
             status: r.status, pipeline_target_date: r.pipeline_target_date,
+            project_start_date: r.project_start_date,
+            project_end_date: r.project_end_date,
             revenue: Number(r.revenue), cost: Number(r.cost),
             gross_margin: calc.gross_margin,
             progress_last_year_pct: Number(r.progress_last_year_pct),
@@ -158,7 +188,7 @@ router.get('/implementation', async (req, res) => {
             recognize_revenue: calc.recognize_revenue,
             recognize_gross_margin: calc.recognize_gm
         };
-    });
+    }).filter(r => hasRecognition(r) && overlapsYear(r.project_start_date, r.project_end_date, year));
     res.json({ year, rows: out });
 });
 
@@ -213,7 +243,7 @@ router.get('/outsource', async (req, res) => {
             recognize_revenue: calc.recognize_revenue,
             recognize_gross_margin: calc.recognize_gm
         };
-    });
+    }).filter(r => r.pct_recognize > 0);
     res.json({ year, rows: out });
 });
 
@@ -285,28 +315,33 @@ async function internal(kind, year, tenantId) {
             SELECT p.status, s.*  FROM project_subscriptions s
               JOIN projects p ON p.id = s.project_id
              WHERE p.status <> 'Loss' AND p.tenant_id = $1`, [tenantId]);
-        return { rows: rows.map(r => ({ ...recognizeSubscription(r, year), status: r.status })) };
+        return { rows: rows.map(r => ({ ...recognizeSubscription(r, year), status: r.status }))
+            .filter(hasRecognition) };
     }
     if (kind === 'perpetual-ma') {
         const { rows } = await db.query(`
             SELECT p.status, m.*  FROM project_perpetual_ma m
               JOIN projects p ON p.id = m.project_id
              WHERE p.status <> 'Loss' AND p.tenant_id = $1`, [tenantId]);
-        return { rows: rows.map(r => ({ ...recognizePerpetualMA(r, year), status: r.status })) };
+        return { rows: rows.map(r => ({ ...recognizePerpetualMA(r, year), status: r.status }))
+            .filter(hasRecognition) };
     }
     if (kind === 'service-ma') {
         const { rows } = await db.query(`
             SELECT p.status, s.*  FROM project_service_ma s
               JOIN projects p ON p.id = s.project_id
              WHERE p.status <> 'Loss' AND p.tenant_id = $1`, [tenantId]);
-        return { rows: rows.map(r => ({ ...recognizeServiceMA(r, year), status: r.status })) };
+        return { rows: rows.map(r => ({ ...recognizeServiceMA(r, year), status: r.status }))
+            .filter(hasRecognition) };
     }
     if (kind === 'implementation') {
         const { rows } = await db.query(`
-            SELECT p.status, i.*  FROM project_implementation i
+            SELECT p.status, p.project_start_date, p.project_end_date, i.*  FROM project_implementation i
               JOIN projects p ON p.id = i.project_id
              WHERE p.status <> 'Loss' AND p.tenant_id = $1`, [tenantId]);
-        return { rows: rows.map(r => ({ ...recognizeImplementation(r, year), status: r.status })) };
+        return { rows: rows.map(r => ({ ...recognizeImplementation(r, year), status: r.status,
+                project_start_date: r.project_start_date, project_end_date: r.project_end_date }))
+            .filter(r => hasRecognition(r) && overlapsYear(r.project_start_date, r.project_end_date, year)) };
     }
     if (kind === 'outsource') {
         const { rows: o } = await db.query(`
@@ -329,7 +364,7 @@ async function internal(kind, year, tenantId) {
             const revenue = isMM ? Number(sum?.rev || 0) : Number(r.revenue || 0);
             const cost    = isMM ? Number(sum?.cst || 0) : Number(r.cost    || 0);
             return { ...recognizeOutsource({ ...r, revenue, cost }, year), status: r.status };
-        }) };
+        }).filter(hasRecognition) };
     }
     return { rows: [] };
 }

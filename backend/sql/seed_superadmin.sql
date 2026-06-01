@@ -4,7 +4,7 @@
 --
 -- Default credentials:
 --   username: superadmin
---   password: bsmrpa1234   (must be changed on first login)
+--   password: set SUPERADMIN_PASSWORD in backend/.env before first start
 --
 -- This file exists only to document the seed and is intentionally a no-op.
 -- =====================================================================

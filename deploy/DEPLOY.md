@@ -1,8 +1,8 @@
 # Production Deployment Guide
 
 This guide covers the most common path: a single Linux VM running nginx + the
-backend (managed by PM2) with PostgreSQL on a separate host (the production DB
-already on `103.40.118.129`). It also notes the Windows alternative at the end.
+backend (managed by PM2) with PostgreSQL on a separate host. It also notes the
+Windows alternative at the end.
 
 > The frontend ends up as **plain static files** served by nginx. The backend
 > only handles `/api/*`. There is no Vite dev server in production.
@@ -57,10 +57,10 @@ sudo -u rpa -H nano /srv/rpa-planning/backend/.env
 Set:
 
 ```
-PGHOST=103.40.118.129
+PGHOST=<database-host>
 PGPORT=5432
-PGUSER=postgres
-PGPASSWORD="LEpooh2901#"
+PGUSER=<database-user>
+PGPASSWORD="<database-password>"
 PGDATABASE=rpa_planning
 
 PORT=6000
@@ -68,8 +68,10 @@ JWT_SECRET=<paste a long random string here>
 JWT_EXPIRES_IN=8h
 CORS_ORIGIN=https://rpa.example.com
 
+TENANTADMIN_USERNAME=tenantadmin
+TENANTADMIN_PASSWORD=<change before first start>
 SUPERADMIN_USERNAME=superadmin
-SUPERADMIN_PASSWORD=<change after first login>
+SUPERADMIN_PASSWORD=<change before first start>
 ```
 
 Generate a JWT secret on the server:
@@ -81,13 +83,13 @@ node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"
 ## 4. Initialize the production database
 
 ```bash
-PGPASSWORD='LEpooh2901#' psql -h 103.40.118.129 -U postgres -d postgres -c "CREATE DATABASE rpa_planning;"
-PGPASSWORD='LEpooh2901#' psql -h 103.40.118.129 -U postgres -d rpa_planning \
+PGPASSWORD='<database-password>' psql -h <database-host> -U <database-user> -d postgres -c "CREATE DATABASE rpa_planning;"
+PGPASSWORD='<database-password>' psql -h <database-host> -U <database-user> -d rpa_planning \
     -f /srv/rpa-planning/backend/sql/schema.sql
 # Optional one-time migration from the legacy Excel file:
 sudo -u rpa -H node /srv/rpa-planning/backend/scripts/migrateFromExcel.js \
     "/srv/rpa-planning/RPA SV Summary - 2026.xlsx"
-PGPASSWORD='LEpooh2901#' psql -v ON_ERROR_STOP=1 -h 103.40.118.129 -U postgres -d rpa_planning \
+PGPASSWORD='<database-password>' psql -v ON_ERROR_STOP=1 -h <database-host> -U <database-user> -d rpa_planning \
     -f /srv/rpa-planning/backend/sql/migration.sql
 ```
 
@@ -170,7 +172,7 @@ sudo -u rpa -H pm2 restart rpa-planning-backend
 | Symptom | What to check |
 |---|---|
 | 502 from nginx | `pm2 logs rpa-planning-backend`, then `curl localhost:6000/api/health` |
-| `SCRAM-SERVER-FIRST-MESSAGE` | `PGPASSWORD` in `.env` must be quoted: `"LEpooh2901#"` |
+| `SCRAM-SERVER-FIRST-MESSAGE` | Confirm `PGPASSWORD` is correct; quote it in `.env` when it contains shell-sensitive characters |
 | Frontend loads but API errors with 401 | `JWT_SECRET` mismatch between deploys → re-login |
 | Build OK but pages show stale CSS | Browser hard-refresh; or bump cache-busting by re-deploying frontend |
 | `EADDRINUSE :5000` | Another process owns port 5000; check `PORT` in `.env` (we use 6000) |

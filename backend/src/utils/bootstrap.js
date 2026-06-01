@@ -3,6 +3,12 @@ const path = require('path');
 const bcrypt = require('bcrypt');
 const db = require('../db');
 
+function requiredSeedPassword(envName, username) {
+    const password = process.env[envName];
+    if (password) return password;
+    throw new Error(`[bootstrap] ${envName} is required before creating the initial ${username} user`);
+}
+
 /**
  * Startup bootstrap.
  *
@@ -260,7 +266,7 @@ async function bootstrap() {
         );
         if (rows[0].n === 0) {
             const username = process.env.TENANTADMIN_USERNAME || 'tenantadmin';
-            const password = process.env.TENANTADMIN_PASSWORD || 'tenantadmin1234';
+            const password = requiredSeedPassword('TENANTADMIN_PASSWORD', username);
             const hash = await bcrypt.hash(password, 10);
             try {
                 await db.query(
@@ -286,7 +292,7 @@ async function bootstrap() {
         );
         if (rows[0].n === 0) {
             const username = process.env.SUPERADMIN_USERNAME || 'superadmin';
-            const password = process.env.SUPERADMIN_PASSWORD || 'bsmrpa1234';
+            const password = requiredSeedPassword('SUPERADMIN_PASSWORD', username);
             const hash = await bcrypt.hash(password, 10);
             try {
                 await db.query(
