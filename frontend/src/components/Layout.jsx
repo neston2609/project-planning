@@ -11,11 +11,12 @@ import {
     LifebuoyIcon, BriefcaseIcon, UserGroupIcon, BuildingOffice2Icon,
     BuildingOfficeIcon, PresentationChartLineIcon, ShieldCheckIcon,
     UsersIcon, IdentificationIcon, CalendarDaysIcon, Cog6ToothIcon,
-    EnvelopeIcon, DocumentTextIcon, UserCircleIcon, UserIcon
+    EnvelopeIcon, DocumentTextIcon, UserCircleIcon, UserIcon, ClipboardDocumentListIcon
 } from '@heroicons/react/24/outline';
 
 const mainNav = [
     { to: '/',                  label: 'Summary',           icon: ChartPieIcon },
+    { to: '/project-summary',   label: 'Project Summary',   icon: ClipboardDocumentListIcon },
     { to: '/subscription',      label: 'Subscription',      icon: RectangleStackIcon },
     { to: '/perpetual-ma',      label: 'Perpetual / SW MA', icon: CubeIcon },
     { to: '/implementation',    label: 'Implementation',    icon: WrenchScrewdriverIcon },
@@ -42,14 +43,16 @@ const superadminNav = [
     { to: '/admin/login-logs', label: 'Login Logs', icon: ShieldCheckIcon }
 ];
 
-// TenantAdmin sees all three; TenantUser sees only the dashboard entry.
+// TenantAdmin sees platform management; TenantUser sees read-only platform pages.
 const tenantAdminNav = [
     { to: '/admin/platform-dashboard', label: 'Platform Dashboard', icon: PresentationChartLineIcon },
+    { to: '/project-summary',          label: 'Project Summary',    icon: ClipboardDocumentListIcon },
     { to: '/admin/tenants',            label: 'Tenants',            icon: BuildingOffice2Icon },
     { to: '/admin/platform-users',     label: 'Platform Users',     icon: ShieldCheckIcon }
 ];
 const tenantUserNav = [
-    { to: '/admin/platform-dashboard', label: 'Platform Dashboard', icon: PresentationChartLineIcon }
+    { to: '/admin/platform-dashboard', label: 'Platform Dashboard', icon: PresentationChartLineIcon },
+    { to: '/project-summary',          label: 'Project Summary',    icon: ClipboardDocumentListIcon }
 ];
 
 function NavItem({ to, label, icon: Icon }) {
@@ -84,12 +87,12 @@ export default function Layout() {
         if (p === '/change-password') return;
 
         if (tenantUser) {
-            if (p !== '/admin/platform-dashboard') {
+            if (p !== '/admin/platform-dashboard' && p !== '/project-summary') {
                 nav('/admin/platform-dashboard', { replace: true });
             }
         } else {
             // tenantadmin
-            const allowedPrefixes = ['/admin/tenants', '/admin/platform-dashboard', '/admin/platform-users'];
+            const allowedPrefixes = ['/admin/tenants', '/admin/platform-dashboard', '/admin/platform-users', '/project-summary'];
             if (!allowedPrefixes.some(pref => p === pref || p.startsWith(pref + '/'))) {
                 nav('/admin/tenants', { replace: true });
             }

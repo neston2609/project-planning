@@ -25,6 +25,7 @@ const adminRouter     = require('./routes/admin');
 const licensesRouter  = require('./routes/licenses');
 const tenantsRouter   = require('./routes/tenants');
 const platformRouter  = require('./routes/platform');
+const projectSummaryRouter = require('./routes/projectSummary');
 
 const app = express();
 
@@ -47,6 +48,7 @@ app.use('/api/admin',      adminRouter);
 app.use('/api/licenses',   licensesRouter);
 app.use('/api/tenants',    tenantsRouter);
 app.use('/api/platform',   platformRouter);
+app.use('/api/project-summary', projectSummaryRouter);
 
 const fs = require('fs');
 const distDir = path.join(__dirname, '..', '..', 'frontend', 'dist');

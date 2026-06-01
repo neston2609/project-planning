@@ -15,6 +15,7 @@ import ResourcePlanning from './pages/ResourcePlanning';
 import ResourceInformation from './pages/ResourceInformation';
 import CustomerInformation from './pages/CustomerInformation';
 import LicenseDashboard  from './pages/LicenseDashboard';
+import ProjectSummary     from './pages/ProjectSummary';
 
 import ProjectManagement from './pages/admin/ProjectManagement';
 import Customers        from './pages/admin/Customers';
@@ -85,6 +86,7 @@ export default function App() {
             <Route path="/verify-email"  element={<VerifyEmail />} />
             <Route element={<RequireAuth><Layout /></RequireAuth>}>
                 <Route index element={<HomeRedirect />} />
+                <Route path="project-summary"   element={<ProjectSummary />} />
                 <Route path="subscription"      element={<SubscriptionDash />} />
                 <Route path="perpetual-ma"      element={<PerpetualDash />} />
                 <Route path="implementation"    element={<ImplementationDash />} />

@@ -58,6 +58,14 @@ async function projectInTenant(projectId, tenantId) {
     return r.rowCount > 0;
 }
 
+async function projectCodeInTenant(projectId, tenantId) {
+    const r = await db.query(
+        'SELECT project_code FROM projects WHERE id=$1 AND tenant_id=$2',
+        [projectId, tenantId]
+    );
+    return r.rows[0]?.project_code || null;
+}
+
 /** True if customerId is null/absent, or belongs to `tenantId`. */
 async function customerInTenant(customerId, tenantId) {
     if (customerId == null) return true;
@@ -141,8 +149,10 @@ router.put('/:id', param('id').isInt(), projValidators, async (req, res) => {
     if (!await customerInTenant(b.customer_id || null, req.tenantId)) {
         return res.status(400).json({ error: 'Customer not found in your team' });
     }
+    const client = await db.getClient();
     try {
-        const { rows } = await db.query(
+        await client.query('BEGIN');
+        const { rows } = await client.query(
             `UPDATE projects SET project_code=$1, description=$2, customer_id=$3,
                                  project_start_date=$4, project_end_date=$5,
                                  status=$6, pipeline_target_date=$7, note=$8
@@ -152,11 +162,24 @@ router.put('/:id', param('id').isInt(), projValidators, async (req, res) => {
              b.status || 'Pipeline', b.pipeline_target_date || null, b.note || '',
              req.params.id, req.tenantId]
         );
-        if (!rows[0]) return res.status(404).json({ error: 'Not found' });
+        if (!rows[0]) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Not found' });
+        }
+        const projectCode = rows[0].project_code;
+        await client.query('UPDATE project_subscriptions SET erp_code=$1 WHERE project_id=$2', [projectCode, req.params.id]);
+        await client.query('UPDATE project_perpetual_ma SET erp_code=$1 WHERE project_id=$2', [projectCode, req.params.id]);
+        await client.query('UPDATE project_service_ma SET erp_code=$1 WHERE project_id=$2', [projectCode, req.params.id]);
+        await client.query('UPDATE project_implementation SET erp_code=$1 WHERE project_id=$2', [projectCode, req.params.id]);
+        await client.query('UPDATE project_outsource SET erp_code=$1 WHERE project_id=$2', [projectCode, req.params.id]);
+        await client.query('COMMIT');
         res.json(rows[0]);
     } catch (err) {
+        await client.query('ROLLBACK');
         if (err.code === '23505') return res.status(409).json({ error: 'Project code already exists' });
         throw err;
+    } finally {
+        client.release();
     }
 });
 
@@ -172,7 +195,8 @@ router.delete('/:id', param('id').isInt(), async (req, res) => {
 router.put('/:id/subscription', param('id').isInt(), async (req, res) => {
     const b = req.body || {};
     const pid = req.params.id;
-    if (!await projectInTenant(pid, req.tenantId)) return res.status(404).json({ error: 'Not found' });
+    const projectCode = await projectCodeInTenant(pid, req.tenantId);
+    if (!projectCode) return res.status(404).json({ error: 'Not found' });
 
     const { rows: existing } = await db.query('SELECT id FROM project_subscriptions WHERE project_id=$1', [pid]);
     if (existing[0]) {
@@ -181,7 +205,7 @@ router.put('/:id/subscription', param('id').isInt(), async (req, res) => {
                 license_end_date=$3, license_revenue=$4, license_cost=$5, erp_code=$6
               WHERE project_id=$7 RETURNING *`,
             [b.license_name || '', b.license_start_date || null, b.license_end_date || null,
-             b.license_revenue || 0, b.license_cost || 0, b.erp_code || '', pid]
+             b.license_revenue || 0, b.license_cost || 0, projectCode, pid]
         );
         return res.json(rows[0]);
     }
@@ -190,7 +214,7 @@ router.put('/:id/subscription', param('id').isInt(), async (req, res) => {
             license_end_date, license_revenue, license_cost, erp_code)
          VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
         [pid, b.license_name || '', b.license_start_date || null, b.license_end_date || null,
-         b.license_revenue || 0, b.license_cost || 0, b.erp_code || '']
+         b.license_revenue || 0, b.license_cost || 0, projectCode]
     );
     res.status(201).json(rows[0]);
 });
@@ -203,14 +227,15 @@ router.delete('/:id/subscription', param('id').isInt(), async (req, res) => {
 // ---------- Perpetual / SW MA tab (multi rows) ----------
 router.post('/:id/perpetual-ma', param('id').isInt(), async (req, res) => {
     const b = req.body || {};
-    if (!await projectInTenant(req.params.id, req.tenantId)) return res.status(404).json({ error: 'Not found' });
+    const projectCode = await projectCodeInTenant(req.params.id, req.tenantId);
+    if (!projectCode) return res.status(404).json({ error: 'Not found' });
     const { rows } = await db.query(
         `INSERT INTO project_perpetual_ma(project_id, item_name, item_type, start_date,
                                           end_date, revenue, cost, erp_code)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
         [req.params.id, b.item_name || '', b.item_type || 'License',
          b.start_date || null, b.end_date || null,
-         b.revenue || 0, b.cost || 0, b.erp_code || '']
+         b.revenue || 0, b.cost || 0, projectCode]
     );
     res.status(201).json(rows[0]);
 });
@@ -219,13 +244,14 @@ router.put('/perpetual-ma/:rowId', param('rowId').isInt(), async (req, res) => {
     const { rows } = await db.query(
         `UPDATE project_perpetual_ma
             SET item_name=$1, item_type=$2, start_date=$3, end_date=$4,
-                revenue=$5, cost=$6, erp_code=$7
-          WHERE id=$8
-            AND project_id IN (SELECT id FROM projects WHERE tenant_id=$9)
+                revenue=$5, cost=$6,
+                erp_code=(SELECT project_code FROM projects WHERE id=project_perpetual_ma.project_id)
+          WHERE id=$7
+            AND project_id IN (SELECT id FROM projects WHERE tenant_id=$8)
           RETURNING *`,
         [b.item_name || '', b.item_type || 'License',
          b.start_date || null, b.end_date || null,
-         b.revenue || 0, b.cost || 0, b.erp_code || '', req.params.rowId, req.tenantId]
+         b.revenue || 0, b.cost || 0, req.params.rowId, req.tenantId]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Not found' });
     res.json(rows[0]);
@@ -243,13 +269,14 @@ router.delete('/perpetual-ma/:rowId', param('rowId').isInt(), async (req, res) =
 // ---------- Service MA tab (multi rows) ----------
 router.post('/:id/service-ma', param('id').isInt(), async (req, res) => {
     const b = req.body || {};
-    if (!await projectInTenant(req.params.id, req.tenantId)) return res.status(404).json({ error: 'Not found' });
+    const projectCode = await projectCodeInTenant(req.params.id, req.tenantId);
+    if (!projectCode) return res.status(404).json({ error: 'Not found' });
     const { rows } = await db.query(
         `INSERT INTO project_service_ma(project_id, description, start_date, end_date,
                                         revenue, cost, erp_code)
          VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
         [req.params.id, b.description || '', b.start_date || null, b.end_date || null,
-         b.revenue || 0, b.cost || 0, b.erp_code || '']
+         b.revenue || 0, b.cost || 0, projectCode]
     );
     res.status(201).json(rows[0]);
 });
@@ -257,12 +284,13 @@ router.put('/service-ma/:rowId', param('rowId').isInt(), async (req, res) => {
     const b = req.body || {};
     const { rows } = await db.query(
         `UPDATE project_service_ma SET description=$1, start_date=$2, end_date=$3,
-                                       revenue=$4, cost=$5, erp_code=$6
-          WHERE id=$7
-            AND project_id IN (SELECT id FROM projects WHERE tenant_id=$8)
+                                       revenue=$4, cost=$5,
+                                       erp_code=(SELECT project_code FROM projects WHERE id=project_service_ma.project_id)
+          WHERE id=$6
+            AND project_id IN (SELECT id FROM projects WHERE tenant_id=$7)
           RETURNING *`,
         [b.description || '', b.start_date || null, b.end_date || null,
-         b.revenue || 0, b.cost || 0, b.erp_code || '', req.params.rowId, req.tenantId]
+         b.revenue || 0, b.cost || 0, req.params.rowId, req.tenantId]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Not found' });
     res.json(rows[0]);
@@ -281,7 +309,8 @@ router.delete('/service-ma/:rowId', param('rowId').isInt(), async (req, res) => 
 router.put('/:id/implementation', param('id').isInt(), async (req, res) => {
     const b = req.body || {};
     const pid = req.params.id;
-    if (!await projectInTenant(pid, req.tenantId)) return res.status(404).json({ error: 'Not found' });
+    const projectCode = await projectCodeInTenant(pid, req.tenantId);
+    if (!projectCode) return res.status(404).json({ error: 'Not found' });
 
     const { rows: existing } = await db.query('SELECT id FROM project_implementation WHERE project_id=$1', [pid]);
     if (existing[0]) {
@@ -291,7 +320,7 @@ router.put('/:id/implementation', param('id').isInt(), async (req, res) => {
                     revenue=$4, cost=$5, erp_code=$6
               WHERE project_id=$7 RETURNING *`,
             [b.description || '', b.progress_last_year_pct || 0, b.progress_this_year_pct || 0,
-             b.revenue || 0, b.cost || 0, b.erp_code || '', pid]
+             b.revenue || 0, b.cost || 0, projectCode, pid]
         );
         return res.json(rows[0]);
     }
@@ -300,7 +329,7 @@ router.put('/:id/implementation', param('id').isInt(), async (req, res) => {
             progress_this_year_pct, revenue, cost, erp_code)
          VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
         [pid, b.description || '', b.progress_last_year_pct || 0, b.progress_this_year_pct || 0,
-         b.revenue || 0, b.cost || 0, b.erp_code || '']
+         b.revenue || 0, b.cost || 0, projectCode]
     );
     res.status(201).json(rows[0]);
 });
@@ -317,7 +346,8 @@ router.put('/:id/outsource', param('id').isInt(), async (req, res) => {
     if (!['Man-Month','Man-Year'].includes(b.outsource_type)) {
         return res.status(400).json({ error: 'outsource_type must be Man-Month or Man-Year' });
     }
-    if (!await projectInTenant(pid, req.tenantId)) return res.status(404).json({ error: 'Not found' });
+    const projectCode = await projectCodeInTenant(pid, req.tenantId);
+    if (!projectCode) return res.status(404).json({ error: 'Not found' });
 
     const client = await db.getClient();
     try {
@@ -334,7 +364,7 @@ router.put('/:id/outsource', param('id').isInt(), async (req, res) => {
                 [b.outsource_type, b.description || '', b.start_date || null, b.end_date || null,
                  b.outsource_type === 'Man-Year' ? (b.revenue || 0) : 0,
                  b.outsource_type === 'Man-Year' ? (b.cost    || 0) : 0,
-                 b.erp_code || '', outsourceId]
+                 projectCode, outsourceId]
             );
         } else {
             const { rows: ins } = await client.query(
@@ -344,7 +374,7 @@ router.put('/:id/outsource', param('id').isInt(), async (req, res) => {
                 [pid, b.outsource_type, b.description || '', b.start_date || null, b.end_date || null,
                  b.outsource_type === 'Man-Year' ? (b.revenue || 0) : 0,
                  b.outsource_type === 'Man-Year' ? (b.cost    || 0) : 0,
-                 b.erp_code || '']
+                 projectCode]
             );
             outsourceId = ins[0].id;
         }

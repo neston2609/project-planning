@@ -307,6 +307,18 @@ function MasterForm({ project, customers, onSaved }) {
     );
 }
 
+function ErpCodeField({ projectCode, className = 'col-span-2' }) {
+    return (
+        <div className={className}>
+            <label className="label">ERP Code</label>
+            <input className="input font-mono text-slate-500 bg-slate-50"
+                   value={projectCode || ''}
+                   disabled
+                   readOnly />
+        </div>
+    );
+}
+
 function SubscriptionTab({ project, onSaved }) {
     const s = project.subscription || {};
     const [f, setF] = useState({
@@ -315,7 +327,7 @@ function SubscriptionTab({ project, onSaved }) {
         license_end_date:   formatDate(s.license_end_date)   || formatDate(project.project_end_date),
         license_revenue: s.license_revenue || 0,
         license_cost:    s.license_cost    || 0,
-        erp_code: s.erp_code || ''
+        erp_code: project.project_code || ''
     });
     async function save() {
         await api.put(`/projects/${project.id}/subscription`, f);
@@ -338,8 +350,7 @@ function SubscriptionTab({ project, onSaved }) {
                 <input type="number" className="input" value={f.license_revenue} onChange={e => setF({ ...f, license_revenue: e.target.value })} /></div>
             <div><label className="label">License Cost (Baht)</label>
                 <input type="number" className="input" value={f.license_cost} onChange={e => setF({ ...f, license_cost: e.target.value })} /></div>
-            <div className="col-span-2"><label className="label">ERP Code</label>
-                <input className="input" value={f.erp_code} onChange={e => setF({ ...f, erp_code: e.target.value })} /></div>
+            <ErpCodeField projectCode={project.project_code} />
             <div className="col-span-2 flex justify-end gap-2">
                 {project.subscription && <button className="btn-danger" onClick={remove}>Remove</button>}
                 <button className="btn-primary" onClick={save}>Save Subscription</button>
@@ -355,7 +366,7 @@ function PerpetualTab({ project, onSaved }) {
         setDraft({ id: null, item_name: '', item_type: 'License',
             start_date: formatDate(project.project_start_date),
             end_date:   formatDate(project.project_end_date),
-            revenue: 0, cost: 0, erp_code: '' });
+            revenue: 0, cost: 0, erp_code: project.project_code || '' });
     }
     async function saveDraft() {
         try {
@@ -402,8 +413,7 @@ function PerpetualTab({ project, onSaved }) {
                         <select className="input" value={draft.item_type} onChange={e => setDraft({ ...draft, item_type: e.target.value })}>
                             <option>License</option><option>MA</option>
                         </select></div>
-                    <div><label className="label">ERP Code</label>
-                        <input className="input" value={draft.erp_code} onChange={e => setDraft({ ...draft, erp_code: e.target.value })} /></div>
+                    <ErpCodeField projectCode={project.project_code} className="" />
                     <div><label className="label">Start</label>
                         <input type="date" className="input" value={draft.start_date} onChange={e => setDraft({ ...draft, start_date: e.target.value })} /></div>
                     <div><label className="label">End</label>
@@ -428,7 +438,7 @@ function ServiceMATab({ project, onSaved }) {
         setDraft({ id: null, description: '',
             start_date: formatDate(project.project_start_date),
             end_date: formatDate(project.project_end_date),
-            revenue: 0, cost: 0, erp_code: '' });
+            revenue: 0, cost: 0, erp_code: project.project_code || '' });
     }
     async function saveDraft() {
         if (draft.id) await api.put(`/projects/service-ma/${draft.id}`, draft);
@@ -473,8 +483,7 @@ function ServiceMATab({ project, onSaved }) {
                         <input type="number" className="input" value={draft.revenue} onChange={e => setDraft({ ...draft, revenue: e.target.value })} /></div>
                     <div><label className="label">Cost</label>
                         <input type="number" className="input" value={draft.cost} onChange={e => setDraft({ ...draft, cost: e.target.value })} /></div>
-                    <div className="col-span-2"><label className="label">ERP Code</label>
-                        <input className="input" value={draft.erp_code} onChange={e => setDraft({ ...draft, erp_code: e.target.value })} /></div>
+                    <ErpCodeField projectCode={project.project_code} />
                     <div className="col-span-2 flex justify-end gap-2">
                         <button className="btn-ghost" onClick={() => setDraft(null)}>Cancel</button>
                         <button className="btn-primary" onClick={saveDraft}>Save</button>
@@ -493,7 +502,7 @@ function ImplementationTab({ project, onSaved }) {
         progress_this_year_pct: i.progress_this_year_pct ?? 0,
         revenue: i.revenue || 0,
         cost: i.cost || 0,
-        erp_code: i.erp_code || ''
+        erp_code: project.project_code || ''
     });
     async function save() {
         await api.put(`/projects/${project.id}/implementation`, f);
@@ -516,8 +525,7 @@ function ImplementationTab({ project, onSaved }) {
                 <input type="number" className="input" value={f.revenue} onChange={e => setF({ ...f, revenue: e.target.value })} /></div>
             <div><label className="label">Cost</label>
                 <input type="number" className="input" value={f.cost} onChange={e => setF({ ...f, cost: e.target.value })} /></div>
-            <div className="col-span-2"><label className="label">ERP Code</label>
-                <input className="input" value={f.erp_code} onChange={e => setF({ ...f, erp_code: e.target.value })} /></div>
+            <ErpCodeField projectCode={project.project_code} />
             <div className="col-span-2 flex justify-end gap-2">
                 {project.implementation && <button className="btn-danger" onClick={remove}>Remove</button>}
                 <button className="btn-primary" onClick={save}>Save Implementation</button>
@@ -531,7 +539,7 @@ function OutsourceTab({ project, year, onSaved }) {
     const [type, setType] = useState(o.outsource_type || 'Man-Year');
     const [f, setF] = useState({
         description: o.description || '',
-        erp_code: o.erp_code || '',
+        erp_code: project.project_code || '',
         start_date: formatDate(o.start_date) || formatDate(project.project_start_date),
         end_date:   formatDate(o.end_date)   || formatDate(project.project_end_date),
         revenue: o.revenue || 0,
@@ -572,8 +580,7 @@ function OutsourceTab({ project, year, onSaved }) {
                     <select className="input" value={type} onChange={e => setType(e.target.value)}>
                         <option>Man-Year</option><option>Man-Month</option>
                     </select></div>
-                <div><label className="label">ERP Code</label>
-                    <input className="input" value={f.erp_code} onChange={e => setF({ ...f, erp_code: e.target.value })} /></div>
+                <ErpCodeField projectCode={project.project_code} className="" />
                 <div className="col-span-2"><label className="label">Description</label>
                     <input className="input" value={f.description} onChange={e => setF({ ...f, description: e.target.value })} /></div>
             </div>
