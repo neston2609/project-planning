@@ -60,10 +60,10 @@ export const roleLabel = (role) => ({
 /**
  * The product name shown across the UI. Each tenant brands the app with its
  * own name, e.g. tenant "Automation Excellence" -> "Automation Excellence
- * Planning". Falls back to "RPA Planning" when there's no tenant context
- * (login screen, or the global TenantAdmin / TenantUser).
+ * Planning". Platform users without a tenant see the BSM Summary brand.
  */
 export const appTitle = (u) => {
+    if (isPlatformRole(u)) return 'BSM Summary';
     const name = u && u.tenant_name ? String(u.tenant_name).trim() : '';
     return name ? `${name} Planning` : 'RPA Planning';
 };

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import api from '../../api';
 import { baht } from '../../format';
 import {
@@ -7,7 +8,7 @@ import {
 } from '@heroicons/react/24/outline';
 
 /**
- * Platform Dashboard — cross-tenant revenue summary.
+ * BSM Dashboard — cross-tenant revenue summary.
  * Visible to BOTH 'tenantadmin' and 'tenantuser' (read-only).
  */
 export default function PlatformDashboard() {
@@ -36,7 +37,7 @@ export default function PlatformDashboard() {
         <div className="space-y-5">
             <div className="flex items-center gap-3 flex-wrap">
                 <h1 className="text-3xl font-extrabold">
-                    <span className="brand-mark">Platform Dashboard</span> · {year}
+                    <span className="brand-mark">BSM Dashboard</span> · {year}
                 </h1>
                 <span className="text-xs text-slate-500">
                     Revenue rolled up across every team (tenant).
@@ -48,6 +49,11 @@ export default function PlatformDashboard() {
                             value={year} onChange={e => setYear(Number(e.target.value))}>
                         {years.map(y => <option key={y} value={y}>{y}</option>)}
                     </select>
+                    <button className="btn-ghost !py-1.5"
+                            disabled={year === cur}
+                            onClick={() => setYear(cur)}>
+                        This Year
+                    </button>
                 </div>
             </div>
 
@@ -103,7 +109,10 @@ export default function PlatformDashboard() {
                                             <BuildingOffice2Icon className="w-4 h-4" />
                                         </div>
                                         <div>
-                                            <div className="font-semibold">{t.tenant_name}</div>
+                                            <Link className="font-semibold text-indigo-700 hover:text-indigo-900 hover:underline"
+                                                  to={`/project-summary?tenant_id=${t.tenant_id}&year=${year}`}>
+                                                {t.tenant_name}
+                                            </Link>
                                             <div className="text-[10px] text-slate-400">
                                                 HC {t.headcount} × {baht(t.revenue_per_headcount)}
                                             </div>

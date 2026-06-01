@@ -91,8 +91,13 @@ export default function Login() {
                         {tenants.map(t => (
                             <option key={t.id} value={t.id}>{t.name}</option>
                         ))}
-                        <option value={PLATFORM}>— Platform Admin (TenantAdmin) —</option>
+                        <option value={PLATFORM}>BSM Summary Dashboard</option>
                     </select>
+                    {tenantId === PLATFORM && (
+                        <div className="mt-2 text-sm font-extrabold text-blue-900">
+                            BSM Summary Dashboard
+                        </div>
+                    )}
                     {tenantId === PLATFORM && (
                         <p className="text-[11px] text-indigo-600 mt-1 flex items-center gap-1">
                             <ShieldCheckIcon className="w-3.5 h-3.5" />

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import api from '../api';
 import { useYear } from '../YearContext';
 import { useAuth, isPlatformRole } from '../auth';
@@ -26,8 +27,12 @@ const moneyCols = [
 
 export default function ProjectSummary() {
     const { user } = useAuth();
+    const location = useLocation();
     const platform = isPlatformRole(user);
     const globalYear = useYear();
+    const query = useMemo(() => new URLSearchParams(location.search), [location.search]);
+    const queryYear = Number(query.get('year'));
+    const queryTenantId = Number(query.get('tenant_id'));
     const [year, setYear] = useState(globalYear.year);
     const [tenants, setTenants] = useState([]);
     const [tenantId, setTenantId] = useState(user?.tenant_id || '');
@@ -42,6 +47,16 @@ export default function ProjectSummary() {
         for (let y = cur - 3; y <= cur + 3; y++) out.push(y);
         return out;
     }, [cur]);
+
+    useEffect(() => {
+        if (Number.isInteger(queryYear) && queryYear > 1900) {
+            setYear(queryYear);
+            if (!platform) globalYear.setYear(queryYear);
+        }
+        if (platform && Number.isInteger(queryTenantId) && queryTenantId > 0) {
+            setTenantId(queryTenantId);
+        }
+    }, [queryYear, queryTenantId, platform]);
 
     useEffect(() => {
         if (!platform) {
@@ -131,6 +146,14 @@ export default function ProjectSummary() {
                                 }}>
                             {years.map(y => <option key={y} value={y}>{y}</option>)}
                         </select>
+                        <button className="btn-ghost !py-1.5"
+                                disabled={year === cur}
+                                onClick={() => {
+                                    setYear(cur);
+                                    if (!platform) globalYear.setYear(cur);
+                                }}>
+                            This Year
+                        </button>
                     </div>
                 </div>
             </div>

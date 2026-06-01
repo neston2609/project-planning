@@ -45,13 +45,13 @@ const superadminNav = [
 
 // TenantAdmin sees platform management; TenantUser sees read-only platform pages.
 const tenantAdminNav = [
-    { to: '/admin/platform-dashboard', label: 'Platform Dashboard', icon: PresentationChartLineIcon },
+    { to: '/admin/platform-dashboard', label: 'BSM Dashboard',      icon: PresentationChartLineIcon },
     { to: '/project-summary',          label: 'Project Summary',    icon: ClipboardDocumentListIcon },
     { to: '/admin/tenants',            label: 'Tenants',            icon: BuildingOffice2Icon },
     { to: '/admin/platform-users',     label: 'Platform Users',     icon: ShieldCheckIcon }
 ];
 const tenantUserNav = [
-    { to: '/admin/platform-dashboard', label: 'Platform Dashboard', icon: PresentationChartLineIcon },
+    { to: '/admin/platform-dashboard', label: 'BSM Dashboard',      icon: PresentationChartLineIcon },
     { to: '/project-summary',          label: 'Project Summary',    icon: ClipboardDocumentListIcon }
 ];
 
@@ -211,6 +211,11 @@ export default function Layout() {
                                         value={year} onChange={(e) => setYear(Number(e.target.value))}>
                                     {years.map(y => <option key={y} value={y}>{y}</option>)}
                                 </select>
+                                <button className="btn-ghost !py-1.5"
+                                        disabled={year === cur}
+                                        onClick={() => setYear(cur)}>
+                                    This Year
+                                </button>
                             </div>
                         )}
                     </div>
