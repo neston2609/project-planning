@@ -66,7 +66,7 @@ export default function ProjectSummary() {
         api.get('/auth/tenants')
             .then(r => {
                 setTenants(r.data || []);
-                if (!tenantId && r.data?.[0]) setTenantId(r.data[0].id);
+                setTenantId(current => current || r.data?.[0]?.id || '');
             })
             .catch(() => setTenants([]));
     }, [platform, globalYear.year]);
