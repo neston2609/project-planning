@@ -32,7 +32,8 @@ router.post('/login',
         const errs = validationResult(req);
         if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
 
-        const { username, password } = req.body;
+        const username = String(req.body.username || '').trim();
+        const { password } = req.body;
         const tenantId = (req.body.tenant_id == null || req.body.tenant_id === '') ? null : Number(req.body.tenant_id);
         const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').toString().split(',')[0].trim();
         const ua = req.headers['user-agent'] || '';
@@ -42,12 +43,12 @@ router.post('/login',
             const userQuery = tenantId === null
                 ? `SELECT u.*, NULL::text AS tenant_name
                      FROM users u
-                    WHERE u.username = $1 AND u.tenant_id IS NULL
+                    WHERE LOWER(u.username) = LOWER($1) AND u.tenant_id IS NULL
                       AND u.role IN ('tenantadmin','tenantuser')`
                 : `SELECT u.*, t.name AS tenant_name
                      FROM users u
                      JOIN tenants t ON t.id = u.tenant_id
-                    WHERE u.username = $1 AND u.tenant_id = $2`;
+                    WHERE LOWER(u.username) = LOWER($1) AND u.tenant_id = $2`;
             const params = tenantId === null ? [username] : [username, tenantId];
             const { rows } = await db.query(userQuery, params);
             const user = rows[0];
@@ -173,7 +174,7 @@ router.post('/register',
 
             const dup = await db.query(
                 `SELECT 1 FROM users
-                  WHERE (tenant_id=$1 AND username=$2)
+                  WHERE (tenant_id=$1 AND LOWER(username)=LOWER($2))
                      OR LOWER(email)=$3
                   LIMIT 1`,
                 [tenantId, username, email]
@@ -186,7 +187,7 @@ router.post('/register',
 
             const pendingDup = await db.query(
                 `SELECT 1 FROM pending_registrations
-                  WHERE LOWER(email)=$1 OR (tenant_id=$2 AND username=$3) LIMIT 1`,
+                  WHERE LOWER(email)=$1 OR (tenant_id=$2 AND LOWER(username)=LOWER($3)) LIMIT 1`,
                 [email, tenantId, username]
             );
             if (pendingDup.rowCount) {
@@ -344,7 +345,7 @@ router.get('/verify-email',
 
             const dup = await db.query(
                 `SELECT 1 FROM users
-                  WHERE (tenant_id=$1 AND username=$2)
+                  WHERE (tenant_id=$1 AND LOWER(username)=LOWER($2))
                      OR LOWER(email)=LOWER($3) LIMIT 1`,
                 [tenantId, pending.username, pending.email]
             );

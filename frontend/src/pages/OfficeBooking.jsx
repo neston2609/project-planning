@@ -105,11 +105,11 @@ export default function OfficeBooking() {
         const last = new Date(`${range.end}T00:00:00`);
         while (cur <= last) {
             const iso = dateISO(cur);
-            if (iso >= today && selected.has(cur.getDay())) n += 1;
+            if (iso >= today && selected.has(cur.getDay()) && !holidaysByDate.has(iso)) n += 1;
             cur.setDate(cur.getDate() + 1);
         }
         return n;
-    }, [bulkWeekdays, range.start, range.end, today]);
+    }, [bulkWeekdays, range.start, range.end, today, holidaysByDate]);
 
     async function load() {
         setLoading(true);
@@ -150,6 +150,8 @@ export default function OfficeBooking() {
             return;
         }
         if (date < today) return toast.error('Cannot book a past date');
+        const holiday = holidaysByDate.get(date);
+        if (holiday) return toast.error(`Cannot book on a holiday: ${holiday.name}`);
 
         const cap = dayCapacity(dayBookings);
         if (cap.isFull) {
@@ -254,6 +256,8 @@ export default function OfficeBooking() {
                             <p>2. ถ้าต้องการยกเลิก ให้กดวันที่ตัวเองจองไว้ หรือกดปุ่มลบในตาราง My Office Bookings</p>
                             <p>3. ถ้าวันที่เลือกเต็มแล้ว ระบบจะแสดงรายชื่อผู้จอง และสามารถขอจองกรณีพิเศษพร้อมระบุเหตุผลได้</p>
                             <p>4. ใช้ Book by Weekday เพื่อเลือก จ.-ศ. แล้วจองซ้ำทุกวันนั้นในเดือนปัจจุบันและเดือนถัดไป</p>
+                            <p>5. Hover ที่วันที่บน Calendar เพื่อดูรายชื่อคนที่ Book วันนั้นทั้งหมด</p>
+                            <p>6. วันที่เป็นวันหยุดบริษัทจะแสดงสีต่างจากวันอื่น และไม่สามารถ Book ได้</p>
                         </div>
                     </div>
                 </div>
@@ -315,14 +319,19 @@ function MonthCalendar({ month, today, userId, bookingsByDate, holidaysByDate, c
                     const mine = bookings.some(b => Number(b.user_id) === Number(userId));
                     const isPast = date < today;
                     const isFull = normal >= Number(config.max_bookings_per_day || 0);
+                    const bookedNames = bookings.map(b => `${b.display_name}${b.is_extra ? ' (Extra)' : ''}`).join('\n');
+                    const cellTitle = [
+                        holiday ? `Holiday: ${holiday.name}` : '',
+                        bookedNames ? `Booked:\n${bookedNames}` : ''
+                    ].filter(Boolean).join('\n\n');
                     return (
                         <button key={date}
                                 className={`min-h-[120px] border-r border-b border-slate-100 p-2 text-left align-top transition
                                             ${isPast ? 'bg-slate-50 text-slate-400' : 'hover:bg-blue-50'}
                                             ${mine ? 'ring-2 ring-inset ring-blue-400 bg-blue-50/60' : ''}
                                             ${isFull && !mine ? 'bg-amber-50/70' : ''}
-                                            ${holiday ? 'bg-rose-50/80 border-rose-200 hover:bg-rose-100/80' : ''}`}
-                                title={holiday ? holiday.name : undefined}
+                                            ${holiday ? 'bg-rose-50/80 border-rose-200 cursor-not-allowed' : ''}`}
+                                title={cellTitle || undefined}
                                 onClick={() => onDayClick(day)}>
                             <div className="flex items-start justify-between gap-1">
                                 <span className="font-bold text-sm">{day.getDate()}</span>

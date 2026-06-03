@@ -338,3 +338,24 @@ html.dark .resource-planning-gantt .rp-week-header {
     background: rgba(15, 23, 42, 0.94) !important;
     color: #cbd5e1 !important;
 }
+
+.kb-article-content img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 0.5rem;
+    margin: 0.5rem 0;
+}
+
+.kb-article-content ul,
+.kb-article-content ol {
+    padding-left: 1.25rem;
+    margin: 0.5rem 0;
+}
+
+.kb-article-content ul {
+    list-style: disc;
+}
+
+.kb-article-content ol {
+    list-style: decimal;
+}

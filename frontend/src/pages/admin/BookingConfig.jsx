@@ -1,8 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import api from '../../api';
 import { useYear } from '../../YearContext';
-import { CalendarDaysIcon, Cog6ToothIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { ArrowUpTrayIcon, CalendarDaysIcon, Cog6ToothIcon, TrashIcon } from '@heroicons/react/24/outline';
+
+function fileToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
 
 export default function BookingConfig() {
     const { year } = useYear();
@@ -10,6 +19,9 @@ export default function BookingConfig() {
     const [holidays, setHolidays] = useState([]);
     const [holidayForm, setHolidayForm] = useState({ holiday_date: '', name: '' });
     const [loading, setLoading] = useState(true);
+    const [importing, setImporting] = useState(false);
+    const [importRows, setImportRows] = useState([]);
+    const fileRef = useRef(null);
 
     async function load() {
         setLoading(true);
@@ -77,6 +89,52 @@ export default function BookingConfig() {
         }
     }
 
+    async function onImportFile(e) {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        if (!file) return;
+        if (!(file.type.startsWith('image/') || file.type === 'application/pdf')) {
+            return toast.error('Please upload an image or PDF file');
+        }
+        if (file.size > 10 * 1024 * 1024) {
+            return toast.error('File must be 10 MB or smaller');
+        }
+        setImporting(true);
+        try {
+            const dataUrl = await fileToDataUrl(file);
+            const res = await api.post('/office-bookings/holidays/import', {
+                file_name: file.name,
+                mime_type: file.type,
+                data_url: dataUrl,
+                year
+            });
+            const rows = (res.data.holidays || []).filter(h => String(h.holiday_date || '').startsWith(`${year}-`));
+            setImportRows(rows);
+            toast.success(`Parsed ${rows.length} holiday(s)`);
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Holiday import failed');
+        } finally {
+            setImporting(false);
+        }
+    }
+
+    async function importParsedHolidays() {
+        if (importRows.length === 0) return toast.error('No parsed holidays to import');
+        try {
+            for (const row of importRows) {
+                await api.post('/office-bookings/holidays', {
+                    holiday_date: row.holiday_date,
+                    name: row.name
+                });
+            }
+            toast.success(`Imported ${importRows.length} holiday(s)`);
+            setImportRows([]);
+            load();
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Import save failed');
+        }
+    }
+
     return (
         <div className="space-y-4">
             <div>
@@ -109,6 +167,42 @@ export default function BookingConfig() {
                         <CalendarDaysIcon className="w-5 h-5 text-blue-600" /> Holidays in {year}
                     </h2>
                     <span className="text-sm text-slate-500">{holidays.length} day(s)</span>
+                </div>
+
+                <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 space-y-3">
+                    <div className="flex flex-wrap items-center gap-3">
+                        <div>
+                            <div className="font-semibold text-slate-800">Import holidays from announcement</div>
+                            <div className="text-xs text-slate-500">Upload an image or PDF, review parsed holidays, then import them into {year}.</div>
+                        </div>
+                        <button className="btn-ghost ml-auto" disabled={importing} onClick={() => fileRef.current?.click()}>
+                            <ArrowUpTrayIcon className="w-4 h-4" /> {importing ? 'Reading...' : 'Upload Image/PDF'}
+                        </button>
+                        <input ref={fileRef} className="hidden" type="file" accept="image/*,application/pdf" onChange={onImportFile} />
+                    </div>
+                    {importRows.length > 0 && (
+                        <div className="space-y-2">
+                            <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                                <table className="table-clean">
+                                    <thead><tr><th>Date</th><th>Holiday</th></tr></thead>
+                                    <tbody>
+                                        {importRows.map(row => (
+                                            <tr key={row.holiday_date}>
+                                                <td className="font-mono text-sm">{row.holiday_date}</td>
+                                                <td>{row.name}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div className="flex gap-2 justify-end">
+                                <button className="btn-ghost" onClick={() => setImportRows([])}>Clear Preview</button>
+                                <button className="btn-primary" onClick={importParsedHolidays}>
+                                    <CalendarDaysIcon className="w-4 h-4" /> Import Parsed Holidays
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-[180px_1fr_auto] gap-3 items-end">

@@ -27,6 +27,7 @@ const tenantsRouter   = require('./routes/tenants');
 const platformRouter  = require('./routes/platform');
 const projectSummaryRouter = require('./routes/projectSummary');
 const officeBookingsRouter = require('./routes/officeBookings');
+const knowledgeBaseRouter = require('./routes/knowledgeBase');
 
 const app = express();
 
@@ -51,6 +52,7 @@ app.use('/api/tenants',    tenantsRouter);
 app.use('/api/platform',   platformRouter);
 app.use('/api/project-summary', projectSummaryRouter);
 app.use('/api/office-bookings', officeBookingsRouter);
+app.use('/api/knowledge-base', knowledgeBaseRouter);
 
 const fs = require('fs');
 const distDir = path.join(__dirname, '..', '..', 'frontend', 'dist');

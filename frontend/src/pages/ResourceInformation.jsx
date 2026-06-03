@@ -7,7 +7,8 @@ import { useAuth } from '../auth';
 import {
     UserCircleIcon, MagnifyingGlassIcon, FunnelIcon,
     EnvelopeIcon, IdentificationIcon, BriefcaseIcon,
-    PencilSquareIcon, ArrowUpTrayIcon, TrashIcon, PhoneIcon
+    PencilSquareIcon, ArrowUpTrayIcon, TrashIcon, PhoneIcon,
+    AtSymbolIcon, ChatBubbleLeftRightIcon, LinkIcon
 } from '@heroicons/react/24/outline';
 
 export default function ResourceInformation() {
@@ -53,6 +54,9 @@ export default function ResourceInformation() {
                 role: f.role || '',
                 email: f.email || '',
                 mobile_phone: f.mobile_phone || '',
+                instagram: f.instagram || '',
+                line_id: f.line_id || '',
+                facebook: f.facebook || '',
                 skill: f.skill || '',
                 picture_data: f.picture_data || null
             };
@@ -87,6 +91,9 @@ export default function ResourceInformation() {
                 (r.role         || '').toLowerCase().includes(q) ||
                 (r.email        || '').toLowerCase().includes(q) ||
                 (r.mobile_phone || '').toLowerCase().includes(q) ||
+                (r.instagram    || '').toLowerCase().includes(q) ||
+                (r.line_id      || '').toLowerCase().includes(q) ||
+                (r.facebook     || '').toLowerCase().includes(q) ||
                 (r.skill        || '').toLowerCase().includes(q) ||
                 (r.emp_id       || '').toLowerCase().includes(q)
             );
@@ -157,7 +164,7 @@ export default function ResourceInformation() {
                 <div className="flex items-center gap-2 flex-1 min-w-[240px]">
                     <MagnifyingGlassIcon className="w-5 h-5 text-slate-400" />
                     <input className="input !border-0 !bg-transparent !p-0 focus:!ring-0 flex-1"
-                        placeholder="Search by name / nickname / role / email / mobile / skill..."
+                        placeholder="Search by name / nickname / role / email / mobile / social / skill..."
                         value={search} onChange={e => setSearch(e.target.value)} />
                 </div>
                 <div className="flex items-center gap-1.5">
@@ -205,6 +212,15 @@ export default function ResourceInformation() {
             )}
         </div>
     );
+}
+
+function externalUrl(type, value) {
+    const v = String(value || '').trim();
+    if (!v) return '';
+    if (/^https?:\/\//i.test(v)) return v;
+    if (type === 'instagram') return `https://instagram.com/${v.replace(/^@/, '')}`;
+    if (type === 'line') return `https://line.me/ti/p/~${encodeURIComponent(v.replace(/^@/, ''))}`;
+    return `https://facebook.com/${v.replace(/^@/, '')}`;
 }
 
 function ResourceCard({ r, userId, onEdit }) {
@@ -273,6 +289,28 @@ function ResourceCard({ r, userId, onEdit }) {
                         <UserCircleIcon className="w-4 h-4 text-slate-400 shrink-0" />
                         <span className="text-xs text-slate-500">ERP:</span>
                         <span className="truncate text-slate-700">{r.erp_username}</span>
+                    </div>
+                )}
+                {(r.instagram || r.line_id || r.facebook) && (
+                    <div className="flex items-center gap-2 pt-1">
+                        {r.instagram && (
+                            <a className="btn-ghost !p-2" href={externalUrl('instagram', r.instagram)}
+                               target="_blank" rel="noreferrer" title="Instagram">
+                                <AtSymbolIcon className="w-4 h-4 text-pink-600" />
+                            </a>
+                        )}
+                        {r.line_id && (
+                            <a className="btn-ghost !p-2" href={externalUrl('line', r.line_id)}
+                               target="_blank" rel="noreferrer" title="Line ID">
+                                <ChatBubbleLeftRightIcon className="w-4 h-4 text-emerald-600" />
+                            </a>
+                        )}
+                        {r.facebook && (
+                            <a className="btn-ghost !p-2" href={externalUrl('facebook', r.facebook)}
+                               target="_blank" rel="noreferrer" title="Facebook">
+                                <LinkIcon className="w-4 h-4 text-blue-600" />
+                            </a>
+                        )}
                     </div>
                 )}
             </div>
@@ -347,6 +385,9 @@ function OwnResourceForm({ initial, onClose, onSave }) {
                 <div><label className="label">Role</label><input className="input" value={f.role || ''} onChange={e => setF({ ...f, role: e.target.value })} /></div>
                 <div><label className="label">Email</label><input className="input" value={f.email || ''} onChange={e => setF({ ...f, email: e.target.value })} /></div>
                 <div><label className="label">Mobile Phone</label><input className="input" value={f.mobile_phone || ''} onChange={e => setF({ ...f, mobile_phone: e.target.value })} /></div>
+                <div><label className="label">Instagram</label><input className="input" value={f.instagram || ''} onChange={e => setF({ ...f, instagram: e.target.value })} /></div>
+                <div><label className="label">Line ID</label><input className="input" value={f.line_id || ''} onChange={e => setF({ ...f, line_id: e.target.value })} /></div>
+                <div className="col-span-2"><label className="label">Facebook</label><input className="input" value={f.facebook || ''} onChange={e => setF({ ...f, facebook: e.target.value })} /></div>
                 <div><label className="label">Emp ID</label><input className="input bg-slate-100" value={f.emp_id || ''} disabled /></div>
                 <div className="col-span-2"><label className="label">ERP Username</label><input className="input bg-slate-100" value={f.erp_username || ''} disabled /></div>
                 <div className="col-span-2"><label className="label">Skill</label><textarea rows={3} className="input" value={f.skill || ''} onChange={e => setF({ ...f, skill: e.target.value })} /></div>

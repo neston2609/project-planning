@@ -19,6 +19,8 @@ async function seedTenantConfig(client, tenantId) {
     const defaults = [
         ['default_year',          String(new Date().getFullYear())],
         ['license_expiring_days', '30'],
+        ['login_log_retention_days', '14'],
+        ['kb_version_limit', '20'],
         ['footer_text',           'Implemented and Maintain by BSM RPA Team. For Internal use only']
     ];
     for (const [key, value] of defaults) {
@@ -83,6 +85,16 @@ router.post('/',
             // Seed sensible per-tenant config defaults.
             await seedTenantConfig(client, tenant.id);
             const defaultRoles = await ensureDefaultRoles(tenant.id, client);
+            const dup = await client.query(
+                `SELECT 1 FROM users
+                  WHERE tenant_id=$1 AND LOWER(username)=LOWER($2)
+                  LIMIT 1`,
+                [tenant.id, username]
+            );
+            if (dup.rowCount) {
+                await client.query('ROLLBACK');
+                return res.status(409).json({ error: 'That admin username is already taken in this team' });
+            }
 
             const hash = await bcrypt.hash(password, 10);
             const u = await client.query(
@@ -151,7 +163,12 @@ router.delete('/:id', param('id').isInt(), async (req, res) => {
         await client.query('DELETE FROM login_logs            WHERE tenant_id=$1', [id]);
         await client.query('DELETE FROM pending_registrations WHERE tenant_id=$1', [id]);
         await client.query('DELETE FROM office_bookings       WHERE tenant_id=$1', [id]);
+        await client.query('DELETE FROM office_booking_holidays WHERE tenant_id=$1', [id]);
         await client.query('DELETE FROM office_booking_config WHERE tenant_id=$1', [id]);
+        await client.query('DELETE FROM kb_articles           WHERE tenant_id=$1', [id]);
+        await client.query('DELETE FROM kb_categories         WHERE tenant_id=$1', [id]);
+        await client.query('DELETE FROM kb_products           WHERE tenant_id=$1', [id]);
+        await client.query('DELETE FROM tenant_roles          WHERE tenant_id=$1', [id]);
         await client.query('DELETE FROM users                 WHERE tenant_id=$1', [id]);
         await client.query('DELETE FROM tenants               WHERE id=$1', [id]);
         await client.query('COMMIT');
@@ -202,14 +219,22 @@ router.post('/:tenantId/users',
     async (req, res) => {
         const errs = validationResult(req);
         if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
-        const { username, password, full_name, email, phone_number, role } = req.body;
+        const username = String(req.body.username || '').trim();
+        const { password, full_name, email, phone_number, role } = req.body;
         try {
+            const dup = await db.query(
+                `SELECT 1 FROM users
+                  WHERE tenant_id=$1 AND LOWER(username)=LOWER($2)
+                  LIMIT 1`,
+                [req.params.tenantId, username]
+            );
+            if (dup.rowCount) return res.status(409).json({ error: 'Username already exists in this team' });
             const hash = await bcrypt.hash(password, 10);
             const { rows } = await db.query(
                 `INSERT INTO users(tenant_id, username, password_hash, full_name, email, phone_number, role, must_change_password)
                  VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE)
                  RETURNING id, username, full_name, email, phone_number, role, must_change_password`,
-                [req.params.tenantId, String(username).trim(), hash,
+                [req.params.tenantId, username, hash,
                  full_name || '', email || '', phone_number || '', role]
             );
             res.status(201).json(rows[0]);
@@ -233,7 +258,19 @@ router.put('/:tenantId/users/:userId',
         const args = [];
         const sets = [];
         function push(col, val) { sets.push(`${col}=$${args.push(val)}`); }
-        if (username != null) push('username', String(username).trim());
+        if (username != null) {
+            const nextUsername = String(username).trim();
+            const dup = await db.query(
+                `SELECT 1 FROM users
+                  WHERE tenant_id=$1
+                    AND LOWER(username)=LOWER($2)
+                    AND id<>$3
+                  LIMIT 1`,
+                [req.params.tenantId, nextUsername, req.params.userId]
+            );
+            if (dup.rowCount) return res.status(409).json({ error: 'Username already exists in this team' });
+            push('username', nextUsername);
+        }
         push('full_name',    full_name || '');
         push('email',        email || '');
         push('phone_number', phone_number || '');

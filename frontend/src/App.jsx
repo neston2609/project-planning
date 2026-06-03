@@ -17,6 +17,7 @@ import CustomerInformation from './pages/CustomerInformation';
 import LicenseDashboard  from './pages/LicenseDashboard';
 import ProjectSummary     from './pages/ProjectSummary';
 import OfficeBooking      from './pages/OfficeBooking';
+import KnowledgeBase      from './pages/KnowledgeBase';
 
 import ProjectManagement from './pages/admin/ProjectManagement';
 import Customers        from './pages/admin/Customers';
@@ -29,6 +30,7 @@ import LoginLogsPage    from './pages/admin/LoginLogs';
 import LicenseManagement from './pages/admin/LicenseManagement';
 import RoleManagement   from './pages/admin/RoleManagement';
 import BookingConfig    from './pages/admin/BookingConfig';
+import KBConfigure      from './pages/admin/KBConfigure';
 import Tenants          from './pages/admin/Tenants';
 import TenantUsers      from './pages/admin/TenantUsers';
 import PlatformDashboard from './pages/admin/PlatformDashboard';
@@ -93,6 +95,7 @@ function HomeRedirect() {
             ['dashboard.service_ma', '/service-ma'],
             ['dashboard.outsource', '/outsource'],
             ['dashboard.office_booking', '/office-booking'],
+            ['knowledge.base', '/knowledge-base'],
             ['resource.planning', '/resource-planning'],
             ['admin.projects', '/admin/projects'],
             ['superadmin.users', '/admin/users']
@@ -118,6 +121,7 @@ export default function App() {
                 <Route path="service-ma"        element={<RequireMenu menuKey="dashboard.service_ma"><ServiceMADash /></RequireMenu>} />
                 <Route path="outsource"         element={<RequireMenu menuKey="dashboard.outsource"><OutsourceDash /></RequireMenu>} />
                 <Route path="office-booking"    element={<RequireMenu menuKey="dashboard.office_booking"><OfficeBooking /></RequireMenu>} />
+                <Route path="knowledge-base"    element={<RequireMenu menuKey="knowledge.base"><KnowledgeBase /></RequireMenu>} />
                 <Route path="resource-planning"    element={<RequireMenu menuKey="resource.planning"><ResourcePlanning /></RequireMenu>} />
                 <Route path="resource-information" element={<RequireMenu menuKey="resource.information"><ResourceInformation /></RequireMenu>} />
                 <Route path="customer-information" element={<RequireMenu menuKey="customer.information"><CustomerInformation /></RequireMenu>} />
@@ -130,6 +134,7 @@ export default function App() {
                 <Route path="admin/year"       element={<RequireAdmin><RequireMenu menuKey="admin.year"><YearConfigPage /></RequireMenu></RequireAdmin>} />
                 <Route path="admin/app"        element={<RequireAdmin><RequireMenu menuKey="admin.app"><AppConfigPage /></RequireMenu></RequireAdmin>} />
                 <Route path="admin/smtp"       element={<RequireAdmin><RequireMenu menuKey="admin.smtp"><SmtpPage /></RequireMenu></RequireAdmin>} />
+                <Route path="admin/kb-config"  element={<RequireAdmin><RequireMenu menuKey="admin.kb_config"><KBConfigure /></RequireMenu></RequireAdmin>} />
                 <Route path="admin/licenses"   element={<RequireAdmin><RequireMenu menuKey="admin.licenses"><LicenseManagement /></RequireMenu></RequireAdmin>} />
                 <Route path="admin/roles"      element={<RequireSuper><RequireMenu menuKey="admin.roles"><RoleManagement /></RequireMenu></RequireSuper>} />
 

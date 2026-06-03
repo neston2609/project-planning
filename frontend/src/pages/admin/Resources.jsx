@@ -89,19 +89,20 @@ export default function Resources() {
     return (
         <div className="space-y-4">
             <div className="flex items-center"><h1 className="text-2xl font-bold">Resources</h1>
-                <button className="btn-primary ml-auto" onClick={() => setEdit({ first_name: '', last_name: '', nick_name: '', emp_id: '', role: '', email: '', mobile_phone: '', erp_username: '', skill: '', picture_data: null })}>
+                <button className="btn-primary ml-auto" onClick={() => setEdit({ first_name: '', last_name: '', nick_name: '', emp_id: '', role: '', email: '', mobile_phone: '', instagram: '', line_id: '', facebook: '', erp_username: '', skill: '', picture_data: null })}>
                     <PlusIcon className="w-4 h-4" /> Add</button>
             </div>
             <div className="card overflow-x-auto">
                 <table className="table-clean">
-                    <thead><tr><th>Photo</th><th>Emp ID</th><th>First</th><th>Last</th><th>Nickname</th><th>Role</th><th>Email</th><th>Mobile</th><th>ERP User</th><th>User</th><th>Skill</th><th></th></tr></thead>
+                    <thead><tr><th>Photo</th><th>Emp ID</th><th>First</th><th>Last</th><th>Nickname</th><th>Role</th><th>Email</th><th>Mobile</th><th>Instagram</th><th>Line ID</th><th>Facebook</th><th>ERP User</th><th>User</th><th>Skill</th><th></th></tr></thead>
                     <tbody>
                         {list.map(r => (
                             <tr key={r.id}>
                                 <td><Avatar resource={r} size={40} /></td>
                                 <td className="font-mono text-xs">{r.emp_id}</td>
                                 <td>{r.first_name}</td><td>{r.last_name}</td><td>{r.nick_name}</td>
-                                <td>{r.role}</td><td>{r.email}</td><td>{r.mobile_phone}</td><td>{r.erp_username}</td>
+                                <td>{r.role}</td><td>{r.email}</td><td>{r.mobile_phone}</td>
+                                <td>{r.instagram}</td><td>{r.line_id}</td><td>{r.facebook}</td><td>{r.erp_username}</td>
                                 <td>
                                     {r.user_id ? (
                                         <button className="btn-ghost" onClick={() => openUserModal(r)}
@@ -123,7 +124,7 @@ export default function Resources() {
                                 </td>
                             </tr>
                         ))}
-                        {list.length === 0 && <tr><td colSpan={12} className="text-center text-slate-400 py-6">No resources.</td></tr>}
+                        {list.length === 0 && <tr><td colSpan={15} className="text-center text-slate-400 py-6">No resources.</td></tr>}
                     </tbody>
                 </table>
             </div>
@@ -334,6 +335,9 @@ function ResourceForm({ initial, onClose, onSave }) {
                 <div><label className="label">Role</label><input className="input" value={f.role} onChange={e => setF({ ...f, role: e.target.value })} /></div>
                 <div><label className="label">Email</label><input className="input" value={f.email} onChange={e => setF({ ...f, email: e.target.value })} /></div>
                 <div><label className="label">Mobile Phone</label><input className="input" value={f.mobile_phone || ''} onChange={e => setF({ ...f, mobile_phone: e.target.value })} /></div>
+                <div><label className="label">Instagram</label><input className="input" value={f.instagram || ''} onChange={e => setF({ ...f, instagram: e.target.value })} /></div>
+                <div><label className="label">Line ID</label><input className="input" value={f.line_id || ''} onChange={e => setF({ ...f, line_id: e.target.value })} /></div>
+                <div className="col-span-2"><label className="label">Facebook</label><input className="input" value={f.facebook || ''} onChange={e => setF({ ...f, facebook: e.target.value })} /></div>
                 <div><label className="label">ERP Username</label><input className="input" value={f.erp_username} onChange={e => setF({ ...f, erp_username: e.target.value })} /></div>
                 <div className="col-span-2"><label className="label">Skill</label><textarea rows={2} className="input" value={f.skill} onChange={e => setF({ ...f, skill: e.target.value })} /></div>
             </div>

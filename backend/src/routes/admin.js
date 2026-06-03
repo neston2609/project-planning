@@ -9,6 +9,7 @@ const { ensureDefaultRoles } = require('../utils/roles');
 
 const router = express.Router();
 const DEFAULT_FOOTER_TEXT = 'Implemented and Maintain by BSM RPA Team. For Internal use only';
+const DEFAULT_LOGIN_LOG_RETENTION_DAYS = 14;
 // All admin routes are tenant-scoped. The global TenantAdmin manages tenants
 // and team users via /api/tenants, not these per-tenant admin endpoints.
 router.use(requireAuth, requireTenant);
@@ -65,7 +66,8 @@ router.post('/users', requireRole('superadmin'),
     async (req, res) => {
         const errs = validationResult(req);
         if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
-        const { username, password, full_name, email, phone_number, role } = req.body;
+        const username = String(req.body.username || '').trim();
+        const { password, full_name, email, phone_number, role } = req.body;
         let tenantRole = await roleForTenant(req.tenantId, req.body.tenant_role_id);
         const baseRole = tenantRole?.base_role || role;
         if (!['user','admin','superadmin'].includes(baseRole)) {
@@ -73,6 +75,13 @@ router.post('/users', requireRole('superadmin'),
         }
         if (!tenantRole) tenantRole = await defaultRoleForBase(req.tenantId, baseRole);
         try {
+            const dup = await db.query(
+                `SELECT 1 FROM users
+                  WHERE tenant_id=$1 AND LOWER(username)=LOWER($2)
+                  LIMIT 1`,
+                [req.tenantId, username]
+            );
+            if (dup.rowCount) return res.status(409).json({ error: 'Username already exists in this team' });
             const hash = await bcrypt.hash(password, 10);
             const { rows } = await db.query(
                 `INSERT INTO users(tenant_id, username, password_hash, full_name, email, phone_number, role, tenant_role_id)
@@ -233,12 +242,58 @@ router.delete('/users/:id', requireRole('superadmin'), param('id').isInt(), asyn
 });
 
 router.get('/login-logs', requireRole('superadmin'), async (req, res) => {
-    const limit = Math.min(Number(req.query.limit) || 200, 1000);
-    const { rows } = await db.query(
-        `SELECT * FROM login_logs WHERE tenant_id=$1 ORDER BY login_at DESC LIMIT $2`,
-        [req.tenantId, limit]
+    const retentionRows = await db.query(
+        "SELECT value FROM tenant_config WHERE tenant_id=$1 AND key='login_log_retention_days'",
+        [req.tenantId]
     );
-    res.json(rows);
+    const retentionDays = Number(retentionRows.rows[0]?.value || DEFAULT_LOGIN_LOG_RETENTION_DAYS);
+    const safeRetention = Number.isInteger(retentionDays) && retentionDays >= 0 ? retentionDays : DEFAULT_LOGIN_LOG_RETENTION_DAYS;
+    await db.query(
+        `DELETE FROM login_logs
+          WHERE tenant_id=$1
+            AND login_at < NOW() - ($2::int * INTERVAL '1 day')`,
+        [req.tenantId, safeRetention]
+    );
+
+    const pageSize = [20, 50, 100, 200].includes(Number(req.query.page_size))
+        ? Number(req.query.page_size)
+        : 20;
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const offset = (page - 1) * pageSize;
+    const params = [req.tenantId];
+    const filters = ['tenant_id=$1'];
+
+    const search = String(req.query.search || '').trim().toLowerCase();
+    if (search) {
+        params.push(`%${search}%`);
+        filters.push(`(
+            LOWER(username) LIKE $${params.length}
+            OR LOWER(status) LIKE $${params.length}
+            OR to_char(login_at, 'YYYY-MM-DD') LIKE $${params.length}
+        )`);
+    }
+    const status = String(req.query.status || '').trim();
+    if (status === 'Success' || status === 'Failed') {
+        params.push(status);
+        filters.push(`status=$${params.length}`);
+    }
+    const date = String(req.query.date || '').trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        params.push(date);
+        filters.push(`login_at::date=$${params.length}::date`);
+    }
+
+    const where = `WHERE ${filters.join(' AND ')}`;
+    const countRows = await db.query(`SELECT COUNT(*)::int AS total FROM login_logs ${where}`, params);
+    params.push(pageSize, offset);
+    const { rows } = await db.query(
+        `SELECT * FROM login_logs
+          ${where}
+          ORDER BY login_at DESC
+          LIMIT $${params.length - 1} OFFSET $${params.length}`,
+        params
+    );
+    res.json({ rows, total: countRows.rows[0].total, page, page_size: pageSize, retention_days: safeRetention });
 });
 
 // ---------- Year config (tenant-scoped) ----------
@@ -281,6 +336,7 @@ router.get('/app-config', async (req, res) => {
     );
     res.json({
         footer_text: DEFAULT_FOOTER_TEXT,
+        login_log_retention_days: String(DEFAULT_LOGIN_LOG_RETENTION_DAYS),
         ...Object.fromEntries(rows.map(r => [r.key, r.value]))
     });
 });

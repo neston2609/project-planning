@@ -5,12 +5,14 @@ import toast from 'react-hot-toast';
 export default function AppConfigPage() {
     const [defaultYear, setDefaultYear] = useState('');
     const [licenseDays, setLicenseDays] = useState('');
+    const [loginRetentionDays, setLoginRetentionDays] = useState('14');
     const [footerText, setFooterText] = useState('');
 
     async function load() {
         const r = await api.get('/admin/app-config');
         setDefaultYear(r.data.default_year || '');
         setLicenseDays(r.data.license_expiring_days || '30');
+        setLoginRetentionDays(r.data.login_log_retention_days || '14');
         setFooterText(r.data.footer_text || 'Implemented and Maintain by BSM RPA Team. For Internal use only');
     }
     useEffect(() => { load(); }, []);
@@ -40,6 +42,17 @@ export default function AppConfigPage() {
         } catch { toast.error('Save failed'); }
     }
 
+    async function saveLoginRetention() {
+        const n = Number(loginRetentionDays);
+        if (!Number.isInteger(n) || n < 0) {
+            return toast.error('Enter a non-negative whole number of days');
+        }
+        try {
+            await api.put('/admin/app-config/login_log_retention_days', { value: String(n) });
+            toast.success('Login log retention saved');
+        } catch { toast.error('Save failed'); }
+    }
+
     return (
         <div className="space-y-4">
             <h1 className="text-2xl font-bold">App Configuration</h1>
@@ -64,6 +77,18 @@ export default function AppConfigPage() {
                     </p>
                 </div>
                 <button className="btn-primary" onClick={saveDays}>Save Threshold</button>
+            </div>
+
+            <div className="card p-4 max-w-md space-y-3">
+                <div>
+                    <label className="label">Login Logs Retention (Days)</label>
+                    <input type="number" min="0" className="input" value={loginRetentionDays}
+                           onChange={e => setLoginRetentionDays(e.target.value)} />
+                    <p className="text-xs text-slate-400 mt-1">
+                        Login logs older than this value are removed automatically when Login Logs is opened. Default 14.
+                    </p>
+                </div>
+                <button className="btn-primary" onClick={saveLoginRetention}>Save Login Retention</button>
             </div>
 
             <div className="card p-4 max-w-2xl space-y-3">

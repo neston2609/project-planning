@@ -293,6 +293,16 @@ router.post('/:id/create-user',
                 await client.query('ROLLBACK');
                 return res.status(400).json({ error: 'Emp ID is required as the default password' });
             }
+            const duplicateUsername = await client.query(
+                `SELECT 1 FROM users
+                  WHERE tenant_id=$1 AND LOWER(username)=LOWER($2)
+                  LIMIT 1`,
+                [req.tenantId, username]
+            );
+            if (duplicateUsername.rowCount) {
+                await client.query('ROLLBACK');
+                return res.status(409).json({ error: 'Username already exists in this team' });
+            }
 
             const role = await tenantRoleForActor(req.tenantId, req.body.tenant_role_id, req.user.role, client);
             if (!role) {
@@ -352,6 +362,9 @@ const resourceValidators = [
     body('role').optional().isString(),
     body('email').optional().isString(),
     body('mobile_phone').optional().isString(),
+    body('instagram').optional().isString(),
+    body('line_id').optional().isString(),
+    body('facebook').optional().isString(),
     body('erp_username').optional().isString(),
     body('skill').optional().isString(),
     body('picture_data').optional({ nullable: true }).custom((v) => {
@@ -369,10 +382,11 @@ router.post('/', resourceValidators, async (req, res) => {
     const b = req.body;
     try {
         const { rows } = await db.query(
-            `INSERT INTO resources(tenant_id, emp_id, first_name, last_name, nick_name, role, email, mobile_phone, erp_username, skill, picture_data)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+            `INSERT INTO resources(tenant_id, emp_id, first_name, last_name, nick_name, role, email, mobile_phone, instagram, line_id, facebook, erp_username, skill, picture_data)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
             [req.tenantId, b.emp_id || null, b.first_name || '', b.last_name || '', b.nick_name || '',
-             b.role || '', b.email || '', b.mobile_phone || '', b.erp_username || '', b.skill || '',
+             b.role || '', b.email || '', b.mobile_phone || '', b.instagram || '', b.line_id || '', b.facebook || '',
+             b.erp_username || '', b.skill || '',
              b.picture_data || null]
         );
         res.status(201).json(rows[0]);
@@ -410,18 +424,23 @@ router.put('/:id', param('id').isInt(), resourceValidators, async (req, res) => 
             role: b.role !== undefined ? b.role : existing.role,
             email: b.email !== undefined ? b.email : existing.email,
             mobile_phone: b.mobile_phone !== undefined ? b.mobile_phone : existing.mobile_phone,
+            instagram: b.instagram !== undefined ? b.instagram : existing.instagram,
+            line_id: b.line_id !== undefined ? b.line_id : existing.line_id,
+            facebook: b.facebook !== undefined ? b.facebook : existing.facebook,
             erp_username: isManager && b.erp_username !== undefined ? b.erp_username : existing.erp_username,
             skill: b.skill !== undefined ? b.skill : existing.skill
         };
 
         const { rows } = await db.query(
             `UPDATE resources SET emp_id=$1, first_name=$2, last_name=$3, nick_name=$4,
-                                  role=$5, email=$6, mobile_phone=$7, erp_username=$8, skill=$9,
-                                  picture_data = CASE WHEN $10::text = '__KEEP__' THEN picture_data
-                                                      ELSE NULLIF($11::text, '__NULL__') END
-             WHERE id=$12 AND tenant_id=$13 RETURNING *`,
+                                  role=$5, email=$6, mobile_phone=$7, instagram=$8, line_id=$9, facebook=$10,
+                                  erp_username=$11, skill=$12,
+                                  picture_data = CASE WHEN $13::text = '__KEEP__' THEN picture_data
+                                                      ELSE NULLIF($14::text, '__NULL__') END
+             WHERE id=$15 AND tenant_id=$16 RETURNING *`,
             [next.emp_id || null, next.first_name || '', next.last_name || '', next.nick_name || '',
-             next.role || '', next.email || '', next.mobile_phone || '', next.erp_username || '', next.skill || '',
+             next.role || '', next.email || '', next.mobile_phone || '', next.instagram || '', next.line_id || '', next.facebook || '',
+             next.erp_username || '', next.skill || '',
              newPic === '__KEEP__' ? '__KEEP__' : 'replace',
              newPic === '__KEEP__' ? null : (newPic === null ? '__NULL__' : newPic),
              req.params.id, req.tenantId]

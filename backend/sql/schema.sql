@@ -63,6 +63,36 @@ CREATE UNIQUE INDEX IF NOT EXISTS users_username_per_tenant_uq
     ON users(tenant_id, username) WHERE tenant_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS users_username_global_uq
     ON users(username) WHERE tenant_id IS NULL;
+CREATE INDEX IF NOT EXISTS idx_users_username_lower_tenant
+    ON users(tenant_id, LOWER(username)) WHERE tenant_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_users_username_lower_global
+    ON users(LOWER(username)) WHERE tenant_id IS NULL;
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname='users_username_lower_per_tenant_uq')
+       AND NOT EXISTS (
+           SELECT 1
+             FROM users
+            WHERE tenant_id IS NOT NULL
+            GROUP BY tenant_id, LOWER(username)
+           HAVING COUNT(*) > 1
+       ) THEN
+        EXECUTE 'CREATE UNIQUE INDEX users_username_lower_per_tenant_uq
+                 ON users(tenant_id, LOWER(username)) WHERE tenant_id IS NOT NULL';
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname='users_username_lower_global_uq')
+       AND NOT EXISTS (
+           SELECT 1
+             FROM users
+            WHERE tenant_id IS NULL
+            GROUP BY LOWER(username)
+           HAVING COUNT(*) > 1
+       ) THEN
+        EXECUTE 'CREATE UNIQUE INDEX users_username_lower_global_uq
+                 ON users(LOWER(username)) WHERE tenant_id IS NULL';
+    END IF;
+END $$;
 
 -- ---------- Tenant roles / menu permissions ----------
 -- users.role remains the base backend role for API safety. tenant_role_id
@@ -190,6 +220,9 @@ CREATE TABLE IF NOT EXISTS resources (
     role            VARCHAR(128) NOT NULL DEFAULT '',
     email           VARCHAR(255) NOT NULL DEFAULT '',
     mobile_phone    VARCHAR(64)  NOT NULL DEFAULT '',
+    instagram       VARCHAR(255) NOT NULL DEFAULT '',
+    line_id         VARCHAR(255) NOT NULL DEFAULT '',
+    facebook        VARCHAR(255) NOT NULL DEFAULT '',
     erp_username    VARCHAR(128) NOT NULL DEFAULT '',
     skill           TEXT         NOT NULL DEFAULT '',
     picture_data    TEXT,
@@ -199,6 +232,9 @@ CREATE TABLE IF NOT EXISTS resources (
 ALTER TABLE resources ADD COLUMN IF NOT EXISTS tenant_id INT;
 ALTER TABLE resources ADD COLUMN IF NOT EXISTS user_id INT;
 ALTER TABLE resources ADD COLUMN IF NOT EXISTS mobile_phone VARCHAR(64) NOT NULL DEFAULT '';
+ALTER TABLE resources ADD COLUMN IF NOT EXISTS instagram VARCHAR(255) NOT NULL DEFAULT '';
+ALTER TABLE resources ADD COLUMN IF NOT EXISTS line_id VARCHAR(255) NOT NULL DEFAULT '';
+ALTER TABLE resources ADD COLUMN IF NOT EXISTS facebook VARCHAR(255) NOT NULL DEFAULT '';
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -251,6 +287,86 @@ CREATE TABLE IF NOT EXISTS office_booking_holidays (
 );
 CREATE INDEX IF NOT EXISTS idx_office_booking_holidays_tenant_date
     ON office_booking_holidays(tenant_id, holiday_date);
+
+-- ---------- Knowledge Base ----------
+CREATE TABLE IF NOT EXISTS kb_categories (
+    id          SERIAL PRIMARY KEY,
+    tenant_id   INT NOT NULL,
+    name        VARCHAR(128) NOT NULL,
+    is_system   BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+    UNIQUE (tenant_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_kb_categories_tenant ON kb_categories(tenant_id);
+
+CREATE TABLE IF NOT EXISTS kb_products (
+    id          SERIAL PRIMARY KEY,
+    tenant_id   INT NOT NULL,
+    name        VARCHAR(128) NOT NULL,
+    is_system   BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+    UNIQUE (tenant_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_kb_products_tenant ON kb_products(tenant_id);
+
+CREATE TABLE IF NOT EXISTS kb_articles (
+    id              SERIAL PRIMARY KEY,
+    tenant_id       INT NOT NULL,
+    title           VARCHAR(255) NOT NULL,
+    content         TEXT NOT NULL DEFAULT '',
+    category_id     INT REFERENCES kb_categories(id) ON DELETE SET NULL,
+    product_id      INT REFERENCES kb_products(id) ON DELETE SET NULL,
+    tags            TEXT[] NOT NULL DEFAULT ARRAY[]::text[],
+    reference_urls  TEXT[] NOT NULL DEFAULT ARRAY[]::text[],
+    author_id       INT REFERENCES users(id) ON DELETE SET NULL,
+    last_updated_by INT REFERENCES users(id) ON DELETE SET NULL,
+    version         INT NOT NULL DEFAULT 1,
+    created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_kb_articles_tenant ON kb_articles(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_kb_articles_category ON kb_articles(category_id);
+CREATE INDEX IF NOT EXISTS idx_kb_articles_product ON kb_articles(product_id);
+
+CREATE TABLE IF NOT EXISTS kb_article_versions (
+    id              SERIAL PRIMARY KEY,
+    tenant_id       INT NOT NULL,
+    article_id      INT NOT NULL REFERENCES kb_articles(id) ON DELETE CASCADE,
+    version         INT NOT NULL,
+    title           VARCHAR(255) NOT NULL,
+    content         TEXT NOT NULL DEFAULT '',
+    category_id     INT,
+    product_id      INT,
+    tags            TEXT[] NOT NULL DEFAULT ARRAY[]::text[],
+    reference_urls  TEXT[] NOT NULL DEFAULT ARRAY[]::text[],
+    attachments     JSONB NOT NULL DEFAULT '[]'::jsonb,
+    related_ids     INT[] NOT NULL DEFAULT ARRAY[]::int[],
+    changed_by      INT REFERENCES users(id) ON DELETE SET NULL,
+    change_summary  TEXT NOT NULL DEFAULT '',
+    changed_at      TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_kb_article_versions_article ON kb_article_versions(article_id, version DESC);
+
+CREATE TABLE IF NOT EXISTS kb_attachments (
+    id          SERIAL PRIMARY KEY,
+    tenant_id   INT NOT NULL,
+    article_id  INT NOT NULL REFERENCES kb_articles(id) ON DELETE CASCADE,
+    file_name   VARCHAR(255) NOT NULL,
+    mime_type   VARCHAR(255) NOT NULL DEFAULT '',
+    file_size   INT NOT NULL DEFAULT 0,
+    data_url    TEXT NOT NULL,
+    created_at  TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_kb_attachments_article ON kb_attachments(article_id);
+
+CREATE TABLE IF NOT EXISTS kb_article_related (
+    article_id          INT NOT NULL REFERENCES kb_articles(id) ON DELETE CASCADE,
+    related_article_id  INT NOT NULL REFERENCES kb_articles(id) ON DELETE CASCADE,
+    PRIMARY KEY (article_id, related_article_id),
+    CHECK (article_id <> related_article_id)
+);
 
 -- ---------- Projects ----------
 CREATE TABLE IF NOT EXISTS projects (
@@ -396,7 +512,8 @@ BEGIN
     FOR t IN SELECT unnest(ARRAY[
         'tenants','users','customers','resources','projects',
         'smtp_config','year_config','tenant_config','customer_licenses',
-        'tenant_roles','office_booking_config','office_bookings','office_booking_holidays'
+        'tenant_roles','office_booking_config','office_bookings','office_booking_holidays',
+        'kb_categories','kb_products','kb_articles'
     ]) LOOP
         EXECUTE format(
             'DROP TRIGGER IF EXISTS trg_%s_upd ON %I; '

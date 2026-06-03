@@ -1,5 +1,6 @@
 const express = require('express');
 const { body, param, query, validationResult } = require('express-validator');
+const pdfParse = require('pdf-parse');
 const db = require('../db');
 const { requireAuth, requireRole, requireTenant } = require('../middleware/auth');
 
@@ -112,6 +113,84 @@ async function holidaysBetween(tenantId, start, end, client = db) {
     return rows;
 }
 
+async function holidayForDate(tenantId, date, client = db) {
+    const { rows } = await client.query(
+        `SELECT id, to_char(holiday_date, 'YYYY-MM-DD') AS holiday_date, name
+           FROM office_booking_holidays
+          WHERE tenant_id=$1 AND holiday_date=$2::date`,
+        [tenantId, date]
+    );
+    return rows[0] || null;
+}
+
+const MONTHS = {
+    january: '01',
+    february: '02',
+    march: '03',
+    april: '04',
+    may: '05',
+    june: '06',
+    july: '07',
+    august: '08',
+    september: '09',
+    october: '10',
+    november: '11',
+    december: '12'
+};
+
+function parseHolidayText(text, fallbackYear) {
+    const raw = String(text || '').replace(/\r/g, '\n');
+    const yearMatch = raw.match(/(?:Year|Yea|Official Holidays Year)\s*(20\d{2})/i);
+    const year = Number(yearMatch?.[1] || fallbackYear || new Date().getFullYear());
+    const lines = raw.split('\n').map(line => line.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    const items = [];
+    let last = null;
+
+    for (const line of lines) {
+        const row = line.match(/^\s*\d+\s*[\.)]?\s*(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?\s+(\d{1,2})\s+([A-Za-z]+)\s+(.+)$/i);
+        if (row) {
+            const day = Number(row[1]);
+            const month = MONTHS[row[2].toLowerCase()];
+            if (!month || day < 1 || day > 31) continue;
+            last = {
+                holiday_date: `${year}-${month}-${String(day).padStart(2, '0')}`,
+                name: row[3].trim().replace(/\s+/g, ' ')
+            };
+            items.push(last);
+        } else if (last && !/^(Ref\.|Announcement|MFEC|Chief Executive|October|www\.|Tel:|Always)/i.test(line)) {
+            last.name = `${last.name} ${line}`.replace(/\s+/g, ' ').trim();
+        }
+    }
+
+    const deduped = new Map();
+    for (const item of items) {
+        if (isISODate(item.holiday_date) && item.name) deduped.set(item.holiday_date, item);
+    }
+    return { year, holidays: [...deduped.values()].sort((a, b) => a.holiday_date.localeCompare(b.holiday_date)) };
+}
+
+function dataUrlToBuffer(dataUrl) {
+    const m = String(dataUrl || '').match(/^data:([^;]+);base64,(.+)$/);
+    if (!m) return null;
+    return { mimeType: m[1], buffer: Buffer.from(m[2], 'base64') };
+}
+
+async function extractHolidayText({ data_url, mime_type }) {
+    const decoded = dataUrlToBuffer(data_url);
+    if (!decoded) throw new Error('Invalid upload data');
+    const mimeType = mime_type || decoded.mimeType;
+    if (mimeType === 'application/pdf' || mimeType.includes('pdf')) {
+        const parsed = await pdfParse(decoded.buffer);
+        return parsed.text || '';
+    }
+    if (mimeType.startsWith('image/')) {
+        const Tesseract = require('tesseract.js');
+        const result = await Tesseract.recognize(decoded.buffer, 'eng');
+        return result.data?.text || '';
+    }
+    throw new Error('Only image or PDF files are supported');
+}
+
 router.get('/',
     query('start').custom(isISODate),
     query('end').custom(isISODate),
@@ -171,6 +250,20 @@ router.post('/holidays',
             [req.tenantId, req.body.holiday_date, String(req.body.name || '').trim()]
         );
         res.status(201).json(rows[0]);
+    }
+);
+
+router.post('/holidays/import',
+    requireRole('superadmin'),
+    body('data_url').isString().isLength({ max: 15 * 1024 * 1024 }),
+    body('mime_type').optional().isString(),
+    body('year').optional({ nullable: true }).isInt({ min: 1900, max: 9999 }),
+    async (req, res) => {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+        const text = await extractHolidayText(req.body);
+        const parsed = parseHolidayText(text, req.body.year);
+        res.json({ ...parsed, extracted_text: text });
     }
 );
 
@@ -303,8 +396,15 @@ router.post('/bulk',
         try {
             await client.query('BEGIN');
             const config = await ensureConfig(req.tenantId, client);
+            const holidays = await holidaysBetween(req.tenantId, req.body.start, req.body.end, client);
+            const holidaysByDate = new Map(holidays.map(h => [h.holiday_date, h]));
 
             for (const bookingDate of targetDates) {
+                const holiday = holidaysByDate.get(bookingDate);
+                if (holiday) {
+                    skipped.push({ booking_date: bookingDate, reason: 'holiday', holiday });
+                    continue;
+                }
                 await client.query(
                     'SELECT pg_advisory_xact_lock($1, $2)',
                     [req.tenantId, Number(bookingDate.replace(/-/g, ''))]
@@ -373,6 +473,14 @@ router.post('/',
         const bookingDate = req.body.booking_date;
         const today = localDateISO();
         if (bookingDate < today) return res.status(400).json({ error: 'Cannot book a past date' });
+        const blockedHoliday = await holidayForDate(req.tenantId, bookingDate);
+        if (blockedHoliday) {
+            return res.status(400).json({
+                error: `Cannot book on a holiday: ${blockedHoliday.name}`,
+                code: 'HOLIDAY',
+                holiday: blockedHoliday
+            });
+        }
 
         const client = await db.getClient();
         try {

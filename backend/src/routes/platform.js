@@ -215,14 +215,24 @@ router.post('/users', requireTenantAdmin,
     async (req, res) => {
         const errs = validationResult(req);
         if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
-        const { username, password, full_name, email, phone_number, role } = req.body;
+        const username = String(req.body.username || '').trim();
+        const { password, full_name, email, phone_number, role } = req.body;
         try {
+            const dup = await db.query(
+                `SELECT 1 FROM users
+                  WHERE tenant_id IS NULL
+                    AND LOWER(username)=LOWER($1)
+                    AND role IN ('tenantadmin','tenantuser')
+                  LIMIT 1`,
+                [username]
+            );
+            if (dup.rowCount) return res.status(409).json({ error: 'That platform username is already taken' });
             const hash = await bcrypt.hash(password, 10);
             const { rows } = await db.query(
                 `INSERT INTO users(tenant_id, username, password_hash, full_name, email, phone_number, role, must_change_password)
                  VALUES (NULL, $1, $2, $3, $4, $5, $6, TRUE)
                  RETURNING id, username, full_name, email, phone_number, role, must_change_password`,
-                [String(username).trim(), hash, full_name || '', email || '', phone_number || '', role]
+                [username, hash, full_name || '', email || '', phone_number || '', role]
             );
             res.status(201).json(rows[0]);
         } catch (err) {
@@ -241,7 +251,20 @@ router.put('/users/:id', requireTenantAdmin, param('id').isInt(), async (req, re
     const args = [];
     const sets = [];
     function push(col, val) { sets.push(`${col}=$${args.push(val)}`); }
-    if (username != null) push('username', String(username).trim());
+    if (username != null) {
+        const nextUsername = String(username).trim();
+        const dup = await db.query(
+            `SELECT 1 FROM users
+              WHERE tenant_id IS NULL
+                AND LOWER(username)=LOWER($1)
+                AND id<>$2
+                AND role IN ('tenantadmin','tenantuser')
+              LIMIT 1`,
+            [nextUsername, req.params.id]
+        );
+        if (dup.rowCount) return res.status(409).json({ error: 'That platform username is already taken' });
+        push('username', nextUsername);
+    }
     push('full_name',    full_name || '');
     push('email',        email || '');
     push('phone_number', phone_number || '');

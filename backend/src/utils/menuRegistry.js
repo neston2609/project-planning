@@ -7,6 +7,7 @@ const MENU_REGISTRY = [
     { key: 'dashboard.service_ma', label: 'Service MA', group: 'Dashboards', min_role: 'user' },
     { key: 'dashboard.outsource', label: 'Outsource', group: 'Dashboards', min_role: 'user' },
     { key: 'dashboard.office_booking', label: 'Office Booking', group: 'Dashboards', min_role: 'user' },
+    { key: 'knowledge.base', label: 'Knowledge Base', group: 'Dashboards', min_role: 'user' },
     { key: 'resource.planning', label: 'Resource Planning', group: 'Dashboards', min_role: 'user' },
     { key: 'resource.information', label: 'Resource Information', group: 'Dashboards', min_role: 'user' },
     { key: 'customer.information', label: 'Customer Information', group: 'Dashboards', min_role: 'user' },
@@ -19,6 +20,7 @@ const MENU_REGISTRY = [
     { key: 'admin.year', label: 'Year Config', group: 'Administration', min_role: 'admin' },
     { key: 'admin.app', label: 'App Config', group: 'Administration', min_role: 'admin' },
     { key: 'admin.smtp', label: 'SMTP', group: 'Administration', min_role: 'admin' },
+    { key: 'admin.kb_config', label: 'KB Configure', group: 'Administration', min_role: 'admin' },
 
     { key: 'admin.roles', label: 'Role Management', group: 'Superadmin', min_role: 'superadmin' },
     { key: 'superadmin.booking_config', label: 'Booking Config', group: 'Superadmin', min_role: 'superadmin' },

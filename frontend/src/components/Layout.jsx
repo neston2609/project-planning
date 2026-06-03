@@ -14,7 +14,7 @@ import {
     BuildingOfficeIcon, PresentationChartLineIcon, ShieldCheckIcon,
     UsersIcon, IdentificationIcon, CalendarDaysIcon, Cog6ToothIcon,
     EnvelopeIcon, DocumentTextIcon, UserCircleIcon, UserIcon, ClipboardDocumentListIcon,
-    MoonIcon, SunIcon
+    MoonIcon, SunIcon, BookOpenIcon
 } from '@heroicons/react/24/outline';
 
 const mainNav = [
@@ -26,6 +26,7 @@ const mainNav = [
     { key: 'dashboard.service_ma',     to: '/service-ma',        label: 'Service MA',        icon: LifebuoyIcon },
     { key: 'dashboard.outsource',      to: '/outsource',            label: 'Outsource',            icon: BriefcaseIcon },
     { key: 'dashboard.office_booking', to: '/office-booking',       label: 'Office Booking',       icon: CalendarDaysIcon },
+    { key: 'knowledge.base',           to: '/knowledge-base',       label: 'Knowledge Base',       icon: BookOpenIcon },
     { key: 'resource.planning',        to: '/resource-planning',    label: 'Resource Planning',    icon: UserGroupIcon },
     { key: 'resource.information',     to: '/resource-information', label: 'Resource Information', icon: UserIcon },
     { key: 'customer.information',     to: '/customer-information', label: 'Customer Information', icon: BuildingOfficeIcon },
@@ -39,7 +40,8 @@ const adminNav = [
     { key: 'admin.licenses',  to: '/admin/licenses',  label: 'License Management', icon: KeyIcon },
     { key: 'admin.year',      to: '/admin/year',      label: 'Year Config',        icon: CalendarDaysIcon },
     { key: 'admin.app',       to: '/admin/app',       label: 'App Config',         icon: Cog6ToothIcon },
-    { key: 'admin.smtp',      to: '/admin/smtp',      label: 'SMTP',               icon: EnvelopeIcon }
+    { key: 'admin.smtp',      to: '/admin/smtp',      label: 'SMTP',               icon: EnvelopeIcon },
+    { key: 'admin.kb_config', to: '/admin/kb-config', label: 'KB Configure',       icon: BookOpenIcon }
 ];
 
 const superadminNav = [
