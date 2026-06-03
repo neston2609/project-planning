@@ -340,7 +340,7 @@ function MonthCalendar({ month, today, userId, bookingsByDate, holidaysByDate, c
                         const isWeekendHoliday = !!holiday.is_weekend;
                         return (
                             <button key={date}
-                                    className={`min-h-[120px] border-r border-b border-slate-300 p-2 text-left align-top cursor-not-allowed bg-slate-200/80
+                                    className={`min-h-[120px] border-r border-b border-slate-100 p-2 text-left align-top cursor-not-allowed bg-slate-50/60
                                                 ${isPast ? 'text-slate-400' : 'text-slate-700'}`}
                                     title={isWeekendHoliday ? undefined : holiday.name}
                                     onClick={() => onDayClick(day)}>
