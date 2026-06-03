@@ -166,7 +166,8 @@ export default function OfficeBooking() {
         }
         if (date < today) return toast.error('Cannot book a past date');
         const holiday = holidaysByDate.get(date);
-        if (holiday) return toast.error(`Cannot book on a holiday: ${holiday.name}`);
+        if (holiday?.is_weekend) return;
+        if (holiday) return toast.error(`Cannot book on ${holiday.name}`);
 
         const cap = dayCapacity(dayBookings);
         if (cap.isFull) {
@@ -335,31 +336,27 @@ function MonthCalendar({ month, today, userId, bookingsByDate, holidaysByDate, c
                     const isPast = date < today;
                     const isFull = normal >= Number(config.max_bookings_per_day || 0);
                     const bookedNames = bookings.map(b => `${b.display_name}${b.is_extra ? ' (Extra)' : ''}`).join('\n');
-                    const cellTitle = [
-                        holiday ? `Holiday: ${holiday.name}` : '',
-                        bookedNames
-                    ].filter(Boolean).join('\n\n');
                     if (holiday) {
+                        const isWeekendHoliday = !!holiday.is_weekend;
                         return (
                             <button key={date}
-                                    className={`min-h-[120px] border-r border-b border-rose-300 p-2 text-left align-top cursor-not-allowed
-                                                bg-[repeating-linear-gradient(135deg,rgba(255,228,230,0.98)_0px,rgba(255,228,230,0.98)_10px,rgba(254,205,211,0.72)_10px,rgba(254,205,211,0.72)_20px)]
-                                                ${isPast ? 'text-rose-400' : 'text-rose-900'}`}
-                                    title={holiday.name}
+                                    className={`min-h-[120px] border-r border-b border-slate-300 p-2 text-left align-top cursor-not-allowed bg-slate-200/80
+                                                ${isPast ? 'text-slate-400' : 'text-slate-700'}`}
+                                    title={isWeekendHoliday ? undefined : holiday.name}
                                     onClick={() => onDayClick(day)}>
                                 <div className="flex items-start justify-between gap-1">
                                     <span className="font-bold text-sm">{day.getDate()}</span>
-                                    <span className="text-[10px] rounded-full px-2 py-0.5 bg-rose-600 text-white">
-                                        Holiday
-                                    </span>
                                 </div>
-                                <div className="mt-3 rounded-lg border border-rose-300 bg-white/85 px-2 py-2 text-xs font-bold text-rose-800 shadow-sm"
-                                     title={holiday.name}>
-                                    {holiday.name}
-                                </div>
+                                {!isWeekendHoliday && (
+                                    <div className="mt-3 rounded-lg border border-slate-300 bg-white/80 px-2 py-2 text-xs font-bold text-slate-700 shadow-sm"
+                                         title={holiday.name}>
+                                        {holiday.name}
+                                    </div>
+                                )}
                             </button>
                         );
                     }
+                    const cellTitle = bookedNames;
                     return (
                         <button key={date}
                                 className={`min-h-[120px] border-r border-b border-slate-100 p-2 text-left align-top transition
