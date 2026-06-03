@@ -340,15 +340,15 @@ function MonthCalendar({ month, today, userId, bookingsByDate, holidaysByDate, c
                         const isWeekendHoliday = !!holiday.is_weekend;
                         return (
                             <button key={date}
-                                    className={`min-h-[120px] border-r border-b border-slate-100 p-2 text-left align-top cursor-not-allowed bg-slate-50/60
+                                    className={`relative min-h-[120px] border-r border-b border-slate-100 p-2 pt-9 text-left align-top cursor-not-allowed bg-slate-50/60
                                                 ${isPast ? 'text-slate-400' : 'text-slate-700'}`}
                                     title={isWeekendHoliday ? undefined : holiday.name}
                                     onClick={() => onDayClick(day)}>
-                                <div className="flex items-start justify-between gap-1">
+                                <div className="absolute left-2 right-2 top-2 flex items-start justify-between gap-1">
                                     <span className="font-bold text-sm">{day.getDate()}</span>
                                 </div>
                                 {!isWeekendHoliday && (
-                                    <div className="mt-3 rounded-lg border border-slate-300 bg-white/80 px-2 py-2 text-xs font-bold text-slate-700 shadow-sm"
+                                    <div className="rounded-lg border border-slate-300 bg-white/80 px-2 py-2 text-xs font-bold text-slate-700 shadow-sm"
                                          title={holiday.name}>
                                         {holiday.name}
                                     </div>
@@ -359,13 +359,13 @@ function MonthCalendar({ month, today, userId, bookingsByDate, holidaysByDate, c
                     const cellTitle = bookedNames;
                     return (
                         <button key={date}
-                                className={`min-h-[120px] border-r border-b border-slate-100 p-2 text-left align-top transition
+                                className={`relative min-h-[120px] border-r border-b border-slate-100 p-2 pt-9 text-left align-top transition
                                             ${isPast ? 'bg-slate-50 text-slate-400' : 'hover:bg-blue-50'}
                                             ${mine ? 'ring-2 ring-inset ring-blue-400 bg-blue-50/60' : ''}
                                             ${isFull && !mine ? 'bg-amber-50/70' : ''}`}
                                 title={cellTitle || undefined}
                                 onClick={() => onDayClick(day)}>
-                            <div className="flex items-start justify-between gap-1">
+                            <div className="absolute left-2 right-2 top-2 flex items-start justify-between gap-1">
                                 <span className="font-bold text-sm">{day.getDate()}</span>
                                 <span className={`text-[10px] rounded-full px-2 py-0.5 ${isFull ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
                                     {normal}/{config.max_bookings_per_day}
