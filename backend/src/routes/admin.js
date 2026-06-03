@@ -4,20 +4,54 @@ const nodemailer = require('nodemailer');
 const { body, param, validationResult } = require('express-validator');
 const db = require('../db');
 const { requireAuth, requireRole, requireTenant } = require('../middleware/auth');
+const { MENU_REGISTRY, defaultMenuKeysForRole } = require('../utils/menuRegistry');
+const { ensureDefaultRoles } = require('../utils/roles');
 
 const router = express.Router();
+const DEFAULT_FOOTER_TEXT = 'Implemented and Maintain by BSM RPA Team. For Internal use only';
 // All admin routes are tenant-scoped. The global TenantAdmin manages tenants
 // and team users via /api/tenants, not these per-tenant admin endpoints.
 router.use(requireAuth, requireTenant);
 
+async function roleForTenant(tenantId, tenantRoleId) {
+    if (!tenantRoleId) return null;
+    const { rows } = await db.query(
+        'SELECT * FROM tenant_roles WHERE id=$1 AND tenant_id=$2',
+        [tenantRoleId, tenantId]
+    );
+    return rows[0] || null;
+}
+
+async function defaultRoleForBase(tenantId, baseRole) {
+    await ensureDefaultRoles(tenantId);
+    const { rows } = await db.query(
+        `SELECT * FROM tenant_roles
+          WHERE tenant_id=$1 AND base_role=$2 AND is_system=TRUE
+          ORDER BY id
+          LIMIT 1`,
+        [tenantId, baseRole]
+    );
+    return rows[0] || null;
+}
+
+function validMenuKeysForBase(baseRole, menuPermissions = null) {
+    const registered = new Set(MENU_REGISTRY.map(m => m.key));
+    const allowedByBase = new Set(defaultMenuKeysForRole(baseRole));
+    const requested = Array.isArray(menuPermissions) ? menuPermissions : defaultMenuKeysForRole(baseRole);
+    return [...new Set(requested)].filter(key => registered.has(key) && allowedByBase.has(key));
+}
+
 // ---------- Users (Superadmin only, within the caller's tenant) ----------
 router.get('/users', requireRole('superadmin'), async (req, res) => {
+    await ensureDefaultRoles(req.tenantId);
     const { rows } = await db.query(
-        `SELECT id, username, full_name, email, phone_number, role,
-                must_change_password, created_at
-           FROM users
+        `SELECT u.id, u.username, u.full_name, u.email, u.phone_number, u.role,
+                u.tenant_role_id, tr.name AS tenant_role_name,
+                u.must_change_password, u.created_at
+           FROM users u
+           LEFT JOIN tenant_roles tr ON tr.id = u.tenant_role_id
           WHERE tenant_id=$1
-          ORDER BY username`,
+          ORDER BY u.username`,
         [req.tenantId]
     );
     res.json(rows);
@@ -27,17 +61,24 @@ router.post('/users', requireRole('superadmin'),
     body('username').isString().isLength({ min: 1, max: 64 }),
     body('password').isString().isLength({ min: 8 }),
     body('role').isIn(['user','admin','superadmin']),
+    body('tenant_role_id').optional({ nullable: true, checkFalsy: true }).isInt(),
     async (req, res) => {
         const errs = validationResult(req);
         if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
         const { username, password, full_name, email, phone_number, role } = req.body;
+        let tenantRole = await roleForTenant(req.tenantId, req.body.tenant_role_id);
+        const baseRole = tenantRole?.base_role || role;
+        if (!['user','admin','superadmin'].includes(baseRole)) {
+            return res.status(400).json({ error: 'Invalid role' });
+        }
+        if (!tenantRole) tenantRole = await defaultRoleForBase(req.tenantId, baseRole);
         try {
             const hash = await bcrypt.hash(password, 10);
             const { rows } = await db.query(
-                `INSERT INTO users(tenant_id, username, password_hash, full_name, email, phone_number, role)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7)
-                 RETURNING id, username, full_name, email, phone_number, role`,
-                [req.tenantId, username, hash, full_name || '', email || '', phone_number || '', role]
+                `INSERT INTO users(tenant_id, username, password_hash, full_name, email, phone_number, role, tenant_role_id)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+                 RETURNING id, username, full_name, email, phone_number, role, tenant_role_id`,
+                [req.tenantId, username, hash, full_name || '', email || '', phone_number || '', baseRole, tenantRole?.id || null]
             );
             res.status(201).json(rows[0]);
         } catch (err) {
@@ -48,25 +89,135 @@ router.post('/users', requireRole('superadmin'),
 );
 
 router.put('/users/:id', requireRole('superadmin'), param('id').isInt(), async (req, res) => {
-    const { full_name, email, phone_number, role, password } = req.body;
-    const safeRole = (role && ['user','admin','superadmin'].includes(role)) ? role : null;
+    const { full_name, email, phone_number, role, password, tenant_role_id } = req.body;
+    let tenantRole = await roleForTenant(req.tenantId, tenant_role_id);
+    const safeRole = tenantRole ? tenantRole.base_role : ((role && ['user','admin','superadmin'].includes(role)) ? role : null);
+    if (!tenantRole && safeRole) tenantRole = await defaultRoleForBase(req.tenantId, safeRole);
+    const safeTenantRoleId = tenantRole ? tenantRole.id : null;
     let q, args;
     if (password) {
         const hash = await bcrypt.hash(password, 10);
         q = `UPDATE users SET full_name=$1, email=$2, phone_number=$3, role=COALESCE($4, role),
-                              password_hash=$5
-             WHERE id=$6 AND tenant_id=$7
-             RETURNING id, username, full_name, email, phone_number, role`;
-        args = [full_name || '', email || '', phone_number || '', safeRole, hash, req.params.id, req.tenantId];
+                              tenant_role_id=$5, password_hash=$6
+             WHERE id=$7 AND tenant_id=$8
+             RETURNING id, username, full_name, email, phone_number, role, tenant_role_id`;
+        args = [full_name || '', email || '', phone_number || '', safeRole, safeTenantRoleId, hash, req.params.id, req.tenantId];
     } else {
-        q = `UPDATE users SET full_name=$1, email=$2, phone_number=$3, role=COALESCE($4, role)
-             WHERE id=$5 AND tenant_id=$6
-             RETURNING id, username, full_name, email, phone_number, role`;
-        args = [full_name || '', email || '', phone_number || '', safeRole, req.params.id, req.tenantId];
+        q = `UPDATE users SET full_name=$1, email=$2, phone_number=$3, role=COALESCE($4, role),
+                              tenant_role_id=$5
+             WHERE id=$6 AND tenant_id=$7
+             RETURNING id, username, full_name, email, phone_number, role, tenant_role_id`;
+        args = [full_name || '', email || '', phone_number || '', safeRole, safeTenantRoleId, req.params.id, req.tenantId];
     }
     const { rows } = await db.query(q, args);
     if (!rows[0]) return res.status(404).json({ error: 'Not found' });
     res.json(rows[0]);
+});
+
+// ---------- Role management (tenant-scoped menu permissions) ----------
+router.get('/menu-registry', requireRole('superadmin'), (_req, res) => {
+    res.json(MENU_REGISTRY);
+});
+
+router.get('/roles', requireRole('superadmin'), async (req, res) => {
+    await ensureDefaultRoles(req.tenantId);
+    const { rows } = await db.query(
+        `SELECT tr.*,
+                COALESCE(array_agg(trp.menu_key ORDER BY trp.menu_key)
+                    FILTER (WHERE trp.menu_key IS NOT NULL), ARRAY[]::text[]) AS menu_permissions,
+                (SELECT COUNT(*)::int FROM users u WHERE u.tenant_role_id = tr.id) AS user_count
+           FROM tenant_roles tr
+           LEFT JOIN tenant_role_permissions trp ON trp.tenant_role_id = tr.id
+          WHERE tr.tenant_id=$1
+          GROUP BY tr.id
+          ORDER BY tr.is_system DESC, tr.base_role, tr.name`,
+        [req.tenantId]
+    );
+    res.json(rows);
+});
+
+router.post('/roles', requireRole('superadmin'),
+    body('name').isString().trim().isLength({ min: 1, max: 128 }),
+    body('base_role').isIn(['user','admin','superadmin']),
+    async (req, res) => {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+        const permissions = validMenuKeysForBase(req.body.base_role, req.body.menu_permissions);
+        const client = await db.getClient();
+        try {
+            await client.query('BEGIN');
+            const { rows } = await client.query(
+                `INSERT INTO tenant_roles(tenant_id, name, base_role, is_system)
+                 VALUES ($1,$2,$3,FALSE) RETURNING *`,
+                [req.tenantId, String(req.body.name).trim(), req.body.base_role]
+            );
+            for (const key of permissions) {
+                await client.query(
+                    'INSERT INTO tenant_role_permissions(tenant_role_id, menu_key) VALUES ($1,$2) ON CONFLICT DO NOTHING',
+                    [rows[0].id, key]
+                );
+            }
+            await client.query('COMMIT');
+            res.status(201).json(rows[0]);
+        } catch (err) {
+            await client.query('ROLLBACK');
+            if (err.code === '23505') return res.status(409).json({ error: 'Role name already exists' });
+            throw err;
+        } finally {
+            client.release();
+        }
+    }
+);
+
+router.put('/roles/:id', requireRole('superadmin'), param('id').isInt(), async (req, res) => {
+    const name = String(req.body.name || '').trim();
+    const baseRole = ['user','admin','superadmin'].includes(req.body.base_role) ? req.body.base_role : null;
+    if (!name || !baseRole) return res.status(400).json({ error: 'Role name and base role are required' });
+    const permissions = validMenuKeysForBase(baseRole, req.body.menu_permissions);
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+        const { rows } = await client.query(
+            `UPDATE tenant_roles SET name=$1, base_role=$2, updated_at=NOW()
+              WHERE id=$3 AND tenant_id=$4
+              RETURNING *`,
+            [name, baseRole, req.params.id, req.tenantId]
+        );
+        if (!rows[0]) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Role not found' });
+        }
+        await client.query('DELETE FROM tenant_role_permissions WHERE tenant_role_id=$1', [rows[0].id]);
+        for (const key of permissions) {
+            await client.query(
+                'INSERT INTO tenant_role_permissions(tenant_role_id, menu_key) VALUES ($1,$2)',
+                [rows[0].id, key]
+            );
+        }
+        await client.query(
+            'UPDATE users SET role=$1 WHERE tenant_id=$2 AND tenant_role_id=$3',
+            [baseRole, req.tenantId, rows[0].id]
+        );
+        await client.query('COMMIT');
+        res.json(rows[0]);
+    } catch (err) {
+        await client.query('ROLLBACK');
+        if (err.code === '23505') return res.status(409).json({ error: 'Role name already exists' });
+        throw err;
+    } finally {
+        client.release();
+    }
+});
+
+router.delete('/roles/:id', requireRole('superadmin'), param('id').isInt(), async (req, res) => {
+    const usage = await db.query('SELECT COUNT(*)::int AS n FROM users WHERE tenant_role_id=$1 AND tenant_id=$2', [req.params.id, req.tenantId]);
+    if (usage.rows[0].n > 0) return res.status(400).json({ error: 'Cannot delete a role assigned to users' });
+    const { rowCount } = await db.query(
+        'DELETE FROM tenant_roles WHERE id=$1 AND tenant_id=$2 AND is_system=FALSE',
+        [req.params.id, req.tenantId]
+    );
+    if (!rowCount) return res.status(404).json({ error: 'Role not found or system role cannot be deleted' });
+    res.json({ ok: true });
 });
 
 router.delete('/users/:id', requireRole('superadmin'), param('id').isInt(), async (req, res) => {
@@ -128,7 +279,10 @@ router.get('/app-config', async (req, res) => {
         'SELECT key, value FROM tenant_config WHERE tenant_id=$1',
         [req.tenantId]
     );
-    res.json(Object.fromEntries(rows.map(r => [r.key, r.value])));
+    res.json({
+        footer_text: DEFAULT_FOOTER_TEXT,
+        ...Object.fromEntries(rows.map(r => [r.key, r.value]))
+    });
 });
 
 router.put('/app-config/:key', param('key').isString(), async (req, res) => {

@@ -3,6 +3,7 @@ const bcrypt = require('bcrypt');
 const { body, param, validationResult } = require('express-validator');
 const db = require('../db');
 const { requireAuth, requireTenantAdmin } = require('../middleware/auth');
+const { ensureDefaultRoles } = require('../utils/roles');
 
 const router = express.Router();
 router.use(requireAuth, requireTenantAdmin);
@@ -17,7 +18,8 @@ async function getDefaultTenantId() {
 async function seedTenantConfig(client, tenantId) {
     const defaults = [
         ['default_year',          String(new Date().getFullYear())],
-        ['license_expiring_days', '30']
+        ['license_expiring_days', '30'],
+        ['footer_text',           'Implemented and Maintain by BSM RPA Team. For Internal use only']
     ];
     for (const [key, value] of defaults) {
         await client.query(
@@ -78,16 +80,17 @@ router.post('/',
             );
             const tenant = t.rows[0];
 
-            const hash = await bcrypt.hash(password, 10);
-            const u = await client.query(
-                `INSERT INTO users(tenant_id, username, password_hash, full_name, role, must_change_password)
-                 VALUES ($1,$2,$3,$4,'superadmin',TRUE)
-                 RETURNING id, username, full_name, role, must_change_password`,
-                [tenant.id, username, hash, fullName]
-            );
-
             // Seed sensible per-tenant config defaults.
             await seedTenantConfig(client, tenant.id);
+            const defaultRoles = await ensureDefaultRoles(tenant.id, client);
+
+            const hash = await bcrypt.hash(password, 10);
+            const u = await client.query(
+                `INSERT INTO users(tenant_id, username, password_hash, full_name, role, tenant_role_id, must_change_password)
+                 VALUES ($1,$2,$3,$4,'superadmin',$5,TRUE)
+                 RETURNING id, username, full_name, role, tenant_role_id, must_change_password`,
+                [tenant.id, username, hash, fullName, defaultRoles.superadmin.id]
+            );
 
             await client.query('COMMIT');
             res.status(201).json({

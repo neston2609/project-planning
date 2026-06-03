@@ -5,11 +5,13 @@ import toast from 'react-hot-toast';
 export default function AppConfigPage() {
     const [defaultYear, setDefaultYear] = useState('');
     const [licenseDays, setLicenseDays] = useState('');
+    const [footerText, setFooterText] = useState('');
 
     async function load() {
         const r = await api.get('/admin/app-config');
         setDefaultYear(r.data.default_year || '');
         setLicenseDays(r.data.license_expiring_days || '30');
+        setFooterText(r.data.footer_text || 'Implemented and Maintain by BSM RPA Team. For Internal use only');
     }
     useEffect(() => { load(); }, []);
 
@@ -28,6 +30,13 @@ export default function AppConfigPage() {
         try {
             await api.put('/admin/app-config/license_expiring_days', { value: String(Math.floor(n)) });
             toast.success('License threshold saved');
+        } catch { toast.error('Save failed'); }
+    }
+
+    async function saveFooter() {
+        try {
+            await api.put('/admin/app-config/footer_text', { value: footerText });
+            toast.success('Footer saved');
         } catch { toast.error('Save failed'); }
     }
 
@@ -55,6 +64,18 @@ export default function AppConfigPage() {
                     </p>
                 </div>
                 <button className="btn-primary" onClick={saveDays}>Save Threshold</button>
+            </div>
+
+            <div className="card p-4 max-w-2xl space-y-3">
+                <div>
+                    <label className="label">Footer Text</label>
+                    <textarea className="input" rows={3} value={footerText}
+                              onChange={e => setFooterText(e.target.value)} />
+                    <p className="text-xs text-slate-400 mt-1">
+                        This footer is shown at the bottom of every page for this tenant.
+                    </p>
+                </div>
+                <button className="btn-primary" onClick={saveFooter}>Save Footer</button>
             </div>
         </div>
     );

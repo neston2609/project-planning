@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import api from './api';
+import { DEFAULT_MENU_KEYS } from './menuRegistry';
 
 const AuthCtx = createContext(null);
 
@@ -49,6 +50,14 @@ export const isTenantUser   = (u) => u && u.role === 'tenantuser';
 /** Any platform-level role: 'tenantadmin' (full) or 'tenantuser' (dashboard-only). */
 export const isPlatformRole = (u) => u && (u.role === 'tenantadmin' || u.role === 'tenantuser');
 export const isAuthenticated = (u) => !!u;
+export const hasMenuAccess = (u, key) => {
+    if (!u || !key) return false;
+    if (isPlatformRole(u)) return true;
+    const permissions = Array.isArray(u.menu_permissions)
+        ? u.menu_permissions
+        : (DEFAULT_MENU_KEYS[u.role] || DEFAULT_MENU_KEYS.user);
+    return permissions.includes(key);
+};
 export const roleLabel = (role) => ({
     user: 'User (View only)',
     admin: 'Admin',

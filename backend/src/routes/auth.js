@@ -5,6 +5,7 @@ const { body, query, validationResult } = require('express-validator');
 const db = require('../db');
 const { signToken, requireAuth } = require('../middleware/auth');
 const { sendMail } = require('../utils/mailer');
+const { ensureDefaultRoles, permissionsForUser } = require('../utils/roles');
 
 const router = express.Router();
 
@@ -59,6 +60,7 @@ router.post('/login',
             );
 
             if (!ok) return res.status(401).json({ error: 'Invalid username or password' });
+            const roleAccess = await permissionsForUser(user.id, user.tenant_id, user.role);
 
             const token = signToken({
                 uid: user.id,
@@ -73,6 +75,9 @@ router.post('/login',
                     username: user.username,
                     full_name: user.full_name,
                     role: user.role,
+                    tenant_role_id: roleAccess.tenant_role_id,
+                    tenant_role_name: roleAccess.tenant_role_name,
+                    menu_permissions: roleAccess.menu_permissions,
                     tenant_id: user.tenant_id || null,
                     tenant_name: user.tenant_name || null,
                     must_change_password: user.must_change_password
@@ -315,6 +320,7 @@ router.get('/verify-email',
             }
 
             const tenantId = pending.tenant_id || await getDefaultTenantId();
+            const defaultRoles = await ensureDefaultRoles(tenantId);
 
             const dup = await db.query(
                 `SELECT 1 FROM users
@@ -328,9 +334,9 @@ router.get('/verify-email',
             }
 
             await db.query(
-                `INSERT INTO users(tenant_id, username, password_hash, full_name, email, phone_number, role)
-                 VALUES ($1,$2,$3,$4,$5,$6,'user')`,
-                [tenantId, pending.username, pending.password_hash, pending.full_name, pending.email, pending.phone_number]
+                `INSERT INTO users(tenant_id, username, password_hash, full_name, email, phone_number, role, tenant_role_id)
+                 VALUES ($1,$2,$3,$4,$5,$6,'user',$7)`,
+                [tenantId, pending.username, pending.password_hash, pending.full_name, pending.email, pending.phone_number, defaultRoles.user.id]
             );
             await db.query(`DELETE FROM pending_registrations WHERE id=$1`, [pending.id]);
 
@@ -349,14 +355,15 @@ router.get('/verify-email',
 router.get('/me', requireAuth, async (req, res) => {
     const { rows } = await db.query(
         `SELECT u.id, u.username, u.full_name, u.email, u.phone_number, u.role,
-                u.must_change_password, u.tenant_id, t.name AS tenant_name
+                u.tenant_role_id, u.must_change_password, u.tenant_id, t.name AS tenant_name
            FROM users u
            LEFT JOIN tenants t ON t.id = u.tenant_id
           WHERE u.id=$1`,
         [req.user.uid]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Not found' });
-    res.json(rows[0]);
+    const roleAccess = await permissionsForUser(rows[0].id, rows[0].tenant_id, rows[0].role);
+    res.json({ ...rows[0], ...roleAccess });
 });
 
 module.exports = router;

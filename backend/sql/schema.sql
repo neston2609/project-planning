@@ -37,11 +37,13 @@ CREATE TABLE IF NOT EXISTS users (
     email           VARCHAR(255) NOT NULL DEFAULT '',
     phone_number    VARCHAR(64)  NOT NULL DEFAULT '',
     role            VARCHAR(32)  NOT NULL CHECK (role IN ('user', 'admin', 'superadmin', 'tenantadmin', 'tenantuser')),
+    tenant_role_id  INT,
     must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
     created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
 );
 ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id INT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_role_id INT;
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
 ALTER TABLE users ADD  CONSTRAINT users_role_check
     CHECK (role IN ('user', 'admin', 'superadmin', 'tenantadmin', 'tenantuser'));
@@ -53,6 +55,27 @@ CREATE UNIQUE INDEX IF NOT EXISTS users_username_per_tenant_uq
     ON users(tenant_id, username) WHERE tenant_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS users_username_global_uq
     ON users(username) WHERE tenant_id IS NULL;
+
+-- ---------- Tenant roles / menu permissions ----------
+-- users.role remains the base backend role for API safety. tenant_role_id
+-- points to per-tenant custom menu permissions.
+CREATE TABLE IF NOT EXISTS tenant_roles (
+    id          SERIAL PRIMARY KEY,
+    tenant_id   INT NOT NULL,
+    name        VARCHAR(128) NOT NULL,
+    base_role   VARCHAR(32) NOT NULL CHECK (base_role IN ('user','admin','superadmin')),
+    is_system   BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+    UNIQUE (tenant_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_tenant_roles_tenant ON tenant_roles(tenant_id);
+
+CREATE TABLE IF NOT EXISTS tenant_role_permissions (
+    tenant_role_id INT NOT NULL REFERENCES tenant_roles(id) ON DELETE CASCADE,
+    menu_key       VARCHAR(128) NOT NULL,
+    PRIMARY KEY (tenant_role_id, menu_key)
+);
 
 -- Self-registration: pending records waiting for email confirmation.
 CREATE TABLE IF NOT EXISTS pending_registrations (
@@ -151,6 +174,7 @@ CREATE INDEX IF NOT EXISTS idx_customers_tenant ON customers(tenant_id);
 CREATE TABLE IF NOT EXISTS resources (
     id              SERIAL PRIMARY KEY,
     tenant_id       INT,
+    user_id         INT,
     emp_id          VARCHAR(64),
     first_name      VARCHAR(128) NOT NULL DEFAULT '',
     last_name       VARCHAR(128) NOT NULL DEFAULT '',
@@ -164,7 +188,22 @@ CREATE TABLE IF NOT EXISTS resources (
     updated_at      TIMESTAMP    NOT NULL DEFAULT NOW()
 );
 ALTER TABLE resources ADD COLUMN IF NOT EXISTS tenant_id INT;
+ALTER TABLE resources ADD COLUMN IF NOT EXISTS user_id INT;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname='resources_user_id_fkey'
+          AND conrelid='resources'::regclass
+    ) THEN
+        ALTER TABLE resources
+            ADD CONSTRAINT resources_user_id_fkey
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;
+    END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS idx_resources_tenant ON resources(tenant_id);
+CREATE UNIQUE INDEX IF NOT EXISTS resources_user_per_tenant_uq
+    ON resources(tenant_id, user_id) WHERE user_id IS NOT NULL;
 
 -- ---------- Projects ----------
 CREATE TABLE IF NOT EXISTS projects (
@@ -309,7 +348,8 @@ DECLARE
 BEGIN
     FOR t IN SELECT unnest(ARRAY[
         'tenants','users','customers','resources','projects',
-        'smtp_config','year_config','tenant_config','customer_licenses'
+        'smtp_config','year_config','tenant_config','customer_licenses',
+        'tenant_roles'
     ]) LOOP
         EXECUTE format(
             'DROP TRIGGER IF EXISTS trg_%s_upd ON %I; '

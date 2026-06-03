@@ -6,9 +6,17 @@ import { PencilSquareIcon, TrashIcon, PlusIcon } from '@heroicons/react/24/outli
 
 export default function UsersPage() {
     const [list, setList] = useState([]);
+    const [roles, setRoles] = useState([]);
     const [edit, setEdit] = useState(null);
 
-    async function load() { setList((await api.get('/admin/users')).data); }
+    async function load() {
+        const [users, roleRows] = await Promise.all([
+            api.get('/admin/users'),
+            api.get('/admin/roles')
+        ]);
+        setList(users.data);
+        setRoles(roleRows.data || []);
+    }
     useEffect(() => { load(); }, []);
 
     async function save(f) {
@@ -29,11 +37,12 @@ export default function UsersPage() {
         try { await api.delete(`/admin/users/${id}`); toast.success('Deleted'); load(); }
         catch (err) { toast.error(err.response?.data?.error || 'Delete failed'); }
     }
+    const defaultUserRole = roles.find(r => r.is_system && r.base_role === 'user') || roles.find(r => r.base_role === 'user') || roles[0];
 
     return (
         <div className="space-y-4">
             <div className="flex items-center"><h1 className="text-2xl font-bold">Users</h1>
-                <button className="btn-primary ml-auto" onClick={() => setEdit({ username: '', password: '', full_name: '', email: '', phone_number: '', role: 'user' })}>
+                <button className="btn-primary ml-auto" onClick={() => setEdit({ username: '', password: '', full_name: '', email: '', phone_number: '', role: defaultUserRole?.base_role || 'user', tenant_role_id: defaultUserRole?.id || '' })}>
                     <PlusIcon className="w-4 h-4" /> Add</button>
             </div>
             <div className="card overflow-x-auto">
@@ -44,7 +53,10 @@ export default function UsersPage() {
                             <tr key={u.id}>
                                 <td className="font-medium">{u.username}</td>
                                 <td>{u.full_name}</td><td>{u.email}</td><td>{u.phone_number}</td>
-                                <td><span className={roleBadge(u.role)}>{u.role}</span></td>
+                                <td>
+                                    <span className={roleBadge(u.role)}>{u.tenant_role_name || u.role}</span>
+                                    <div className="text-[10px] text-slate-400">{u.role}</div>
+                                </td>
                                 <td className="text-right">
                                     <button className="btn-ghost" onClick={() => setEdit({ ...u, password: '' })}><PencilSquareIcon className="w-4 h-4" /></button>
                                     <button className="btn-ghost ml-1" onClick={() => remove(u.id)}><TrashIcon className="w-4 h-4 text-red-500" /></button>
@@ -55,13 +67,17 @@ export default function UsersPage() {
                     </tbody>
                 </table>
             </div>
-            {edit && <UserForm initial={edit} onClose={() => setEdit(null)} onSave={save} />}
+            {edit && <UserForm initial={edit} roles={roles} onClose={() => setEdit(null)} onSave={save} />}
         </div>
     );
 }
 
-function UserForm({ initial, onClose, onSave }) {
+function UserForm({ initial, roles, onClose, onSave }) {
     const [f, setF] = useState({ ...initial });
+    function chooseRole(roleId) {
+        const role = roles.find(r => String(r.id) === String(roleId));
+        setF({ ...f, tenant_role_id: roleId, role: role?.base_role || f.role });
+    }
     return (
         <Modal open onClose={onClose} title={f.id ? `Edit User — ${f.username}` : 'New User'}
                footer={<><button className="btn-ghost" onClick={onClose}>Cancel</button><button className="btn-primary" onClick={() => onSave(f)}>Save</button></>}>
@@ -69,10 +85,11 @@ function UserForm({ initial, onClose, onSave }) {
                 <div><label className="label">Username</label>
                     <input className="input" value={f.username} disabled={!!f.id} onChange={e => setF({ ...f, username: e.target.value })} /></div>
                 <div><label className="label">Role</label>
-                    <select className="input" value={f.role} onChange={e => setF({ ...f, role: e.target.value })}>
-                        <option value="user">user (View only)</option>
-                        <option value="admin">admin</option>
-                        <option value="superadmin">superadmin</option>
+                    <select className="input" value={f.tenant_role_id || ''} onChange={e => chooseRole(e.target.value)}>
+                        <option value="">Base role only</option>
+                        {roles.map(r => (
+                            <option key={r.id} value={r.id}>{r.name} ({r.base_role})</option>
+                        ))}
                     </select></div>
                 <div className="col-span-2"><label className="label">{f.id ? 'New Password (optional)' : 'Password *'}</label>
                     <input type="password" className="input" value={f.password || ''} onChange={e => setF({ ...f, password: e.target.value })} /></div>

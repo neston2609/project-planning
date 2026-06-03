@@ -1,16 +1,43 @@
 const express = require('express');
+const bcrypt = require('bcrypt');
 const { body, validationResult, param } = require('express-validator');
 const db = require('../db');
-const { requireAuth, requireTenant } = require('../middleware/auth');
+const { requireAuth, requireRole, requireTenant } = require('../middleware/auth');
+const { ensureDefaultRoles } = require('../utils/roles');
 
 const router = express.Router();
 
 // All resource routes are tenant-scoped.
 router.use(requireAuth, requireTenant);
 
+const RESOURCE_SELECT = `
+    SELECT r.*,
+           u.username AS mapped_username,
+           u.full_name AS mapped_user_full_name,
+           u.email AS mapped_user_email,
+           u.role AS mapped_user_role
+      FROM resources r
+      LEFT JOIN users u ON u.id = r.user_id AND u.tenant_id = r.tenant_id
+`;
+
+async function getResourceWithUser(resourceId, tenantId, client = db) {
+    const { rows } = await client.query(
+        `${RESOURCE_SELECT} WHERE r.id=$1 AND r.tenant_id=$2`,
+        [resourceId, tenantId]
+    );
+    return rows[0] || null;
+}
+
+async function defaultUserRole(tenantId, client = db) {
+    const defaults = await ensureDefaultRoles(tenantId, client);
+    return defaults.user;
+}
+
 router.get('/', async (req, res) => {
     const { rows } = await db.query(
-        'SELECT * FROM resources WHERE tenant_id=$1 ORDER BY first_name, last_name',
+        `${RESOURCE_SELECT}
+         WHERE r.tenant_id=$1
+         ORDER BY r.first_name, r.last_name`,
         [req.tenantId]
     );
     res.json(rows);
@@ -121,13 +148,133 @@ router.delete('/assignments/:id', param('id').isInt(), async (req, res) => {
 });
 
 // --- Resource CRUD (the :id route is declared after the literal /assignments paths) ---
-router.get('/:id', param('id').isInt(), async (req, res) => {
+router.get('/users', requireRole('admin', 'superadmin'), async (req, res) => {
     const { rows } = await db.query(
-        'SELECT * FROM resources WHERE id=$1 AND tenant_id=$2',
+        `SELECT u.id, u.username, u.full_name, u.email, u.role,
+                r.id AS mapped_resource_id,
+                CONCAT_WS(' ', NULLIF(r.first_name, ''), NULLIF(r.last_name, '')) AS mapped_resource_name
+           FROM users u
+           LEFT JOIN resources r ON r.user_id = u.id AND r.tenant_id = u.tenant_id
+          WHERE u.tenant_id=$1
+            AND u.role IN ('user','admin','superadmin')
+          ORDER BY u.username`,
+        [req.tenantId]
+    );
+    res.json(rows);
+});
+
+router.post('/:id/map-user',
+    requireRole('admin', 'superadmin'),
+    param('id').isInt(),
+    body('user_id').isInt(),
+    async (req, res) => {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+
+        const userId = Number(req.body.user_id);
+        const existingUser = await db.query(
+            `SELECT id FROM users
+              WHERE id=$1 AND tenant_id=$2 AND role IN ('user','admin','superadmin')`,
+            [userId, req.tenantId]
+        );
+        if (!existingUser.rows[0]) return res.status(404).json({ error: 'User not found in this team' });
+
+        const existingMap = await db.query(
+            `SELECT id FROM resources
+              WHERE tenant_id=$1 AND user_id=$2 AND id<>$3`,
+            [req.tenantId, userId, req.params.id]
+        );
+        if (existingMap.rows[0]) return res.status(409).json({ error: 'This user is already linked to another resource' });
+
+        const { rows } = await db.query(
+            'UPDATE resources SET user_id=$1 WHERE id=$2 AND tenant_id=$3 RETURNING id',
+            [userId, req.params.id, req.tenantId]
+        );
+        if (!rows[0]) return res.status(404).json({ error: 'Resource not found' });
+        res.json(await getResourceWithUser(req.params.id, req.tenantId));
+    }
+);
+
+router.post('/:id/create-user',
+    requireRole('admin', 'superadmin'),
+    param('id').isInt(),
+    async (req, res) => {
+        const client = await db.getClient();
+        try {
+            await client.query('BEGIN');
+            const { rows: resourceRows } = await client.query(
+                'SELECT * FROM resources WHERE id=$1 AND tenant_id=$2 FOR UPDATE',
+                [req.params.id, req.tenantId]
+            );
+            const resource = resourceRows[0];
+            if (!resource) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({ error: 'Resource not found' });
+            }
+            if (resource.user_id) {
+                await client.query('ROLLBACK');
+                return res.status(409).json({ error: 'This resource already has a linked user' });
+            }
+
+            const username = String(resource.erp_username || '').trim();
+            const password = String(resource.emp_id || '').trim();
+            if (!username) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: 'ERP Username is required before creating a user' });
+            }
+            if (username.length > 64) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: 'ERP Username must be 64 characters or fewer to be used as username' });
+            }
+            if (!password) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: 'Emp ID is required as the default password' });
+            }
+
+            const role = await defaultUserRole(req.tenantId, client);
+            const hash = await bcrypt.hash(password, 10);
+            const fullName = [resource.first_name, resource.last_name].filter(Boolean).join(' ').trim()
+                || resource.nick_name
+                || username;
+            const { rows: userRows } = await client.query(
+                `INSERT INTO users(tenant_id, username, password_hash, full_name, email, role, tenant_role_id, must_change_password)
+                 VALUES ($1,$2,$3,$4,$5,'user',$6,TRUE)
+                 RETURNING id`,
+                [req.tenantId, username, hash, fullName, resource.email || '', role.id]
+            );
+
+            await client.query(
+                'UPDATE resources SET user_id=$1 WHERE id=$2 AND tenant_id=$3',
+                [userRows[0].id, req.params.id, req.tenantId]
+            );
+            const linked = await getResourceWithUser(req.params.id, req.tenantId, client);
+            await client.query('COMMIT');
+            res.status(201).json(linked);
+        } catch (err) {
+            await client.query('ROLLBACK');
+            if (err.code === '23505') {
+                return res.status(409).json({ error: 'Username already exists in this team or user is already linked' });
+            }
+            throw err;
+        } finally {
+            client.release();
+        }
+    }
+);
+
+router.delete('/:id/user', requireRole('admin', 'superadmin'), param('id').isInt(), async (req, res) => {
+    const { rows } = await db.query(
+        'UPDATE resources SET user_id=NULL WHERE id=$1 AND tenant_id=$2 RETURNING id',
         [req.params.id, req.tenantId]
     );
-    if (!rows[0]) return res.status(404).json({ error: 'Not found' });
-    res.json(rows[0]);
+    if (!rows[0]) return res.status(404).json({ error: 'Resource not found' });
+    res.json(await getResourceWithUser(req.params.id, req.tenantId));
+});
+
+router.get('/:id', param('id').isInt(), async (req, res) => {
+    const row = await getResourceWithUser(req.params.id, req.tenantId);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    res.json(row);
 });
 
 const resourceValidators = [

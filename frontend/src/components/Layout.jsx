@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react';
 import { NavLink, Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import {
     useAuth, isAdmin, isSuperadmin, isTenantAdmin, isTenantUser,
-    isPlatformRole, roleLabel, appTitle
+    isPlatformRole, roleLabel, appTitle, hasMenuAccess
 } from '../auth';
 import { useYear } from '../YearContext';
+import api from '../api';
 import {
     ArrowLeftOnRectangleIcon, KeyIcon, Bars3Icon, XMarkIcon,
     ChartPieIcon, RectangleStackIcon, CubeIcon, WrenchScrewdriverIcon,
@@ -15,32 +16,33 @@ import {
 } from '@heroicons/react/24/outline';
 
 const mainNav = [
-    { to: '/',                  label: 'Summary',           icon: ChartPieIcon },
-    { to: '/project-summary',   label: 'Project Summary',   icon: ClipboardDocumentListIcon },
-    { to: '/subscription',      label: 'Subscription',      icon: RectangleStackIcon },
-    { to: '/perpetual-ma',      label: 'Perpetual / SW MA', icon: CubeIcon },
-    { to: '/implementation',    label: 'Implementation',    icon: WrenchScrewdriverIcon },
-    { to: '/service-ma',        label: 'Service MA',        icon: LifebuoyIcon },
-    { to: '/outsource',            label: 'Outsource',            icon: BriefcaseIcon },
-    { to: '/resource-planning',    label: 'Resource Planning',    icon: UserGroupIcon },
-    { to: '/resource-information', label: 'Resource Information', icon: UserIcon },
-    { to: '/customer-information', label: 'Customer Information', icon: BuildingOfficeIcon },
-    { to: '/license-dashboard',    label: 'License Dashboard',    icon: KeyIcon }
+    { key: 'dashboard.summary',        to: '/',                  label: 'Summary',           icon: ChartPieIcon },
+    { key: 'dashboard.project_summary',to: '/project-summary',   label: 'Project Summary',   icon: ClipboardDocumentListIcon },
+    { key: 'dashboard.subscription',   to: '/subscription',      label: 'Subscription',      icon: RectangleStackIcon },
+    { key: 'dashboard.perpetual_ma',   to: '/perpetual-ma',      label: 'Perpetual / SW MA', icon: CubeIcon },
+    { key: 'dashboard.implementation', to: '/implementation',    label: 'Implementation',    icon: WrenchScrewdriverIcon },
+    { key: 'dashboard.service_ma',     to: '/service-ma',        label: 'Service MA',        icon: LifebuoyIcon },
+    { key: 'dashboard.outsource',      to: '/outsource',            label: 'Outsource',            icon: BriefcaseIcon },
+    { key: 'resource.planning',        to: '/resource-planning',    label: 'Resource Planning',    icon: UserGroupIcon },
+    { key: 'resource.information',     to: '/resource-information', label: 'Resource Information', icon: UserIcon },
+    { key: 'customer.information',     to: '/customer-information', label: 'Customer Information', icon: BuildingOfficeIcon },
+    { key: 'license.dashboard',        to: '/license-dashboard',    label: 'License Dashboard',    icon: KeyIcon }
 ];
 
 const adminNav = [
-    { to: '/admin/projects',  label: 'Project Management', icon: DocumentTextIcon },
-    { to: '/admin/customers', label: 'Customers',          icon: BuildingOffice2Icon },
-    { to: '/admin/resources', label: 'Resources',          icon: IdentificationIcon },
-    { to: '/admin/licenses',  label: 'License Management', icon: KeyIcon },
-    { to: '/admin/year',      label: 'Year Config',        icon: CalendarDaysIcon },
-    { to: '/admin/app',       label: 'App Config',         icon: Cog6ToothIcon },
-    { to: '/admin/smtp',      label: 'SMTP',               icon: EnvelopeIcon }
+    { key: 'admin.projects',  to: '/admin/projects',  label: 'Project Management', icon: DocumentTextIcon },
+    { key: 'admin.customers', to: '/admin/customers', label: 'Customers',          icon: BuildingOffice2Icon },
+    { key: 'admin.resources', to: '/admin/resources', label: 'Resources',          icon: IdentificationIcon },
+    { key: 'admin.licenses',  to: '/admin/licenses',  label: 'License Management', icon: KeyIcon },
+    { key: 'admin.year',      to: '/admin/year',      label: 'Year Config',        icon: CalendarDaysIcon },
+    { key: 'admin.app',       to: '/admin/app',       label: 'App Config',         icon: Cog6ToothIcon },
+    { key: 'admin.smtp',      to: '/admin/smtp',      label: 'SMTP',               icon: EnvelopeIcon },
+    { key: 'admin.roles',     to: '/admin/roles',     label: 'Role Management',    icon: ShieldCheckIcon }
 ];
 
 const superadminNav = [
-    { to: '/admin/users',      label: 'Users',      icon: UsersIcon },
-    { to: '/admin/login-logs', label: 'Login Logs', icon: ShieldCheckIcon }
+    { key: 'superadmin.users',      to: '/admin/users',      label: 'Users',      icon: UsersIcon },
+    { key: 'superadmin.login_logs', to: '/admin/login-logs', label: 'Login Logs', icon: ShieldCheckIcon }
 ];
 
 // TenantAdmin sees platform management; TenantUser sees read-only platform pages.
@@ -54,6 +56,8 @@ const tenantUserNav = [
     { to: '/admin/platform-dashboard', label: 'BSM Dashboard',      icon: PresentationChartLineIcon },
     { to: '/project-summary',          label: 'Project Summary',    icon: ClipboardDocumentListIcon }
 ];
+
+const DEFAULT_FOOTER_TEXT = 'Implemented and Maintain by BSM RPA Team. For Internal use only';
 
 function NavItem({ to, label, icon: Icon }) {
     return (
@@ -71,13 +75,27 @@ export default function Layout() {
     const nav = useNavigate();
     const location = useLocation();
     const [open, setOpen] = useState(false);
+    const [footerText, setFooterText] = useState(DEFAULT_FOOTER_TEXT);
 
     const tenantAdmin = isTenantAdmin(user);
     const tenantUser  = isTenantUser(user);
     const platform    = isPlatformRole(user);
     const title = appTitle(user);
+    const visibleMainNav = mainNav.filter(i => hasMenuAccess(user, i.key));
+    const visibleAdminNav = adminNav.filter(i => hasMenuAccess(user, i.key));
+    const visibleSuperadminNav = superadminNav.filter(i => hasMenuAccess(user, i.key));
 
     useEffect(() => { document.title = title; }, [title]);
+
+    useEffect(() => {
+        if (platform) {
+            setFooterText(DEFAULT_FOOTER_TEXT);
+            return;
+        }
+        api.get('/admin/app-config')
+            .then(r => setFooterText(r.data?.footer_text || DEFAULT_FOOTER_TEXT))
+            .catch(() => setFooterText(DEFAULT_FOOTER_TEXT));
+    }, [platform, user?.tenant_id]);
 
     // Platform roles can only use platform pages.
     // TenantUser is further restricted to the platform dashboard only.
@@ -143,16 +161,16 @@ export default function Layout() {
                     {!platform && (
                         <>
                             <div className="nav-section-title">Dashboards</div>
-                            {mainNav.map(i => <NavItem key={i.to} {...i} />)}
+                            {visibleMainNav.map(i => <NavItem key={i.to} {...i} />)}
 
-                            {isAdmin(user) && <>
+                            {isAdmin(user) && visibleAdminNav.length > 0 && <>
                                 <div className="nav-section-title">Administration</div>
-                                {adminNav.map(i => <NavItem key={i.to} {...i} />)}
+                                {visibleAdminNav.map(i => <NavItem key={i.to} {...i} />)}
                             </>}
 
-                            {isSuperadmin(user) && <>
+                            {isSuperadmin(user) && visibleSuperadminNav.length > 0 && <>
                                 <div className="nav-section-title">Superadmin</div>
-                                {superadminNav.map(i => <NavItem key={i.to} {...i} />)}
+                                {visibleSuperadminNav.map(i => <NavItem key={i.to} {...i} />)}
                             </>}
                         </>
                     )}
@@ -226,7 +244,7 @@ export default function Layout() {
                 </main>
 
                 <footer className="text-xs text-slate-400 text-center py-3">
-                    <span className="brand-mark">{title} Management</span> · v1.0
+                    {footerText}
                 </footer>
             </div>
         </div>

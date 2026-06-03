@@ -2,11 +2,16 @@ import { useEffect, useRef, useState } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import Modal from '../../components/Modal';
-import { PencilSquareIcon, TrashIcon, PlusIcon, UserCircleIcon, ArrowUpTrayIcon } from '@heroicons/react/24/outline';
+import {
+    PencilSquareIcon, TrashIcon, PlusIcon, UserCircleIcon, ArrowUpTrayIcon,
+    UserPlusIcon, LinkIcon, XMarkIcon
+} from '@heroicons/react/24/outline';
 
 export default function Resources() {
     const [list, setList] = useState([]);
     const [edit, setEdit] = useState(null);
+    const [userModal, setUserModal] = useState(null);
+    const [users, setUsers] = useState([]);
 
     async function load() { setList((await api.get('/resources')).data); }
     useEffect(() => { load(); }, []);
@@ -23,6 +28,41 @@ export default function Resources() {
         await api.delete(`/resources/${id}`);
         toast.success('Deleted'); load();
     }
+    async function openUserModal(resource) {
+        setUserModal({ resource, mode: resource.user_id ? 'existing' : 'create', user_id: resource.user_id || '' });
+        try {
+            setUsers((await api.get('/resources/users')).data || []);
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Could not load users');
+        }
+    }
+    async function saveUserLink(f) {
+        try {
+            if (f.mode === 'existing') {
+                if (!f.user_id) return toast.error('Please select a user');
+                await api.post(`/resources/${f.resource.id}/map-user`, { user_id: Number(f.user_id) });
+                toast.success('User mapped');
+            } else {
+                await api.post(`/resources/${f.resource.id}/create-user`);
+                toast.success('User created and mapped');
+            }
+            setUserModal(null);
+            load();
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'User mapping failed');
+        }
+    }
+    async function unlinkUser(resource) {
+        if (!confirm('Unlink this user from the resource?')) return;
+        try {
+            await api.delete(`/resources/${resource.id}/user`);
+            toast.success('User unlinked');
+            setUserModal(null);
+            load();
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Unlink failed');
+        }
+    }
 
     return (
         <div className="space-y-4">
@@ -32,7 +72,7 @@ export default function Resources() {
             </div>
             <div className="card overflow-x-auto">
                 <table className="table-clean">
-                    <thead><tr><th>Photo</th><th>Emp ID</th><th>First</th><th>Last</th><th>Nickname</th><th>Role</th><th>Email</th><th>ERP User</th><th>Skill</th><th></th></tr></thead>
+                    <thead><tr><th>Photo</th><th>Emp ID</th><th>First</th><th>Last</th><th>Nickname</th><th>Role</th><th>Email</th><th>ERP User</th><th>User</th><th>Skill</th><th></th></tr></thead>
                     <tbody>
                         {list.map(r => (
                             <tr key={r.id}>
@@ -40,6 +80,20 @@ export default function Resources() {
                                 <td className="font-mono text-xs">{r.emp_id}</td>
                                 <td>{r.first_name}</td><td>{r.last_name}</td><td>{r.nick_name}</td>
                                 <td>{r.role}</td><td>{r.email}</td><td>{r.erp_username}</td>
+                                <td>
+                                    {r.user_id ? (
+                                        <button className="btn-ghost" onClick={() => openUserModal(r)}
+                                                title="Change linked user">
+                                            <LinkIcon className="w-4 h-4 text-emerald-600" />
+                                            <span className="font-mono text-xs">{r.mapped_username}</span>
+                                        </button>
+                                    ) : (
+                                        <button className="btn-ghost" onClick={() => openUserModal(r)}
+                                                title="Add or map user">
+                                            <UserPlusIcon className="w-4 h-4 text-blue-600" /> Add User
+                                        </button>
+                                    )}
+                                </td>
                                 <td className="max-w-[200px] truncate" title={r.skill}>{r.skill}</td>
                                 <td className="text-right">
                                     <button className="btn-ghost" onClick={() => setEdit(r)}><PencilSquareIcon className="w-4 h-4" /></button>
@@ -47,11 +101,17 @@ export default function Resources() {
                                 </td>
                             </tr>
                         ))}
-                        {list.length === 0 && <tr><td colSpan={10} className="text-center text-slate-400 py-6">No resources.</td></tr>}
+                        {list.length === 0 && <tr><td colSpan={11} className="text-center text-slate-400 py-6">No resources.</td></tr>}
                     </tbody>
                 </table>
             </div>
             {edit && <ResourceForm initial={edit} onClose={() => setEdit(null)} onSave={save} />}
+            {userModal && (
+                <ResourceUserModal initial={userModal} users={users}
+                                   onClose={() => setUserModal(null)}
+                                   onSave={saveUserLink}
+                                   onUnlink={unlinkUser} />
+            )}
         </div>
     );
 }
@@ -68,6 +128,93 @@ function Avatar({ resource, size = 40 }) {
              style={{ width: size, height: size, fontSize: size * 0.4, backgroundImage: 'var(--grad-brand)' }}>
             {initials}
         </div>
+    );
+}
+
+function ResourceUserModal({ initial, users, onClose, onSave, onUnlink }) {
+    const [f, setF] = useState({ ...initial });
+    const r = f.resource;
+    const fullName = [r.first_name, r.last_name].filter(Boolean).join(' ').trim() || r.nick_name || r.erp_username || '';
+    const canCreate = !!String(r.erp_username || '').trim() && !!String(r.emp_id || '').trim() && !r.user_id;
+    const canSave = f.mode === 'existing' ? !!f.user_id : canCreate;
+
+    return (
+        <Modal open onClose={onClose} title={`User Link - ${r.first_name || ''} ${r.last_name || ''}`.trim()} size="lg"
+               footer={<>
+                   {r.user_id && (
+                       <button className="btn-ghost mr-auto" onClick={() => onUnlink(r)}>
+                           <XMarkIcon className="w-4 h-4 text-red-500" /> Unlink
+                       </button>
+                   )}
+                   <button className="btn-ghost" onClick={onClose}>Cancel</button>
+                   <button className="btn-primary" disabled={!canSave} onClick={() => onSave(f)}>
+                       {f.mode === 'existing' ? 'Map User' : 'Create User'}
+                   </button>
+               </>}>
+            <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3 rounded-lg border border-slate-200 p-3 bg-slate-50">
+                    <div><span className="label">Resource</span><div className="font-semibold">{fullName || '-'}</div></div>
+                    <div><span className="label">Emp ID</span><div className="font-mono text-sm">{r.emp_id || '-'}</div></div>
+                    <div><span className="label">Email</span><div className="text-sm">{r.email || '-'}</div></div>
+                    <div><span className="label">ERP Username</span><div className="font-mono text-sm">{r.erp_username || '-'}</div></div>
+                    {r.user_id && (
+                        <div className="col-span-2">
+                            <span className="label">Current Linked User</span>
+                            <div className="font-mono text-sm">{r.mapped_username || '-'}</div>
+                        </div>
+                    )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                    <label className={`rounded-lg border p-3 cursor-pointer ${f.mode === 'existing' ? 'border-blue-500 bg-blue-50' : 'border-slate-200'}`}>
+                        <input type="radio" className="mr-2" checked={f.mode === 'existing'}
+                               onChange={() => setF({ ...f, mode: 'existing' })} />
+                        Map existing user
+                        <p className="text-xs text-slate-500 mt-1">Choose a user already created in this tenant.</p>
+                    </label>
+                    <label className={`rounded-lg border p-3 ${r.user_id ? 'opacity-60' : 'cursor-pointer'} ${f.mode === 'create' ? 'border-blue-500 bg-blue-50' : 'border-slate-200'}`}>
+                        <input type="radio" className="mr-2" checked={f.mode === 'create'} disabled={!!r.user_id}
+                               onChange={() => setF({ ...f, mode: 'create' })} />
+                        Create new user
+                        <p className="text-xs text-slate-500 mt-1">Username uses ERP Username. Default password uses Emp ID.</p>
+                    </label>
+                </div>
+
+                {f.mode === 'existing' ? (
+                    <div>
+                        <label className="label">User</label>
+                        <select className="input" value={f.user_id || ''} onChange={e => setF({ ...f, user_id: e.target.value })}>
+                            <option value="">Select user</option>
+                            {users.map(u => {
+                                const mappedElsewhere = u.mapped_resource_id && Number(u.mapped_resource_id) !== Number(r.id);
+                                const suffix = mappedElsewhere ? ` - linked to ${u.mapped_resource_name || 'another resource'}` : '';
+                                return (
+                                    <option key={u.id} value={u.id} disabled={mappedElsewhere}>
+                                        {u.username} ({u.full_name || u.email || u.role}){suffix}
+                                    </option>
+                                );
+                            })}
+                        </select>
+                    </div>
+                ) : (
+                    <div className="rounded-lg border border-slate-200 p-3">
+                        <div className="grid grid-cols-2 gap-3 text-sm">
+                            <div><span className="label">Username</span><div className="font-mono">{r.erp_username || '-'}</div></div>
+                            <div><span className="label">Default Password</span><div className="font-mono">{r.emp_id || '-'}</div></div>
+                            <div><span className="label">Full Name</span><div>{fullName || '-'}</div></div>
+                            <div><span className="label">Email</span><div>{r.email || '-'}</div></div>
+                            <div><span className="label">Role</span><div>User</div></div>
+                            <div><span className="label">Must Change Password</span><div>Yes</div></div>
+                        </div>
+                        {!canCreate && (
+                            <p className="text-xs text-red-500 mt-3">
+                                ERP Username and Emp ID are required before creating a user from this resource.
+                            </p>
+                        )}
+                    </div>
+                )}
+            </div>
+        </Modal>
     );
 }
 

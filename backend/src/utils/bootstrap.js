@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const bcrypt = require('bcrypt');
 const db = require('../db');
+const { ensureDefaultRoles } = require('./roles');
 
 function requiredSeedPassword(envName, username) {
     const password = process.env[envName];
@@ -172,7 +173,7 @@ async function bootstrap() {
     // Pre-Phase-4, these lived in the global app_config. Each tenant now owns
     // its own copy. The default tenant inherits the legacy values; every other
     // existing tenant gets a baseline (current year + 30 days).
-    const perTenantKeys = ['default_year', 'license_expiring_days'];
+    const perTenantKeys = ['default_year', 'license_expiring_days', 'footer_text'];
     try {
         for (const key of perTenantKeys) {
             // Read legacy global value (if any).
@@ -182,7 +183,9 @@ async function bootstrap() {
             // Sensible fallback per key.
             const fallback = key === 'default_year'
                 ? String(new Date().getFullYear())
-                : '30';
+                : key === 'license_expiring_days'
+                    ? '30'
+                    : 'Implemented and Maintain by BSM RPA Team. For Internal use only';
 
             // For the default tenant: take legacy if present, else fallback.
             // For every other existing tenant: take fallback.
@@ -206,6 +209,17 @@ async function bootstrap() {
         }
     } catch (err) {
         console.error('[bootstrap] tenant_config migration failed:', err.message);
+        throw err;
+    }
+
+    // ---- 2f.1) Seed per-tenant default roles and attach legacy users ----
+    try {
+        const { rows: allTenants } = await db.query('SELECT id FROM tenants');
+        for (const t of allTenants) {
+            await ensureDefaultRoles(t.id);
+        }
+    } catch (err) {
+        console.error('[bootstrap] default role seed failed:', err.message);
         throw err;
     }
 
@@ -294,11 +308,18 @@ async function bootstrap() {
             const username = process.env.SUPERADMIN_USERNAME || 'superadmin';
             const password = requiredSeedPassword('SUPERADMIN_PASSWORD', username);
             const hash = await bcrypt.hash(password, 10);
+            const { rows: roleRows } = await db.query(
+                `SELECT id FROM tenant_roles
+                  WHERE tenant_id=$1 AND base_role='superadmin' AND is_system=TRUE
+                  ORDER BY id
+                  LIMIT 1`,
+                [defaultTenantId]
+            );
             try {
                 await db.query(
-                    `INSERT INTO users (tenant_id, username, password_hash, full_name, role, must_change_password)
-                     VALUES ($1, $2, $3, $4, 'superadmin', TRUE)`,
-                    [defaultTenantId, username, hash, 'System Superadmin']
+                    `INSERT INTO users (tenant_id, username, password_hash, full_name, role, tenant_role_id, must_change_password)
+                     VALUES ($1, $2, $3, $4, 'superadmin', $5, TRUE)`,
+                    [defaultTenantId, username, hash, 'System Superadmin', roleRows[0]?.id || null]
                 );
                 console.log(`[bootstrap] created default superadmin: ${username} (tenant ${defaultTenantId}, must change password on first login)`);
             } catch (err) {
