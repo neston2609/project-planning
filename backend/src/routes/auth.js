@@ -78,6 +78,7 @@ router.post('/login',
                     tenant_role_id: roleAccess.tenant_role_id,
                     tenant_role_name: roleAccess.tenant_role_name,
                     menu_permissions: roleAccess.menu_permissions,
+                    theme_mode: user.theme_mode || 'light',
                     tenant_id: user.tenant_id || null,
                     tenant_name: user.tenant_name || null,
                     must_change_password: user.must_change_password
@@ -113,6 +114,25 @@ router.post('/change-password',
             [hash, user.id]
         );
         res.json({ ok: true });
+    }
+);
+
+router.patch('/preferences',
+    requireAuth,
+    body('theme_mode').isIn(['light', 'dark']),
+    async (req, res) => {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+
+        const { rows } = await db.query(
+            `UPDATE users
+                SET theme_mode=$1, updated_at=NOW()
+              WHERE id=$2
+              RETURNING theme_mode`,
+            [req.body.theme_mode, req.user.uid]
+        );
+        if (!rows[0]) return res.status(404).json({ error: 'User not found' });
+        res.json(rows[0]);
     }
 );
 
@@ -355,7 +375,7 @@ router.get('/verify-email',
 router.get('/me', requireAuth, async (req, res) => {
     const { rows } = await db.query(
         `SELECT u.id, u.username, u.full_name, u.email, u.phone_number, u.role,
-                u.tenant_role_id, u.must_change_password, u.tenant_id, t.name AS tenant_name
+                u.tenant_role_id, u.must_change_password, u.theme_mode, u.tenant_id, t.name AS tenant_name
            FROM users u
            LEFT JOIN tenants t ON t.id = u.tenant_id
           WHERE u.id=$1`,

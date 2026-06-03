@@ -28,6 +28,16 @@ body {
     background-attachment: fixed;
 }
 
+html.dark body {
+    color: #e2e8f0;
+    background:
+        radial-gradient(circle at 0% 0%, rgba(99, 102, 241, 0.18), transparent 44%),
+        radial-gradient(circle at 100% 0%, rgba(14, 165, 233, 0.12), transparent 46%),
+        radial-gradient(circle at 50% 100%, rgba(16, 185, 129, 0.10), transparent 48%),
+        #020617;
+    background-attachment: fixed;
+}
+
 @layer components {
     /* Buttons */
     .btn         { @apply inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 active:scale-[0.97]; }
@@ -72,6 +82,18 @@ body {
     .nav-section-title {
         @apply px-3 pt-4 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400;
     }
+    .theme-toggle {
+        @apply relative inline-flex h-8 w-14 shrink-0 items-center rounded-full border border-slate-200 bg-slate-100 transition-all duration-200;
+    }
+    .theme-toggle-thumb {
+        @apply ml-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white text-amber-500 shadow transition-transform duration-200;
+    }
+    .theme-toggle-dark {
+        @apply border-indigo-500/50 bg-indigo-950;
+    }
+    .theme-toggle-dark .theme-toggle-thumb {
+        @apply translate-x-6 bg-indigo-500 text-white;
+    }
 
     /* KPI tiles */
     .kpi {
@@ -105,3 +127,187 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #c7d2fe, #a5b4fc); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
 ::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #a5b4fc, #818cf8); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+
+html.dark .card {
+    background: rgba(15, 23, 42, 0.86);
+    border-color: rgba(71, 85, 105, 0.72);
+    box-shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
+}
+
+html.dark .input {
+    background: rgba(15, 23, 42, 0.92);
+    border-color: rgba(71, 85, 105, 0.86);
+    color: #e2e8f0;
+}
+
+html.dark .input:focus {
+    background: rgba(15, 23, 42, 0.98);
+    border-color: #818cf8;
+}
+
+html.dark .input::placeholder {
+    color: #64748b;
+}
+
+html.dark .label {
+    color: #cbd5e1;
+}
+
+html.dark .btn-ghost {
+    background: rgba(15, 23, 42, 0.78);
+    border-color: rgba(71, 85, 105, 0.82);
+    color: #cbd5e1;
+}
+
+html.dark .btn-ghost:hover {
+    background: rgba(30, 41, 59, 0.96);
+    border-color: rgba(129, 140, 248, 0.72);
+    color: #c7d2fe;
+}
+
+html.dark .table-clean thead {
+    color: #cbd5e1;
+    background-image: linear-gradient(180deg, rgba(30, 41, 59, 0.98), rgba(15, 23, 42, 0.98));
+}
+
+html.dark .table-clean th,
+html.dark .table-clean td {
+    border-color: rgba(51, 65, 85, 0.9);
+}
+
+html.dark .table-clean tbody tr:hover {
+    background: rgba(79, 70, 229, 0.14);
+}
+
+html.dark .nav-link {
+    color: #cbd5e1;
+}
+
+html.dark .nav-link:hover {
+    background: rgba(30, 41, 59, 0.92);
+    color: #c7d2fe;
+}
+
+html.dark .nav-section-title {
+    color: #64748b;
+}
+
+html.dark .pill-loss {
+    background: rgba(51, 65, 85, 0.86);
+    color: #cbd5e1;
+    --tw-ring-color: rgba(100, 116, 139, 0.9);
+}
+
+html.dark .pill-win {
+    background: rgba(6, 78, 59, 0.58);
+    color: #6ee7b7;
+    --tw-ring-color: rgba(16, 185, 129, 0.48);
+}
+
+html.dark .pill-pipe {
+    background: rgba(120, 53, 15, 0.62);
+    color: #fcd34d;
+    --tw-ring-color: rgba(245, 158, 11, 0.48);
+}
+
+html.dark [class*="bg-white"] {
+    background-color: rgba(15, 23, 42, 0.90) !important;
+}
+
+html.dark [class*="bg-slate-50"],
+html.dark [class*="bg-slate-100"] {
+    background-color: rgba(30, 41, 59, 0.82) !important;
+}
+
+html.dark [class*="bg-indigo-50"],
+html.dark [class*="bg-blue-50"] {
+    background-color: rgba(49, 46, 129, 0.34) !important;
+}
+
+html.dark [class*="bg-emerald-50"],
+html.dark [class*="bg-emerald-100"] {
+    background-color: rgba(6, 78, 59, 0.40) !important;
+}
+
+html.dark [class*="bg-amber-50"],
+html.dark [class*="bg-amber-100"] {
+    background-color: rgba(120, 53, 15, 0.42) !important;
+}
+
+html.dark [class*="bg-red-50"],
+html.dark [class*="bg-red-100"] {
+    background-color: rgba(127, 29, 29, 0.42) !important;
+}
+
+html.dark [class*="border-white"],
+html.dark [class*="border-slate-"],
+html.dark [class*="border-indigo-100"],
+html.dark [class*="border-emerald-"],
+html.dark [class*="border-amber-"],
+html.dark [class*="border-red-"] {
+    border-color: rgba(71, 85, 105, 0.78) !important;
+}
+
+html.dark [class*="text-slate-900"],
+html.dark [class*="text-slate-800"],
+html.dark [class*="text-slate-700"] {
+    color: #e2e8f0 !important;
+}
+
+html.dark [class*="text-slate-600"],
+html.dark [class*="text-slate-500"] {
+    color: #cbd5e1 !important;
+}
+
+html.dark [class*="text-slate-400"],
+html.dark [class*="text-slate-300"] {
+    color: #94a3b8 !important;
+}
+
+html.dark [class*="text-indigo-700"],
+html.dark [class*="text-indigo-600"],
+html.dark [class*="text-blue-700"],
+html.dark [class*="text-blue-600"] {
+    color: #a5b4fc !important;
+}
+
+html.dark [class*="text-emerald-900"],
+html.dark [class*="text-emerald-800"],
+html.dark [class*="text-emerald-700"],
+html.dark [class*="text-emerald-600"] {
+    color: #6ee7b7 !important;
+}
+
+html.dark [class*="text-amber-900"],
+html.dark [class*="text-amber-800"],
+html.dark [class*="text-amber-700"] {
+    color: #fcd34d !important;
+}
+
+html.dark [class*="text-red-700"],
+html.dark [class*="text-red-600"],
+html.dark [class*="text-red-500"] {
+    color: #fca5a5 !important;
+}
+
+html.dark .from-indigo-50 {
+    --tw-gradient-from: rgba(49, 46, 129, 0.45) var(--tw-gradient-from-position);
+    --tw-gradient-to: rgba(49, 46, 129, 0) var(--tw-gradient-to-position);
+    --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+
+html.dark .to-pink-50 {
+    --tw-gradient-to: rgba(112, 26, 117, 0.34) var(--tw-gradient-to-position);
+}
+
+html.dark ::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, #475569, #334155);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+
+html.dark .theme-toggle-dark .theme-toggle-thumb {
+    background: #6366f1 !important;
+    color: #ffffff !important;
+}

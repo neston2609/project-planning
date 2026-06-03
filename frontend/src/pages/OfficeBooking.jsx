@@ -3,7 +3,7 @@ import toast from 'react-hot-toast';
 import Modal from '../components/Modal';
 import api from '../api';
 import { useAuth } from '../auth';
-import { CalendarDaysIcon, ClipboardDocumentListIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { CalendarDaysIcon, ClipboardDocumentListIcon, InformationCircleIcon, TrashIcon } from '@heroicons/react/24/outline';
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const BOOKABLE_WEEKDAYS = [
@@ -228,6 +228,21 @@ export default function OfficeBooking() {
                         <CalendarDaysIcon className="w-7 h-7 text-blue-600" /> Office Booking
                     </h1>
                     <p className="text-sm text-slate-500">Book office days for this month and next month.</p>
+                </div>
+            </div>
+
+            <div className="card p-4">
+                <div className="flex items-start gap-3">
+                    <InformationCircleIcon className="w-6 h-6 text-blue-600 shrink-0 mt-0.5" />
+                    <div className="space-y-2">
+                        <h2 className="font-bold text-slate-900">วิธีใช้งาน Office Booking</h2>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 text-sm text-slate-600">
+                            <p>1. เลือกวันที่บน Calendar เพื่อจองเข้า Office ถ้าวันนั้นยังไม่เต็มระบบจะบันทึกให้ทันที</p>
+                            <p>2. ถ้าต้องการยกเลิก ให้กดวันที่ตัวเองจองไว้ หรือกดปุ่มลบในตาราง My Office Bookings</p>
+                            <p>3. ถ้าวันที่เลือกเต็มแล้ว ระบบจะแสดงรายชื่อผู้จอง และสามารถขอจองกรณีพิเศษพร้อมระบุเหตุผลได้</p>
+                            <p>4. ใช้ Book by Weekday เพื่อเลือก จ.-ศ. แล้วจองซ้ำทุกวันนั้นในเดือนปัจจุบันและเดือนถัดไป</p>
+                        </div>
+                    </div>
                 </div>
             </div>
 

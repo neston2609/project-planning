@@ -4,16 +4,44 @@ import { DEFAULT_MENU_KEYS } from './menuRegistry';
 
 const AuthCtx = createContext(null);
 
+function normalizeThemeMode(value) {
+    return value === 'dark' ? 'dark' : 'light';
+}
+
+function applyThemeMode(value) {
+    if (typeof document === 'undefined') return;
+    const mode = normalizeThemeMode(value);
+    document.documentElement.classList.toggle('dark', mode === 'dark');
+    document.documentElement.dataset.theme = mode;
+}
+
+function storeUser(nextUser) {
+    if (nextUser) localStorage.setItem('rpa_user', JSON.stringify(nextUser));
+    else localStorage.removeItem('rpa_user');
+}
+
 export function AuthProvider({ children }) {
     const [user, setUser] = useState(() => {
-        try { return JSON.parse(localStorage.getItem('rpa_user') || 'null'); } catch { return null; }
+        try {
+            const stored = JSON.parse(localStorage.getItem('rpa_user') || 'null');
+            applyThemeMode(stored?.theme_mode);
+            return stored;
+        } catch {
+            applyThemeMode('light');
+            return null;
+        }
     });
 
     useEffect(() => {
         const t = localStorage.getItem('rpa_token');
         if (!t) return;
         api.get('/auth/me')
-            .then(r => { setUser(r.data); localStorage.setItem('rpa_user', JSON.stringify(r.data)); })
+            .then(r => {
+                const nextUser = { ...r.data, theme_mode: normalizeThemeMode(r.data?.theme_mode) };
+                setUser(nextUser);
+                storeUser(nextUser);
+                applyThemeMode(nextUser.theme_mode);
+            })
             .catch(() => { /* interceptor will redirect on 401 */ });
     }, []);
 
@@ -24,19 +52,47 @@ export function AuthProvider({ children }) {
             tenant_id: (tenantId == null || tenantId === '') ? null : Number(tenantId)
         });
         localStorage.setItem('rpa_token', r.data.token);
-        localStorage.setItem('rpa_user',  JSON.stringify(r.data.user));
-        setUser(r.data.user);
-        return r.data.user;
+        const nextUser = { ...r.data.user, theme_mode: normalizeThemeMode(r.data.user?.theme_mode) };
+        storeUser(nextUser);
+        setUser(nextUser);
+        applyThemeMode(nextUser.theme_mode);
+        return nextUser;
     };
 
     const logout = () => {
         localStorage.removeItem('rpa_token');
-        localStorage.removeItem('rpa_user');
+        storeUser(null);
         setUser(null);
+        applyThemeMode('light');
+    };
+
+    const setThemeMode = async (themeMode) => {
+        const nextMode = normalizeThemeMode(themeMode);
+        const previousUser = user;
+        const nextUser = user ? { ...user, theme_mode: nextMode } : null;
+        setUser(nextUser);
+        storeUser(nextUser);
+        applyThemeMode(nextMode);
+
+        if (!user) return nextMode;
+        try {
+            const r = await api.patch('/auth/preferences', { theme_mode: nextMode });
+            const savedMode = normalizeThemeMode(r.data?.theme_mode);
+            const savedUser = { ...nextUser, theme_mode: savedMode };
+            setUser(savedUser);
+            storeUser(savedUser);
+            applyThemeMode(savedMode);
+            return savedMode;
+        } catch (err) {
+            setUser(previousUser);
+            storeUser(previousUser);
+            applyThemeMode(previousUser?.theme_mode);
+            throw err;
+        }
     };
 
     return (
-        <AuthCtx.Provider value={{ user, login, logout, setUser }}>
+        <AuthCtx.Provider value={{ user, login, logout, setUser, setThemeMode }}>
             {children}
         </AuthCtx.Provider>
     );

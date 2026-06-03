@@ -39,14 +39,22 @@ CREATE TABLE IF NOT EXISTS users (
     role            VARCHAR(32)  NOT NULL CHECK (role IN ('user', 'admin', 'superadmin', 'tenantadmin', 'tenantuser')),
     tenant_role_id  INT,
     must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
+    theme_mode      VARCHAR(16) NOT NULL DEFAULT 'light',
     created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
 );
 ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id INT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_role_id INT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS theme_mode VARCHAR(16) NOT NULL DEFAULT 'light';
+ALTER TABLE users ALTER COLUMN theme_mode SET DEFAULT 'light';
+UPDATE users SET theme_mode='light' WHERE theme_mode IS NULL OR theme_mode NOT IN ('light', 'dark');
+ALTER TABLE users ALTER COLUMN theme_mode SET NOT NULL;
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
 ALTER TABLE users ADD  CONSTRAINT users_role_check
     CHECK (role IN ('user', 'admin', 'superadmin', 'tenantadmin', 'tenantuser'));
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_theme_mode_check;
+ALTER TABLE users ADD  CONSTRAINT users_theme_mode_check
+    CHECK (theme_mode IN ('light', 'dark'));
 CREATE INDEX IF NOT EXISTS idx_users_tenant ON users(tenant_id);
 -- Partial unique indexes for the username rules. bootstrap.js drops the old
 -- global UNIQUE constraint (users_username_key) on existing databases before

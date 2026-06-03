@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { NavLink, Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import {
     useAuth, isAdmin, isSuperadmin, isTenantAdmin, isTenantUser,
     isPlatformRole, roleLabel, appTitle, hasMenuAccess
@@ -12,7 +13,8 @@ import {
     LifebuoyIcon, BriefcaseIcon, UserGroupIcon, BuildingOffice2Icon,
     BuildingOfficeIcon, PresentationChartLineIcon, ShieldCheckIcon,
     UsersIcon, IdentificationIcon, CalendarDaysIcon, Cog6ToothIcon,
-    EnvelopeIcon, DocumentTextIcon, UserCircleIcon, UserIcon, ClipboardDocumentListIcon
+    EnvelopeIcon, DocumentTextIcon, UserCircleIcon, UserIcon, ClipboardDocumentListIcon,
+    MoonIcon, SunIcon
 } from '@heroicons/react/24/outline';
 
 const mainNav = [
@@ -72,7 +74,7 @@ function NavItem({ to, label, icon: Icon }) {
 }
 
 export default function Layout() {
-    const { user, logout } = useAuth();
+    const { user, logout, setThemeMode } = useAuth();
     const { year, setYear } = useYear();
     const nav = useNavigate();
     const location = useLocation();
@@ -86,6 +88,7 @@ export default function Layout() {
     const visibleMainNav = mainNav.filter(i => hasMenuAccess(user, i.key));
     const visibleAdminNav = adminNav.filter(i => hasMenuAccess(user, i.key));
     const visibleSuperadminNav = superadminNav.filter(i => hasMenuAccess(user, i.key));
+    const darkMode = user?.theme_mode === 'dark';
 
     useEffect(() => { document.title = title; }, [title]);
 
@@ -122,6 +125,14 @@ export default function Layout() {
     const years = [];
     const cur = new Date().getFullYear();
     for (let y = cur - 3; y <= cur + 3; y++) years.push(y);
+
+    async function toggleTheme() {
+        try {
+            await setThemeMode(darkMode ? 'light' : 'dark');
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Could not save theme');
+        }
+    }
 
     return (
         <div className="min-h-screen flex">
@@ -223,8 +234,23 @@ export default function Layout() {
                                 {user.tenant_name && <> · <span className="font-semibold text-indigo-600">{user.tenant_name}</span></>}
                             </>}
                         </div>
-                        {!platform && (
-                            <div className="ml-auto flex items-center gap-2">
+                        <div className="ml-auto flex items-center gap-2">
+                            <button type="button"
+                                    className={`theme-toggle ${darkMode ? 'theme-toggle-dark' : ''}`}
+                                    onClick={toggleTheme}
+                                    title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+                                    aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}>
+                                <span className="theme-toggle-thumb">
+                                    {darkMode
+                                        ? <MoonIcon className="w-4 h-4" />
+                                        : <SunIcon className="w-4 h-4" />}
+                                </span>
+                            </button>
+                            <span className="hidden sm:inline text-sm font-semibold text-slate-600">
+                                {darkMode ? 'Dark' : 'Light'}
+                            </span>
+                            {!platform && (
+                                <>
                                 <CalendarDaysIcon className="w-5 h-5 text-indigo-500" />
                                 <label className="text-sm text-slate-600">Year</label>
                                 <select className="input !w-24 !py-1.5 font-semibold !text-indigo-700"
@@ -236,8 +262,9 @@ export default function Layout() {
                                         onClick={() => setYear(cur)}>
                                     This Year
                                 </button>
-                            </div>
-                        )}
+                                </>
+                            )}
+                        </div>
                     </div>
                 </header>
 
