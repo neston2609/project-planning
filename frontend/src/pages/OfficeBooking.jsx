@@ -2,10 +2,17 @@ import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import Modal from '../components/Modal';
 import api from '../api';
-import { useAuth, isAdmin } from '../auth';
-import { CalendarDaysIcon, Cog6ToothIcon, ClipboardDocumentListIcon } from '@heroicons/react/24/outline';
+import { useAuth } from '../auth';
+import { CalendarDaysIcon, ClipboardDocumentListIcon, TrashIcon } from '@heroicons/react/24/outline';
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const BOOKABLE_WEEKDAYS = [
+    { value: 1, label: 'Mon' },
+    { value: 2, label: 'Tue' },
+    { value: 3, label: 'Wed' },
+    { value: 4, label: 'Thu' },
+    { value: 5, label: 'Fri' }
+];
 
 function pad(n) {
     return String(n).padStart(2, '0');
@@ -55,7 +62,7 @@ export default function OfficeBooking() {
     const [loading, setLoading] = useState(true);
     const [fullModal, setFullModal] = useState(null);
     const [summary, setSummary] = useState(null);
-    const [configDraft, setConfigDraft] = useState({ max_bookings_per_day: 6, extra_bookings_per_day: 3 });
+    const [bulkWeekdays, setBulkWeekdays] = useState([]);
 
     const baseMonth = monthStart(new Date());
     const months = useMemo(() => [baseMonth, addMonths(baseMonth, 1)], []);
@@ -73,13 +80,31 @@ export default function OfficeBooking() {
         return map;
     }, [bookings]);
 
+    const myBookings = useMemo(() => {
+        return bookings
+            .filter(b => Number(b.user_id) === Number(user.id))
+            .sort((a, b) => a.booking_date.localeCompare(b.booking_date));
+    }, [bookings, user.id]);
+
+    const bulkTargetCount = useMemo(() => {
+        const selected = new Set(bulkWeekdays);
+        let n = 0;
+        const cur = new Date(`${range.start}T00:00:00`);
+        const last = new Date(`${range.end}T00:00:00`);
+        while (cur <= last) {
+            const iso = dateISO(cur);
+            if (iso >= today && selected.has(cur.getDay())) n += 1;
+            cur.setDate(cur.getDate() + 1);
+        }
+        return n;
+    }, [bulkWeekdays, range.start, range.end, today]);
+
     async function load() {
         setLoading(true);
         try {
             const res = await api.get(`/office-bookings?start=${range.start}&end=${range.end}`);
             setBookings(res.data.bookings || []);
             setConfig(res.data.config || { max_bookings_per_day: 6, extra_bookings_per_day: 3 });
-            setConfigDraft(res.data.config || { max_bookings_per_day: 6, extra_bookings_per_day: 3 });
             setToday(res.data.today || dateISO(new Date()));
         } catch (err) {
             toast.error(err.response?.data?.error || 'Could not load office bookings');
@@ -108,14 +133,7 @@ export default function OfficeBooking() {
         const mine = dayBookings.find(b => Number(b.user_id) === Number(user.id));
         if (mine) {
             if (date < today) return toast.error('Cannot delete a past booking');
-            if (!confirm(`Delete office booking on ${date}?`)) return;
-            try {
-                await api.delete(`/office-bookings/${mine.id}`);
-                toast.success('Booking deleted');
-                load();
-            } catch (err) {
-                toast.error(err.response?.data?.error || 'Delete failed');
-            }
+            await deleteBooking(mine);
             return;
         }
         if (date < today) return toast.error('Cannot book a past date');
@@ -144,6 +162,42 @@ export default function OfficeBooking() {
         }
     }
 
+    async function deleteBooking(booking) {
+        if (booking.booking_date < today) return toast.error('Cannot delete a past booking');
+        if (!confirm(`Delete office booking on ${booking.booking_date}?`)) return;
+        try {
+            await api.delete(`/office-bookings/${booking.id}`);
+            toast.success('Booking deleted');
+            load();
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Delete failed');
+        }
+    }
+
+    function toggleBulkWeekday(day) {
+        setBulkWeekdays(prev => prev.includes(day) ? prev.filter(v => v !== day) : [...prev, day].sort());
+    }
+
+    async function bookWeekdays() {
+        if (bulkWeekdays.length === 0) return toast.error('Please select weekdays');
+        if (bulkTargetCount === 0) return toast.error('No available future dates in the displayed months');
+        const labels = BOOKABLE_WEEKDAYS.filter(d => bulkWeekdays.includes(d.value)).map(d => d.label).join(', ');
+        if (!confirm(`Book every ${labels} from ${range.start} to ${range.end}?`)) return;
+        try {
+            const res = await api.post('/office-bookings/bulk', {
+                start: range.start,
+                end: range.end,
+                weekdays: bulkWeekdays
+            });
+            const created = Number(res.data.created_count || 0);
+            const skipped = Number(res.data.skipped_count || 0);
+            toast.success(`Booked ${created} day(s)${skipped ? `, skipped ${skipped}` : ''}`);
+            load();
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Weekday booking failed');
+        }
+    }
+
     async function requestExtra(f) {
         if (!String(f.reason || '').trim()) return toast.error('Please enter a reason');
         try {
@@ -153,26 +207,6 @@ export default function OfficeBooking() {
             load();
         } catch (err) {
             toast.error(err.response?.data?.error || 'Extra booking failed');
-        }
-    }
-
-    async function saveConfig() {
-        const max = Number(configDraft.max_bookings_per_day);
-        const extra = Number(configDraft.extra_bookings_per_day);
-        if (!Number.isInteger(max) || max < 0 || !Number.isInteger(extra) || extra < 0) {
-            return toast.error('Capacity must be non-negative whole numbers');
-        }
-        try {
-            const res = await api.put('/office-bookings/config', {
-                max_bookings_per_day: max,
-                extra_bookings_per_day: extra
-            });
-            setConfig(res.data);
-            setConfigDraft(res.data);
-            toast.success('Office booking capacity saved');
-            load();
-        } catch (err) {
-            toast.error(err.response?.data?.error || 'Save failed');
         }
     }
 
@@ -195,23 +229,6 @@ export default function OfficeBooking() {
                     </h1>
                     <p className="text-sm text-slate-500">Book office days for this month and next month.</p>
                 </div>
-                {isAdmin(user) && (
-                    <div className="ml-auto card p-3 flex flex-wrap items-end gap-2">
-                        <div>
-                            <label className="label">Maximum Book</label>
-                            <input className="input w-28" type="number" min="0" value={configDraft.max_bookings_per_day}
-                                   onChange={e => setConfigDraft({ ...configDraft, max_bookings_per_day: e.target.value })} />
-                        </div>
-                        <div>
-                            <label className="label">Extra Book</label>
-                            <input className="input w-28" type="number" min="0" value={configDraft.extra_bookings_per_day}
-                                   onChange={e => setConfigDraft({ ...configDraft, extra_bookings_per_day: e.target.value })} />
-                        </div>
-                        <button className="btn-primary" onClick={saveConfig}>
-                            <Cog6ToothIcon className="w-4 h-4" /> Save
-                        </button>
-                    </div>
-                )}
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -227,6 +244,15 @@ export default function OfficeBooking() {
                                    onSummary={() => openSummary(m)} />
                 ))}
             </div>
+
+            <MyBookingsTable bookings={myBookings}
+                             today={today}
+                             onDelete={deleteBooking} />
+
+            <WeekdayBookingPanel selected={bulkWeekdays}
+                                 targetCount={bulkTargetCount}
+                                 onToggle={toggleBulkWeekday}
+                                 onBook={bookWeekdays} />
 
             {fullModal && <FullBookingModal initial={fullModal} config={config}
                                             onClose={() => setFullModal(null)}
@@ -292,6 +318,72 @@ function MonthCalendar({ month, today, userId, bookingsByDate, config, loading, 
     );
 }
 
+function WeekdayBookingPanel({ selected, targetCount, onToggle, onBook }) {
+    return (
+        <div className="card p-4 space-y-3">
+            <div>
+                <h2 className="text-lg font-bold">Book by Weekday</h2>
+            </div>
+            <div className="flex flex-wrap gap-2">
+                {BOOKABLE_WEEKDAYS.map(day => (
+                    <button key={day.value}
+                            className={`px-4 py-2 rounded-lg border text-sm font-semibold transition
+                                        ${selected.includes(day.value)
+                                            ? 'border-blue-500 bg-blue-50 text-blue-700'
+                                            : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+                            onClick={() => onToggle(day.value)}>
+                        {day.label}
+                    </button>
+                ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+                <span className="text-sm text-slate-500">{targetCount} future date(s) match the selected weekdays.</span>
+                <button className="btn-primary" disabled={selected.length === 0 || targetCount === 0} onClick={onBook}>
+                    <CalendarDaysIcon className="w-4 h-4" /> Confirm Weekday Booking
+                </button>
+            </div>
+        </div>
+    );
+}
+
+function MyBookingsTable({ bookings, today, onDelete }) {
+    return (
+        <div className="card overflow-x-auto">
+            <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-200">
+                <h2 className="text-lg font-bold">My Office Bookings</h2>
+                <span className="text-sm text-slate-500">{bookings.length} booking(s)</span>
+            </div>
+            <table className="table-clean">
+                <thead>
+                    <tr><th>Date</th><th>Month</th><th></th></tr>
+                </thead>
+                <tbody>
+                    {bookings.map(b => {
+                        const d = new Date(`${b.booking_date}T00:00:00`);
+                        const isPast = b.booking_date < today;
+                        return (
+                            <tr key={b.id}>
+                                <td className="font-mono text-sm">{b.booking_date}</td>
+                                <td>{monthLabel(monthStart(d))}</td>
+                                <td className="text-right">
+                                    <button className="btn-ghost" disabled={isPast}
+                                            title={isPast ? 'Past bookings cannot be deleted' : 'Delete booking'}
+                                            onClick={() => onDelete(b)}>
+                                        <TrashIcon className={`w-4 h-4 ${isPast ? 'text-slate-300' : 'text-red-500'}`} />
+                                    </button>
+                                </td>
+                            </tr>
+                        );
+                    })}
+                    {bookings.length === 0 && (
+                        <tr><td colSpan={3} className="text-center text-slate-400 py-8">No office bookings in the displayed months.</td></tr>
+                    )}
+                </tbody>
+            </table>
+        </div>
+    );
+}
+
 function FullBookingModal({ initial, config, onClose, onSubmit }) {
     const [f, setF] = useState({ ...initial });
     const normalBookings = f.bookings.filter(b => !b.is_extra);
@@ -347,7 +439,7 @@ function SummaryModal({ summary, onClose }) {
             <div className="overflow-x-auto">
                 <table className="table-clean">
                     <thead>
-                        <tr><th>Resource</th><th>Username</th><th>Booked Dates</th><th className="text-right">Days</th><th className="text-right">Extra</th></tr>
+                        <tr><th>Resource</th><th>Username</th><th>Booked Dates</th><th className="text-right">Days</th></tr>
                     </thead>
                     <tbody>
                         {(summary.people || []).map(p => (
@@ -358,18 +450,17 @@ function SummaryModal({ summary, onClose }) {
                                     <div className="flex flex-wrap gap-1">
                                         {p.days.map(d => (
                                             <span key={d.booking_id}
-                                                  className={`rounded-full px-2 py-1 text-xs ${d.is_extra ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`}>
-                                                {d.booking_date.slice(-2)}{d.is_extra ? ' extra' : ''}
+                                                  className="rounded-full px-2 py-1 text-xs bg-blue-100 text-blue-800">
+                                                {d.booking_date.slice(-2)}
                                             </span>
                                         ))}
                                     </div>
                                 </td>
                                 <td className="text-right font-bold">{p.total_days}</td>
-                                <td className="text-right">{p.extra_days}</td>
                             </tr>
                         ))}
                         {(!summary.people || summary.people.length === 0) && (
-                            <tr><td colSpan={5} className="text-center text-slate-400 py-8">No bookings in this month.</td></tr>
+                            <tr><td colSpan={4} className="text-center text-slate-400 py-8">No bookings in this month.</td></tr>
                         )}
                     </tbody>
                 </table>

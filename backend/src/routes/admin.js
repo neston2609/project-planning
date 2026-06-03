@@ -49,8 +49,8 @@ router.get('/users', requireRole('superadmin'), async (req, res) => {
                 u.tenant_role_id, tr.name AS tenant_role_name,
                 u.must_change_password, u.created_at
            FROM users u
-           LEFT JOIN tenant_roles tr ON tr.id = u.tenant_role_id
-          WHERE tenant_id=$1
+           LEFT JOIN tenant_roles tr ON tr.id = u.tenant_role_id AND tr.tenant_id = u.tenant_id
+          WHERE u.tenant_id=$1
           ORDER BY u.username`,
         [req.tenantId]
     );

@@ -10,12 +10,16 @@ export default function UsersPage() {
     const [edit, setEdit] = useState(null);
 
     async function load() {
-        const [users, roleRows] = await Promise.all([
-            api.get('/admin/users'),
-            api.get('/admin/roles')
-        ]);
-        setList(users.data);
-        setRoles(roleRows.data || []);
+        try {
+            const [users, roleRows] = await Promise.all([
+                api.get('/admin/users'),
+                api.get('/admin/roles')
+            ]);
+            setList(users.data);
+            setRoles(roleRows.data || []);
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Could not load users');
+        }
     }
     useEffect(() => { load(); }, []);
 

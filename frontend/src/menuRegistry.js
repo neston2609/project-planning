@@ -55,6 +55,7 @@ export const DEFAULT_MENU_KEYS = {
         'admin.app',
         'admin.smtp',
         'admin.roles',
+        'superadmin.booking_config',
         'superadmin.users',
         'superadmin.login_logs'
     ]

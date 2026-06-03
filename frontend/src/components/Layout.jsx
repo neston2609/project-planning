@@ -37,11 +37,12 @@ const adminNav = [
     { key: 'admin.licenses',  to: '/admin/licenses',  label: 'License Management', icon: KeyIcon },
     { key: 'admin.year',      to: '/admin/year',      label: 'Year Config',        icon: CalendarDaysIcon },
     { key: 'admin.app',       to: '/admin/app',       label: 'App Config',         icon: Cog6ToothIcon },
-    { key: 'admin.smtp',      to: '/admin/smtp',      label: 'SMTP',               icon: EnvelopeIcon },
-    { key: 'admin.roles',     to: '/admin/roles',     label: 'Role Management',    icon: ShieldCheckIcon }
+    { key: 'admin.smtp',      to: '/admin/smtp',      label: 'SMTP',               icon: EnvelopeIcon }
 ];
 
 const superadminNav = [
+    { key: 'admin.roles',           to: '/admin/roles',      label: 'Role Management', icon: ShieldCheckIcon },
+    { key: 'superadmin.booking_config', to: '/admin/booking-config', label: 'Booking Config', icon: Cog6ToothIcon },
     { key: 'superadmin.users',      to: '/admin/users',      label: 'Users',      icon: UsersIcon },
     { key: 'superadmin.login_logs', to: '/admin/login-logs', label: 'Login Logs', icon: ShieldCheckIcon }
 ];

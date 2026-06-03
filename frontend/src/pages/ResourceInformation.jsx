@@ -1,15 +1,21 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import api from '../api';
 import HoverImage from '../components/HoverImage';
+import Modal from '../components/Modal';
+import toast from 'react-hot-toast';
+import { useAuth } from '../auth';
 import {
     UserCircleIcon, MagnifyingGlassIcon, FunnelIcon,
-    EnvelopeIcon, IdentificationIcon, BriefcaseIcon
+    EnvelopeIcon, IdentificationIcon, BriefcaseIcon,
+    PencilSquareIcon, ArrowUpTrayIcon, TrashIcon
 } from '@heroicons/react/24/outline';
 
 export default function ResourceInformation() {
+    const { user } = useAuth();
     const [list, setList]       = useState([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch]   = useState('');
+    const [edit, setEdit]       = useState(null);
     // Multi-select role filter. Empty Set ⇒ "all roles" (no filtering).
     // Members may be a role name (e.g. "Developer") or the sentinel
     // '__none__' which represents resources with a blank role.
@@ -24,12 +30,39 @@ export default function ResourceInformation() {
     }
     function clearRoles() { setRoleFilter(new Set()); }
 
-    useEffect(() => {
+    async function loadResources() {
         setLoading(true);
-        api.get('/resources')
-            .then(r => setList(r.data))
-            .finally(() => setLoading(false));
-    }, []);
+        try {
+            const r = await api.get('/resources');
+            setList(r.data);
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Could not load resources');
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    useEffect(() => { loadResources(); }, []);
+
+    async function saveOwnResource(f) {
+        try {
+            const payload = {
+                first_name: f.first_name || '',
+                last_name: f.last_name || '',
+                nick_name: f.nick_name || '',
+                role: f.role || '',
+                email: f.email || '',
+                skill: f.skill || '',
+                picture_data: f.picture_data || null
+            };
+            const res = await api.put(`/resources/${f.id}`, payload);
+            setList(prev => prev.map(r => Number(r.id) === Number(f.id) ? res.data : r));
+            setEdit(null);
+            toast.success('Resource information saved');
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Save failed');
+        }
+    }
 
     // Sorted unique role list for the filter dropdown
     const roles = useMemo(() => {
@@ -154,17 +187,37 @@ export default function ResourceInformation() {
                 <p className="text-slate-500">No resources match your filter.</p>
             ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {filtered.map(r => <ResourceCard key={r.id} r={r} />)}
+                    {filtered.map(r => (
+                        <ResourceCard key={r.id}
+                                      r={r}
+                                      userId={user?.id}
+                                      onEdit={() => setEdit(r)} />
+                    ))}
                 </div>
+            )}
+
+            {edit && (
+                <OwnResourceForm initial={edit}
+                                 onClose={() => setEdit(null)}
+                                 onSave={saveOwnResource} />
             )}
         </div>
     );
 }
 
-function ResourceCard({ r }) {
+function ResourceCard({ r, userId, onEdit }) {
     const initials = ((r.first_name?.[0] || '') + (r.last_name?.[0] || '')).toUpperCase() || '?';
+    const canEdit = Number(r.user_id) === Number(userId);
     return (
-        <div className="card p-5 fade-in hover:-translate-y-0.5 hover:shadow-lg transition-all">
+        <div className="card p-5 fade-in hover:-translate-y-0.5 hover:shadow-lg transition-all relative">
+            {canEdit && (
+                <button type="button"
+                        className="btn-ghost !p-2 absolute top-3 right-3"
+                        title="Edit my resource information"
+                        onClick={onEdit}>
+                    <PencilSquareIcon className="w-4 h-4" />
+                </button>
+            )}
             <div className="flex items-start gap-4">
                 <HoverImage previewSrc={r.picture_data}
                             previewAlt={`${r.first_name} ${r.last_name}`}
@@ -223,5 +276,72 @@ function ResourceCard({ r }) {
                 </div>
             )}
         </div>
+    );
+}
+
+function OwnResourceForm({ initial, onClose, onSave }) {
+    const [f, setF] = useState({ ...initial });
+    const fileRef = useRef(null);
+
+    function pickPicture() {
+        fileRef.current?.click();
+    }
+
+    function onFileChange(e) {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        if (!file) return;
+        if (!file.type.startsWith('image/')) {
+            return toast.error('Please choose an image file');
+        }
+        if (file.size > 2 * 1024 * 1024) {
+            return toast.error('Image must be 2 MB or smaller');
+        }
+        const reader = new FileReader();
+        reader.onload = () => setF(s => ({ ...s, picture_data: String(reader.result) }));
+        reader.onerror = () => toast.error('Could not read file');
+        reader.readAsDataURL(file);
+    }
+
+    return (
+        <Modal open onClose={onClose}
+               title="Edit My Resource Information"
+               footer={<>
+                   <button className="btn-ghost" onClick={onClose}>Cancel</button>
+                   <button className="btn-primary" onClick={() => onSave(f)}>Save</button>
+               </>}>
+            <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                    <label className="label">Photo</label>
+                    <div className="flex items-center gap-4 p-3 rounded-lg border border-slate-200 bg-slate-50">
+                        <div className="w-24 h-24 rounded-full flex items-center justify-center overflow-hidden bg-white border border-slate-200">
+                            {f.picture_data
+                                ? <img src={f.picture_data} alt="photo" className="w-full h-full object-cover" />
+                                : <UserCircleIcon className="w-20 h-20 text-slate-300" />}
+                        </div>
+                        <div className="flex-1 space-y-2">
+                            <button type="button" className="btn-ghost" onClick={pickPicture}>
+                                <ArrowUpTrayIcon className="w-4 h-4" /> {f.picture_data ? 'Replace photo' : 'Upload photo'}
+                            </button>
+                            {f.picture_data && (
+                                <button type="button" className="btn-ghost ml-2" onClick={() => setF(s => ({ ...s, picture_data: null }))}>
+                                    <TrashIcon className="w-4 h-4 text-red-500" /> Remove
+                                </button>
+                            )}
+                            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onFileChange} />
+                        </div>
+                    </div>
+                </div>
+
+                <div><label className="label">First Name</label><input className="input" value={f.first_name || ''} onChange={e => setF({ ...f, first_name: e.target.value })} /></div>
+                <div><label className="label">Last Name</label><input className="input" value={f.last_name || ''} onChange={e => setF({ ...f, last_name: e.target.value })} /></div>
+                <div><label className="label">Nickname</label><input className="input" value={f.nick_name || ''} onChange={e => setF({ ...f, nick_name: e.target.value })} /></div>
+                <div><label className="label">Role</label><input className="input" value={f.role || ''} onChange={e => setF({ ...f, role: e.target.value })} /></div>
+                <div><label className="label">Email</label><input className="input" value={f.email || ''} onChange={e => setF({ ...f, email: e.target.value })} /></div>
+                <div><label className="label">Emp ID</label><input className="input bg-slate-100" value={f.emp_id || ''} disabled /></div>
+                <div className="col-span-2"><label className="label">ERP Username</label><input className="input bg-slate-100" value={f.erp_username || ''} disabled /></div>
+                <div className="col-span-2"><label className="label">Skill</label><textarea rows={3} className="input" value={f.skill || ''} onChange={e => setF({ ...f, skill: e.target.value })} /></div>
+            </div>
+        </Modal>
     );
 }

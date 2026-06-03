@@ -12,6 +12,7 @@ export default function Resources() {
     const [edit, setEdit] = useState(null);
     const [userModal, setUserModal] = useState(null);
     const [users, setUsers] = useState([]);
+    const [roles, setRoles] = useState([]);
 
     async function load() { setList((await api.get('/resources')).data); }
     useEffect(() => { load(); }, []);
@@ -29,9 +30,23 @@ export default function Resources() {
         toast.success('Deleted'); load();
     }
     async function openUserModal(resource) {
-        setUserModal({ resource, mode: resource.user_id ? 'existing' : 'create', user_id: resource.user_id || '' });
         try {
-            setUsers((await api.get('/resources/users')).data || []);
+            const [userRows, roleRows] = await Promise.all([
+                api.get('/resources/users'),
+                api.get('/resources/roles')
+            ]);
+            const nextUsers = userRows.data || [];
+            const nextRoles = roleRows.data || [];
+            setUsers(nextUsers);
+            setRoles(nextRoles);
+            const linkedUser = nextUsers.find(u => Number(u.id) === Number(resource.user_id));
+            const defaultRole = nextRoles.find(r => r.is_system && r.base_role === 'user') || nextRoles[0];
+            setUserModal({
+                resource,
+                mode: resource.user_id ? 'existing' : 'create',
+                user_id: resource.user_id || '',
+                tenant_role_id: resource.mapped_tenant_role_id || linkedUser?.tenant_role_id || defaultRole?.id || ''
+            });
         } catch (err) {
             toast.error(err.response?.data?.error || 'Could not load users');
         }
@@ -40,10 +55,17 @@ export default function Resources() {
         try {
             if (f.mode === 'existing') {
                 if (!f.user_id) return toast.error('Please select a user');
-                await api.post(`/resources/${f.resource.id}/map-user`, { user_id: Number(f.user_id) });
+                if (!f.tenant_role_id) return toast.error('Please select a role');
+                await api.post(`/resources/${f.resource.id}/map-user`, {
+                    user_id: Number(f.user_id),
+                    tenant_role_id: Number(f.tenant_role_id)
+                });
                 toast.success('User mapped');
             } else {
-                await api.post(`/resources/${f.resource.id}/create-user`);
+                if (!f.tenant_role_id) return toast.error('Please select a role');
+                await api.post(`/resources/${f.resource.id}/create-user`, {
+                    tenant_role_id: Number(f.tenant_role_id)
+                });
                 toast.success('User created and mapped');
             }
             setUserModal(null);
@@ -107,7 +129,7 @@ export default function Resources() {
             </div>
             {edit && <ResourceForm initial={edit} onClose={() => setEdit(null)} onSave={save} />}
             {userModal && (
-                <ResourceUserModal initial={userModal} users={users}
+                <ResourceUserModal initial={userModal} users={users} roles={roles}
                                    onClose={() => setUserModal(null)}
                                    onSave={saveUserLink}
                                    onUnlink={unlinkUser} />
@@ -131,12 +153,22 @@ function Avatar({ resource, size = 40 }) {
     );
 }
 
-function ResourceUserModal({ initial, users, onClose, onSave, onUnlink }) {
+function ResourceUserModal({ initial, users, roles, onClose, onSave, onUnlink }) {
     const [f, setF] = useState({ ...initial });
     const r = f.resource;
     const fullName = [r.first_name, r.last_name].filter(Boolean).join(' ').trim() || r.nick_name || r.erp_username || '';
     const canCreate = !!String(r.erp_username || '').trim() && !!String(r.emp_id || '').trim() && !r.user_id;
-    const canSave = f.mode === 'existing' ? !!f.user_id : canCreate;
+    const canSave = (f.mode === 'existing' ? !!f.user_id : canCreate) && !!f.tenant_role_id;
+
+    function chooseUser(userId) {
+        const user = users.find(u => String(u.id) === String(userId));
+        const fallbackRole = roles.find(role => role.is_system && role.base_role === 'user') || roles[0];
+        setF({
+            ...f,
+            user_id: userId,
+            tenant_role_id: user?.tenant_role_id || fallbackRole?.id || ''
+        });
+    }
 
     return (
         <Modal open onClose={onClose} title={`User Link - ${r.first_name || ''} ${r.last_name || ''}`.trim()} size="lg"
@@ -180,10 +212,23 @@ function ResourceUserModal({ initial, users, onClose, onSave, onUnlink }) {
                     </label>
                 </div>
 
+                <div>
+                    <label className="label">Role</label>
+                    <select className="input" value={f.tenant_role_id || ''}
+                            onChange={e => setF({ ...f, tenant_role_id: e.target.value })}>
+                        <option value="">Select role</option>
+                        {roles.map(role => (
+                            <option key={role.id} value={role.id}>
+                                {role.name} ({role.base_role})
+                            </option>
+                        ))}
+                    </select>
+                </div>
+
                 {f.mode === 'existing' ? (
                     <div>
                         <label className="label">User</label>
-                        <select className="input" value={f.user_id || ''} onChange={e => setF({ ...f, user_id: e.target.value })}>
+                        <select className="input" value={f.user_id || ''} onChange={e => chooseUser(e.target.value)}>
                             <option value="">Select user</option>
                             {users.map(u => {
                                 const mappedElsewhere = u.mapped_resource_id && Number(u.mapped_resource_id) !== Number(r.id);
@@ -203,7 +248,7 @@ function ResourceUserModal({ initial, users, onClose, onSave, onUnlink }) {
                             <div><span className="label">Default Password</span><div className="font-mono">{r.emp_id || '-'}</div></div>
                             <div><span className="label">Full Name</span><div>{fullName || '-'}</div></div>
                             <div><span className="label">Email</span><div>{r.email || '-'}</div></div>
-                            <div><span className="label">Role</span><div>User</div></div>
+                            <div><span className="label">Role</span><div>{roles.find(role => String(role.id) === String(f.tenant_role_id))?.name || '-'}</div></div>
                             <div><span className="label">Must Change Password</span><div>Yes</div></div>
                         </div>
                         {!canCreate && (

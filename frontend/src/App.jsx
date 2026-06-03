@@ -28,6 +28,7 @@ import UsersPage        from './pages/admin/Users';
 import LoginLogsPage    from './pages/admin/LoginLogs';
 import LicenseManagement from './pages/admin/LicenseManagement';
 import RoleManagement   from './pages/admin/RoleManagement';
+import BookingConfig    from './pages/admin/BookingConfig';
 import Tenants          from './pages/admin/Tenants';
 import TenantUsers      from './pages/admin/TenantUsers';
 import PlatformDashboard from './pages/admin/PlatformDashboard';
@@ -130,8 +131,9 @@ export default function App() {
                 <Route path="admin/app"        element={<RequireAdmin><RequireMenu menuKey="admin.app"><AppConfigPage /></RequireMenu></RequireAdmin>} />
                 <Route path="admin/smtp"       element={<RequireAdmin><RequireMenu menuKey="admin.smtp"><SmtpPage /></RequireMenu></RequireAdmin>} />
                 <Route path="admin/licenses"   element={<RequireAdmin><RequireMenu menuKey="admin.licenses"><LicenseManagement /></RequireMenu></RequireAdmin>} />
-                <Route path="admin/roles"      element={<RequireAdmin><RequireMenu menuKey="admin.roles"><RoleManagement /></RequireMenu></RequireAdmin>} />
+                <Route path="admin/roles"      element={<RequireSuper><RequireMenu menuKey="admin.roles"><RoleManagement /></RequireMenu></RequireSuper>} />
 
+                <Route path="admin/booking-config" element={<RequireSuper><RequireMenu menuKey="superadmin.booking_config"><BookingConfig /></RequireMenu></RequireSuper>} />
                 <Route path="admin/users"      element={<RequireSuper><RequireMenu menuKey="superadmin.users"><UsersPage /></RequireMenu></RequireSuper>} />
                 <Route path="admin/login-logs" element={<RequireSuper><RequireMenu menuKey="superadmin.login_logs"><LoginLogsPage /></RequireMenu></RequireSuper>} />
 

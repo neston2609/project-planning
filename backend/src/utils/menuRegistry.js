@@ -19,8 +19,9 @@ const MENU_REGISTRY = [
     { key: 'admin.year', label: 'Year Config', group: 'Administration', min_role: 'admin' },
     { key: 'admin.app', label: 'App Config', group: 'Administration', min_role: 'admin' },
     { key: 'admin.smtp', label: 'SMTP', group: 'Administration', min_role: 'admin' },
-    { key: 'admin.roles', label: 'Role Management', group: 'Administration', min_role: 'superadmin' },
 
+    { key: 'admin.roles', label: 'Role Management', group: 'Superadmin', min_role: 'superadmin' },
+    { key: 'superadmin.booking_config', label: 'Booking Config', group: 'Superadmin', min_role: 'superadmin' },
     { key: 'superadmin.users', label: 'Users', group: 'Superadmin', min_role: 'superadmin' },
     { key: 'superadmin.login_logs', label: 'Login Logs', group: 'Superadmin', min_role: 'superadmin' }
 ];

@@ -27,6 +27,17 @@ function monthBounds(month) {
     return { start: localDateISO(start), end: localDateISO(end) };
 }
 
+function datesBetween(start, end) {
+    const out = [];
+    const cur = new Date(`${start}T00:00:00`);
+    const last = new Date(`${end}T00:00:00`);
+    while (cur <= last) {
+        out.push(localDateISO(cur));
+        cur.setDate(cur.getDate() + 1);
+    }
+    return out;
+}
+
 async function ensureConfig(tenantId, client = db) {
     await client.query(
         `INSERT INTO office_booking_config(tenant_id, max_bookings_per_day, extra_bookings_per_day)
@@ -154,12 +165,12 @@ router.get('/summary',
     }
 );
 
-router.get('/config', requireRole('admin', 'superadmin'), async (req, res) => {
+router.get('/config', requireRole('superadmin'), async (req, res) => {
     res.json(await ensureConfig(req.tenantId));
 });
 
 router.put('/config',
-    requireRole('admin', 'superadmin'),
+    requireRole('superadmin'),
     body('max_bookings_per_day').isInt({ min: 0, max: 500 }),
     body('extra_bookings_per_day').isInt({ min: 0, max: 500 }),
     async (req, res) => {
@@ -178,6 +189,88 @@ router.put('/config',
             [req.tenantId, maxBookings, extraBookings]
         );
         res.json(rows[0]);
+    }
+);
+
+router.post('/bulk',
+    body('start').custom(isISODate),
+    body('end').custom(isISODate),
+    body('weekdays').isArray({ min: 1, max: 5 }),
+    body('weekdays.*').isInt({ min: 1, max: 5 }),
+    async (req, res) => {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+        if (req.body.end < req.body.start) return res.status(400).json({ error: 'Invalid date range' });
+
+        const today = localDateISO();
+        const weekdays = new Set(req.body.weekdays.map(Number));
+        const targetDates = datesBetween(req.body.start, req.body.end)
+            .filter(date => date >= today)
+            .filter(date => weekdays.has(new Date(`${date}T00:00:00`).getDay()));
+
+        const client = await db.getClient();
+        const createdIds = [];
+        const skipped = [];
+        try {
+            await client.query('BEGIN');
+            const config = await ensureConfig(req.tenantId, client);
+
+            for (const bookingDate of targetDates) {
+                await client.query(
+                    'SELECT pg_advisory_xact_lock($1, $2)',
+                    [req.tenantId, Number(bookingDate.replace(/-/g, ''))]
+                );
+                const existing = await client.query(
+                    `SELECT id FROM office_bookings
+                      WHERE tenant_id=$1 AND user_id=$2 AND booking_date=$3::date`,
+                    [req.tenantId, req.user.uid, bookingDate]
+                );
+                if (existing.rows[0]) {
+                    skipped.push({ booking_date: bookingDate, reason: 'already_booked' });
+                    continue;
+                }
+
+                const currentBookings = await bookingsForDate(req.tenantId, bookingDate, client);
+                const capacity = capacityForDate(currentBookings, config);
+                if (capacity.is_full) {
+                    skipped.push({ booking_date: bookingDate, reason: 'full', bookings: currentBookings });
+                    continue;
+                }
+
+                const { rows } = await client.query(
+                    `INSERT INTO office_bookings(tenant_id, user_id, booking_date, is_extra, reason)
+                     VALUES ($1,$2,$3::date,FALSE,'')
+                     RETURNING id`,
+                    [req.tenantId, req.user.uid, bookingDate]
+                );
+                createdIds.push(rows[0].id);
+            }
+
+            let created = [];
+            if (createdIds.length > 0) {
+                const createdRows = await client.query(
+                    `${bookingSelect}
+                      WHERE ob.tenant_id=$1 AND ob.id = ANY($2::int[])
+                      ORDER BY ob.booking_date`,
+                    [req.tenantId, createdIds]
+                );
+                created = createdRows.rows;
+            }
+
+            await client.query('COMMIT');
+            res.status(201).json({
+                created,
+                skipped,
+                requested_dates: targetDates,
+                created_count: created.length,
+                skipped_count: skipped.length
+            });
+        } catch (err) {
+            await client.query('ROLLBACK');
+            throw err;
+        } finally {
+            client.release();
+        }
     }
 );
 
