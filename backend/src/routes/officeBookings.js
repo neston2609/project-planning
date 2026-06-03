@@ -188,8 +188,9 @@ async function extractHolidayText({ data_url, mime_type }) {
     if (mimeType.startsWith('image/')) {
         const Tesseract = require('tesseract.js');
         const cachePath = path.join(__dirname, '..', '..', '.cache', 'tesseract');
+        const langPath = path.join(__dirname, '..', '..', 'node_modules', '@tesseract.js-data', 'eng', '4.0.0');
         fs.mkdirSync(cachePath, { recursive: true });
-        const result = await Tesseract.recognize(decoded.buffer, 'eng', { cachePath });
+        const result = await Tesseract.recognize(decoded.buffer, 'eng', { cachePath, langPath });
         return result.data?.text || '';
     }
     throw new Error('Only image or PDF files are supported');
@@ -265,9 +266,14 @@ router.post('/holidays/import',
     async (req, res) => {
         const errs = validationResult(req);
         if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
-        const text = await extractHolidayText(req.body);
-        const parsed = parseHolidayText(text, req.body.year);
-        res.json({ ...parsed, extracted_text: text });
+        try {
+            const text = await extractHolidayText(req.body);
+            const parsed = parseHolidayText(text, req.body.year);
+            res.json({ ...parsed, extracted_text: text });
+        } catch (err) {
+            console.error('[office-bookings/holidays/import]', err);
+            res.status(500).json({ error: err.message || 'Holiday import failed' });
+        }
     }
 );
 

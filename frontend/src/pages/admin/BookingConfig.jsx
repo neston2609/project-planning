@@ -114,7 +114,10 @@ export default function BookingConfig() {
             setImportRows(rows);
             toast.success(`Parsed ${rows.length} holiday(s)`);
         } catch (err) {
-            toast.error(err.response?.data?.error || 'Holiday import failed');
+            const message = err.code === 'ECONNABORTED'
+                ? 'Holiday import timed out. Please try a smaller/clearer image or PDF.'
+                : err.response?.data?.error || err.message || 'Holiday import failed';
+            toast.error(message);
         } finally {
             setImporting(false);
         }
