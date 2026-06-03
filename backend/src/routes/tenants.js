@@ -150,6 +150,8 @@ router.delete('/:id', param('id').isInt(), async (req, res) => {
         await client.query('DELETE FROM smtp_config           WHERE tenant_id=$1', [id]);
         await client.query('DELETE FROM login_logs            WHERE tenant_id=$1', [id]);
         await client.query('DELETE FROM pending_registrations WHERE tenant_id=$1', [id]);
+        await client.query('DELETE FROM office_bookings       WHERE tenant_id=$1', [id]);
+        await client.query('DELETE FROM office_booking_config WHERE tenant_id=$1', [id]);
         await client.query('DELETE FROM users                 WHERE tenant_id=$1', [id]);
         await client.query('DELETE FROM tenants               WHERE id=$1', [id]);
         await client.query('COMMIT');

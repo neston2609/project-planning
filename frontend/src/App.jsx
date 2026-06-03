@@ -16,6 +16,7 @@ import ResourceInformation from './pages/ResourceInformation';
 import CustomerInformation from './pages/CustomerInformation';
 import LicenseDashboard  from './pages/LicenseDashboard';
 import ProjectSummary     from './pages/ProjectSummary';
+import OfficeBooking      from './pages/OfficeBooking';
 
 import ProjectManagement from './pages/admin/ProjectManagement';
 import Customers        from './pages/admin/Customers';
@@ -90,6 +91,7 @@ function HomeRedirect() {
             ['dashboard.implementation', '/implementation'],
             ['dashboard.service_ma', '/service-ma'],
             ['dashboard.outsource', '/outsource'],
+            ['dashboard.office_booking', '/office-booking'],
             ['resource.planning', '/resource-planning'],
             ['admin.projects', '/admin/projects'],
             ['superadmin.users', '/admin/users']
@@ -114,6 +116,7 @@ export default function App() {
                 <Route path="implementation"    element={<RequireMenu menuKey="dashboard.implementation"><ImplementationDash /></RequireMenu>} />
                 <Route path="service-ma"        element={<RequireMenu menuKey="dashboard.service_ma"><ServiceMADash /></RequireMenu>} />
                 <Route path="outsource"         element={<RequireMenu menuKey="dashboard.outsource"><OutsourceDash /></RequireMenu>} />
+                <Route path="office-booking"    element={<RequireMenu menuKey="dashboard.office_booking"><OfficeBooking /></RequireMenu>} />
                 <Route path="resource-planning"    element={<RequireMenu menuKey="resource.planning"><ResourcePlanning /></RequireMenu>} />
                 <Route path="resource-information" element={<RequireMenu menuKey="resource.information"><ResourceInformation /></RequireMenu>} />
                 <Route path="customer-information" element={<RequireMenu menuKey="customer.information"><CustomerInformation /></RequireMenu>} />

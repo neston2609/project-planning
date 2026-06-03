@@ -6,6 +6,7 @@ const MENU_REGISTRY = [
     { key: 'dashboard.implementation', label: 'Implementation', group: 'Dashboards', min_role: 'user' },
     { key: 'dashboard.service_ma', label: 'Service MA', group: 'Dashboards', min_role: 'user' },
     { key: 'dashboard.outsource', label: 'Outsource', group: 'Dashboards', min_role: 'user' },
+    { key: 'dashboard.office_booking', label: 'Office Booking', group: 'Dashboards', min_role: 'user' },
     { key: 'resource.planning', label: 'Resource Planning', group: 'Dashboards', min_role: 'user' },
     { key: 'resource.information', label: 'Resource Information', group: 'Dashboards', min_role: 'user' },
     { key: 'customer.information', label: 'Customer Information', group: 'Dashboards', min_role: 'user' },

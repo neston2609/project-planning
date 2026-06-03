@@ -23,6 +23,7 @@ const mainNav = [
     { key: 'dashboard.implementation', to: '/implementation',    label: 'Implementation',    icon: WrenchScrewdriverIcon },
     { key: 'dashboard.service_ma',     to: '/service-ma',        label: 'Service MA',        icon: LifebuoyIcon },
     { key: 'dashboard.outsource',      to: '/outsource',            label: 'Outsource',            icon: BriefcaseIcon },
+    { key: 'dashboard.office_booking', to: '/office-booking',       label: 'Office Booking',       icon: CalendarDaysIcon },
     { key: 'resource.planning',        to: '/resource-planning',    label: 'Resource Planning',    icon: UserGroupIcon },
     { key: 'resource.information',     to: '/resource-information', label: 'Resource Information', icon: UserIcon },
     { key: 'customer.information',     to: '/customer-information', label: 'Customer Information', icon: BuildingOfficeIcon },

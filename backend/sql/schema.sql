@@ -205,6 +205,31 @@ CREATE INDEX IF NOT EXISTS idx_resources_tenant ON resources(tenant_id);
 CREATE UNIQUE INDEX IF NOT EXISTS resources_user_per_tenant_uq
     ON resources(tenant_id, user_id) WHERE user_id IS NOT NULL;
 
+-- ---------- Office booking ----------
+CREATE TABLE IF NOT EXISTS office_booking_config (
+    tenant_id             INT PRIMARY KEY,
+    max_bookings_per_day  INT NOT NULL DEFAULT 6 CHECK (max_bookings_per_day >= 0),
+    extra_bookings_per_day INT NOT NULL DEFAULT 3 CHECK (extra_bookings_per_day >= 0),
+    created_at            TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at            TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS office_bookings (
+    id            SERIAL PRIMARY KEY,
+    tenant_id     INT NOT NULL,
+    user_id       INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    booking_date  DATE NOT NULL,
+    is_extra      BOOLEAN NOT NULL DEFAULT FALSE,
+    reason        TEXT NOT NULL DEFAULT '',
+    created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+    UNIQUE (tenant_id, user_id, booking_date)
+);
+CREATE INDEX IF NOT EXISTS idx_office_bookings_tenant_date
+    ON office_bookings(tenant_id, booking_date);
+CREATE INDEX IF NOT EXISTS idx_office_bookings_user
+    ON office_bookings(user_id);
+
 -- ---------- Projects ----------
 CREATE TABLE IF NOT EXISTS projects (
     id                   SERIAL PRIMARY KEY,
@@ -349,7 +374,7 @@ BEGIN
     FOR t IN SELECT unnest(ARRAY[
         'tenants','users','customers','resources','projects',
         'smtp_config','year_config','tenant_config','customer_licenses',
-        'tenant_roles'
+        'tenant_roles','office_booking_config','office_bookings'
     ]) LOOP
         EXECUTE format(
             'DROP TRIGGER IF EXISTS trg_%s_upd ON %I; '
