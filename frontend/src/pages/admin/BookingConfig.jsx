@@ -107,6 +107,8 @@ export default function BookingConfig() {
                 mime_type: file.type,
                 data_url: dataUrl,
                 year
+            }, {
+                timeout: 180_000
             });
             const rows = (res.data.holidays || []).filter(h => String(h.holiday_date || '').startsWith(`${year}-`));
             setImportRows(rows);

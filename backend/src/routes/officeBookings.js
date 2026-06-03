@@ -1,6 +1,8 @@
 const express = require('express');
 const { body, param, query, validationResult } = require('express-validator');
 const pdfParse = require('pdf-parse');
+const fs = require('fs');
+const path = require('path');
 const db = require('../db');
 const { requireAuth, requireRole, requireTenant } = require('../middleware/auth');
 
@@ -185,7 +187,9 @@ async function extractHolidayText({ data_url, mime_type }) {
     }
     if (mimeType.startsWith('image/')) {
         const Tesseract = require('tesseract.js');
-        const result = await Tesseract.recognize(decoded.buffer, 'eng');
+        const cachePath = path.join(__dirname, '..', '..', '.cache', 'tesseract');
+        fs.mkdirSync(cachePath, { recursive: true });
+        const result = await Tesseract.recognize(decoded.buffer, 'eng', { cachePath });
         return result.data?.text || '';
     }
     throw new Error('Only image or PDF files are supported');
