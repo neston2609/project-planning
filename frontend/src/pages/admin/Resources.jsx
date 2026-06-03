@@ -170,6 +170,20 @@ function ResourceUserModal({ initial, users, roles, onClose, onSave, onUnlink })
         });
     }
 
+    function roleDropdown() {
+        return (
+            <select className="input" value={f.tenant_role_id || ''}
+                    onChange={e => setF({ ...f, tenant_role_id: e.target.value })}>
+                <option value="">Select role</option>
+                {roles.map(role => (
+                    <option key={role.id} value={role.id}>
+                        {role.name} ({role.base_role})
+                    </option>
+                ))}
+            </select>
+        );
+    }
+
     return (
         <Modal open onClose={onClose} title={`User Link - ${r.first_name || ''} ${r.last_name || ''}`.trim()} size="lg"
                footer={<>
@@ -212,34 +226,27 @@ function ResourceUserModal({ initial, users, roles, onClose, onSave, onUnlink })
                     </label>
                 </div>
 
-                <div>
-                    <label className="label">Role</label>
-                    <select className="input" value={f.tenant_role_id || ''}
-                            onChange={e => setF({ ...f, tenant_role_id: e.target.value })}>
-                        <option value="">Select role</option>
-                        {roles.map(role => (
-                            <option key={role.id} value={role.id}>
-                                {role.name} ({role.base_role})
-                            </option>
-                        ))}
-                    </select>
-                </div>
-
                 {f.mode === 'existing' ? (
-                    <div>
-                        <label className="label">User</label>
-                        <select className="input" value={f.user_id || ''} onChange={e => chooseUser(e.target.value)}>
-                            <option value="">Select user</option>
-                            {users.map(u => {
-                                const mappedElsewhere = u.mapped_resource_id && Number(u.mapped_resource_id) !== Number(r.id);
-                                const suffix = mappedElsewhere ? ` - linked to ${u.mapped_resource_name || 'another resource'}` : '';
-                                return (
-                                    <option key={u.id} value={u.id} disabled={mappedElsewhere}>
-                                        {u.username} ({u.full_name || u.email || u.role}){suffix}
-                                    </option>
-                                );
-                            })}
-                        </select>
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className="label">User</label>
+                            <select className="input" value={f.user_id || ''} onChange={e => chooseUser(e.target.value)}>
+                                <option value="">Select user</option>
+                                {users.map(u => {
+                                    const mappedElsewhere = u.mapped_resource_id && Number(u.mapped_resource_id) !== Number(r.id);
+                                    const suffix = mappedElsewhere ? ` - linked to ${u.mapped_resource_name || 'another resource'}` : '';
+                                    return (
+                                        <option key={u.id} value={u.id} disabled={mappedElsewhere}>
+                                            {u.username} ({u.full_name || u.email || u.role}){suffix}
+                                        </option>
+                                    );
+                                })}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="label">Role</label>
+                            {roleDropdown()}
+                        </div>
                     </div>
                 ) : (
                     <div className="rounded-lg border border-slate-200 p-3">
@@ -248,7 +255,7 @@ function ResourceUserModal({ initial, users, roles, onClose, onSave, onUnlink })
                             <div><span className="label">Default Password</span><div className="font-mono">{r.emp_id || '-'}</div></div>
                             <div><span className="label">Full Name</span><div>{fullName || '-'}</div></div>
                             <div><span className="label">Email</span><div>{r.email || '-'}</div></div>
-                            <div><span className="label">Role</span><div>{roles.find(role => String(role.id) === String(f.tenant_role_id))?.name || '-'}</div></div>
+                            <div><label className="label">Role</label>{roleDropdown()}</div>
                             <div><span className="label">Must Change Password</span><div>Yes</div></div>
                         </div>
                         {!canCreate && (
