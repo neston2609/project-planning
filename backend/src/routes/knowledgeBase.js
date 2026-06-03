@@ -24,20 +24,44 @@ function isAdminRole(user) {
 }
 
 async function ensureDefaults(tenantId, client = db) {
-    for (const name of DEFAULT_CATEGORIES) {
+    const categorySeed = await client.query(
+        "SELECT value FROM tenant_config WHERE tenant_id=$1 AND key='kb_categories_seeded'",
+        [tenantId]
+    );
+    const productSeed = await client.query(
+        "SELECT value FROM tenant_config WHERE tenant_id=$1 AND key='kb_products_seeded'",
+        [tenantId]
+    );
+    if (categorySeed.rows[0]?.value !== 'true') {
+        for (const name of DEFAULT_CATEGORIES) {
+            await client.query(
+                `INSERT INTO kb_categories(tenant_id, name, is_system)
+                 VALUES ($1,$2,TRUE)
+                 ON CONFLICT (tenant_id, name) DO NOTHING`,
+                [tenantId, name]
+            );
+        }
         await client.query(
-            `INSERT INTO kb_categories(tenant_id, name, is_system)
-             VALUES ($1,$2,TRUE)
-             ON CONFLICT (tenant_id, name) DO NOTHING`,
-            [tenantId, name]
+            `INSERT INTO tenant_config(tenant_id, key, value)
+             VALUES ($1,'kb_categories_seeded','true')
+             ON CONFLICT (tenant_id, key) DO UPDATE SET value='true', updated_at=NOW()`,
+            [tenantId]
         );
     }
-    for (const name of DEFAULT_PRODUCTS) {
+    if (productSeed.rows[0]?.value !== 'true') {
+        for (const name of DEFAULT_PRODUCTS) {
+            await client.query(
+                `INSERT INTO kb_products(tenant_id, name, is_system)
+                 VALUES ($1,$2,TRUE)
+                 ON CONFLICT (tenant_id, name) DO NOTHING`,
+                [tenantId, name]
+            );
+        }
         await client.query(
-            `INSERT INTO kb_products(tenant_id, name, is_system)
-             VALUES ($1,$2,TRUE)
-             ON CONFLICT (tenant_id, name) DO NOTHING`,
-            [tenantId, name]
+            `INSERT INTO tenant_config(tenant_id, key, value)
+             VALUES ($1,'kb_products_seeded','true')
+             ON CONFLICT (tenant_id, key) DO UPDATE SET value='true', updated_at=NOW()`,
+            [tenantId]
         );
     }
     await client.query(
@@ -208,6 +232,29 @@ for (const [path, table] of [['categories', 'kb_categories'], ['products', 'kb_p
                     [req.tenantId, cleanString(req.body.name, 128)]
                 );
                 res.status(201).json(rows[0]);
+            } catch (err) {
+                if (err.code === '23505') return res.status(409).json({ error: 'Name already exists' });
+                throw err;
+            }
+        }
+    );
+    router.put(`/config/${path}/:id`,
+        requireRole('admin', 'superadmin'),
+        param('id').isInt(),
+        body('name').isString().trim().notEmpty().isLength({ max: 128 }),
+        async (req, res) => {
+            const errs = validationResult(req);
+            if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+            try {
+                const { rows } = await db.query(
+                    `UPDATE ${table}
+                        SET name=$1, updated_at=NOW()
+                      WHERE id=$2 AND tenant_id=$3
+                      RETURNING id, name, is_system`,
+                    [cleanString(req.body.name, 128), req.params.id, req.tenantId]
+                );
+                if (!rows[0]) return res.status(404).json({ error: 'Not found' });
+                res.json(rows[0]);
             } catch (err) {
                 if (err.code === '23505') return res.status(409).json({ error: 'Name already exists' });
                 throw err;

@@ -186,7 +186,22 @@ export default function KnowledgeBase() {
                 </div>
             )}
 
-            <div className="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-4">
+            <ArticleList articles={filtered} onOpen={openArticle} />
+
+            <Modal open={!!selected}
+                   onClose={() => setSelected(null)}
+                   title={selected?.title || 'Article Detail'}
+                   size="xl">
+                {selected && (
+                    <ArticleDetail article={selected}
+                                   canDelete={canDelete}
+                                   onEdit={() => setEdit(selected)}
+                                   onDelete={() => deleteArticle(selected)}
+                                   onOpen={openArticle} />
+                )}
+            </Modal>
+
+            <div className="hidden">
                 <div className="space-y-3">
                     {filtered.map(article => (
                         <button key={article.id} className="card p-4 w-full text-left hover:shadow-md transition"
@@ -231,6 +246,66 @@ export default function KnowledgeBase() {
                              onClose={() => setEdit(null)}
                              onSave={saveArticle} />
             )}
+        </div>
+    );
+}
+
+function ArticleList({ articles, onOpen }) {
+    if (articles.length === 0) {
+        return <div className="card p-8 text-center text-slate-400">No articles found.</div>;
+    }
+
+    return (
+        <div className="card overflow-hidden">
+            <div className="overflow-x-auto">
+                <table className="table-clean">
+                    <thead>
+                        <tr>
+                            <th>Article</th>
+                            <th>Category</th>
+                            <th>Product</th>
+                            <th>Version</th>
+                            <th>Updated</th>
+                            <th>Files</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {articles.map(article => (
+                            <tr key={article.id}
+                                className="cursor-pointer hover:bg-blue-50/70 transition"
+                                onClick={() => onOpen(article)}>
+                                <td className="min-w-[320px] max-w-[520px]">
+                                    <div className="flex items-start gap-3">
+                                        <BookOpenIcon className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+                                        <div className="min-w-0">
+                                            <div className="font-bold text-slate-900 truncate">{article.title}</div>
+                                            <div className="text-xs text-slate-500 mt-1 line-clamp-2">
+                                                {stripHtml(article.content) || '-'}
+                                            </div>
+                                            <TagRow tags={article.tags} />
+                                        </div>
+                                    </div>
+                                </td>
+                                <td className="whitespace-nowrap">{article.category_name || 'No category'}</td>
+                                <td className="whitespace-nowrap">{article.product_name || 'No product'}</td>
+                                <td className="font-semibold whitespace-nowrap">v{article.version}</td>
+                                <td className="text-xs text-slate-500 whitespace-nowrap">
+                                    {article.updated_at ? new Date(article.updated_at).toLocaleDateString() : '-'}
+                                </td>
+                                <td className="whitespace-nowrap">
+                                    {Number(article.attachment_count || 0) > 0 ? (
+                                        <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
+                                            <PaperClipIcon className="w-3 h-3" /> {article.attachment_count}
+                                        </span>
+                                    ) : (
+                                        <span className="text-slate-400">-</span>
+                                    )}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
         </div>
     );
 }
