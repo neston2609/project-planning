@@ -359,3 +359,36 @@ html.dark .resource-planning-gantt .rp-week-header {
 .kb-article-content ol {
     list-style: decimal;
 }
+
+.kb-image-resize-box {
+    position: absolute;
+    z-index: 5;
+    pointer-events: none;
+    border: 2px solid #2563eb;
+    border-radius: 0.5rem;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.14);
+}
+
+.kb-image-resize-handle {
+    position: absolute;
+    right: -8px;
+    bottom: -8px;
+    width: 16px;
+    height: 16px;
+    border-radius: 999px;
+    border: 2px solid #ffffff;
+    background: #2563eb;
+    cursor: nwse-resize;
+    pointer-events: auto;
+    box-shadow: 0 4px 10px rgba(15, 23, 42, 0.25);
+}
+
+html.dark .kb-image-resize-box {
+    border-color: #93c5fd;
+    box-shadow: 0 0 0 2px rgba(147, 197, 253, 0.18);
+}
+
+html.dark .kb-image-resize-handle {
+    border-color: #0f172a;
+    background: #93c5fd;
+}

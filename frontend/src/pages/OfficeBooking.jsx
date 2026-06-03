@@ -322,7 +322,7 @@ function MonthCalendar({ month, today, userId, bookingsByDate, holidaysByDate, c
                     const bookedNames = bookings.map(b => `${b.display_name}${b.is_extra ? ' (Extra)' : ''}`).join('\n');
                     const cellTitle = [
                         holiday ? `Holiday: ${holiday.name}` : '',
-                        bookedNames ? `Booked:\n${bookedNames}` : ''
+                        bookedNames
                     ].filter(Boolean).join('\n\n');
                     return (
                         <button key={date}

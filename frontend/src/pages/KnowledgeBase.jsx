@@ -276,12 +276,28 @@ function ArticleForm({ initial, config, articles, onClose, onSave }) {
         attachments: initial.attachments || []
     });
     const editorRef = useRef(null);
+    const editorFrameRef = useRef(null);
     const imageRef = useRef(null);
     const attachRef = useRef(null);
+    const [selectedImage, setSelectedImage] = useState(null);
+    const [imageBox, setImageBox] = useState(null);
 
     useEffect(() => {
         if (editorRef.current) editorRef.current.innerHTML = initial.content || '';
+        setSelectedImage(null);
+        setImageBox(null);
     }, [initial.id]);
+
+    useEffect(() => {
+        if (!selectedImage) return;
+        const refresh = () => updateImageBox(selectedImage);
+        window.addEventListener('resize', refresh);
+        window.addEventListener('scroll', refresh, true);
+        return () => {
+            window.removeEventListener('resize', refresh);
+            window.removeEventListener('scroll', refresh, true);
+        };
+    }, [selectedImage]);
 
     function exec(command) {
         editorRef.current?.focus();
@@ -298,7 +314,73 @@ function ArticleForm({ initial, config, articles, onClose, onSave }) {
         const dataUrl = await fileToDataUrl(file);
         editorRef.current?.focus();
         document.execCommand('insertImage', false, dataUrl);
+        const images = editorRef.current?.querySelectorAll('img') || [];
+        const img = images[images.length - 1];
+        if (img) {
+            img.style.maxWidth = '100%';
+            img.style.height = 'auto';
+            selectImage(img);
+        }
         setF(s => ({ ...s, content: editorRef.current?.innerHTML || '' }));
+    }
+
+    function updateImageBox(img) {
+        const frame = editorFrameRef.current;
+        if (!frame || !img || !frame.contains(img)) {
+            setSelectedImage(null);
+            setImageBox(null);
+            return;
+        }
+        const frameRect = frame.getBoundingClientRect();
+        const imgRect = img.getBoundingClientRect();
+        setImageBox({
+            left: imgRect.left - frameRect.left,
+            top: imgRect.top - frameRect.top,
+            width: imgRect.width,
+            height: imgRect.height
+        });
+    }
+
+    function selectImage(img) {
+        setSelectedImage(img);
+        requestAnimationFrame(() => updateImageBox(img));
+    }
+
+    function onEditorClick(e) {
+        if (e.target?.tagName === 'IMG') {
+            selectImage(e.target);
+            return;
+        }
+        setSelectedImage(null);
+        setImageBox(null);
+    }
+
+    function startImageResize(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const img = selectedImage;
+        const frame = editorFrameRef.current;
+        if (!img || !frame) return;
+        const startX = e.clientX;
+        const startWidth = img.getBoundingClientRect().width;
+        const frameWidth = frame.getBoundingClientRect().width - 32;
+
+        function onMove(ev) {
+            const nextWidth = Math.max(60, Math.min(frameWidth, startWidth + ev.clientX - startX));
+            img.style.width = `${Math.round(nextWidth)}px`;
+            img.style.maxWidth = '100%';
+            img.style.height = 'auto';
+            updateImageBox(img);
+        }
+
+        function onUp() {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+            setF(s => ({ ...s, content: editorRef.current?.innerHTML || '' }));
+        }
+
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
     }
 
     async function addAttachments(e) {
@@ -384,10 +466,27 @@ function ArticleForm({ initial, config, articles, onClose, onSave }) {
                             </button>
                             <input ref={imageRef} type="file" accept="image/*" className="hidden" onChange={insertImage} />
                         </div>
-                        <div ref={editorRef}
-                             contentEditable
-                             className="kb-article-content min-h-[260px] bg-white p-4 text-sm outline-none"
-                             onInput={() => setF(s => ({ ...s, content: editorRef.current?.innerHTML || '' }))} />
+                        <div ref={editorFrameRef} className="relative">
+                            <div ref={editorRef}
+                                 contentEditable
+                                 className="kb-article-content min-h-[260px] bg-white p-4 text-sm outline-none"
+                                 onClick={onEditorClick}
+                                 onInput={() => setF(s => ({ ...s, content: editorRef.current?.innerHTML || '' }))} />
+                            {imageBox && (
+                                <div className="kb-image-resize-box"
+                                     style={{
+                                         left: imageBox.left,
+                                         top: imageBox.top,
+                                         width: imageBox.width,
+                                         height: imageBox.height
+                                     }}>
+                                    <button type="button"
+                                            className="kb-image-resize-handle"
+                                            title="Drag to resize image"
+                                            onMouseDown={startImageResize} />
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
 
