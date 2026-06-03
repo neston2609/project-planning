@@ -111,7 +111,10 @@ export default function BookingConfig() {
                 timeout: 180_000
             });
             const rows = (res.data.holidays || []).filter(h => String(h.holiday_date || '').startsWith(`${year}-`));
-            setImportRows(rows);
+            setImportRows(rows.map((row, idx) => ({
+                ...row,
+                import_id: `${row.holiday_date}-${idx}`
+            })));
             toast.success(`Parsed ${rows.length} holiday(s)`);
         } catch (err) {
             const message = err.code === 'ECONNABORTED'
@@ -125,6 +128,11 @@ export default function BookingConfig() {
 
     async function importParsedHolidays() {
         if (importRows.length === 0) return toast.error('No parsed holidays to import');
+        for (const row of importRows) {
+            if (!row.holiday_date) return toast.error('Every imported row must have a date');
+            if (!String(row.holiday_date).startsWith(`${year}-`)) return toast.error(`Every imported date must be in ${year}`);
+            if (!String(row.name || '').trim()) return toast.error('Every imported row must have a holiday name');
+        }
         try {
             for (const row of importRows) {
                 await api.post('/office-bookings/holidays', {
@@ -138,6 +146,16 @@ export default function BookingConfig() {
         } catch (err) {
             toast.error(err.response?.data?.error || 'Import save failed');
         }
+    }
+
+    function updateImportRow(importId, patch) {
+        setImportRows(prev => prev.map(row => (
+            row.import_id === importId ? { ...row, ...patch } : row
+        )));
+    }
+
+    function deleteImportRow(importId) {
+        setImportRows(prev => prev.filter(row => row.import_id !== importId));
     }
 
     return (
@@ -189,12 +207,28 @@ export default function BookingConfig() {
                         <div className="space-y-2">
                             <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
                                 <table className="table-clean">
-                                    <thead><tr><th>Date</th><th>Holiday</th></tr></thead>
+                                    <thead><tr><th>Date</th><th>Holiday</th><th></th></tr></thead>
                                     <tbody>
                                         {importRows.map(row => (
-                                            <tr key={row.holiday_date}>
-                                                <td className="font-mono text-sm">{row.holiday_date}</td>
-                                                <td>{row.name}</td>
+                                            <tr key={row.import_id}>
+                                                <td>
+                                                    <input className="input !py-1.5 font-mono text-sm"
+                                                           type="date"
+                                                           min={`${year}-01-01`}
+                                                           max={`${year}-12-31`}
+                                                           value={row.holiday_date || ''}
+                                                           onChange={e => updateImportRow(row.import_id, { holiday_date: e.target.value })} />
+                                                </td>
+                                                <td>
+                                                    <input className="input !py-1.5"
+                                                           value={row.name || ''}
+                                                           onChange={e => updateImportRow(row.import_id, { name: e.target.value })} />
+                                                </td>
+                                                <td className="text-right">
+                                                    <button className="btn-ghost" onClick={() => deleteImportRow(row.import_id)}>
+                                                        <TrashIcon className="w-4 h-4 text-red-500" />
+                                                    </button>
+                                                </td>
                                             </tr>
                                         ))}
                                     </tbody>
