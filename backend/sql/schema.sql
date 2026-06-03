@@ -189,6 +189,7 @@ CREATE TABLE IF NOT EXISTS resources (
     nick_name       VARCHAR(128) NOT NULL DEFAULT '',
     role            VARCHAR(128) NOT NULL DEFAULT '',
     email           VARCHAR(255) NOT NULL DEFAULT '',
+    mobile_phone    VARCHAR(64)  NOT NULL DEFAULT '',
     erp_username    VARCHAR(128) NOT NULL DEFAULT '',
     skill           TEXT         NOT NULL DEFAULT '',
     picture_data    TEXT,
@@ -197,6 +198,7 @@ CREATE TABLE IF NOT EXISTS resources (
 );
 ALTER TABLE resources ADD COLUMN IF NOT EXISTS tenant_id INT;
 ALTER TABLE resources ADD COLUMN IF NOT EXISTS user_id INT;
+ALTER TABLE resources ADD COLUMN IF NOT EXISTS mobile_phone VARCHAR(64) NOT NULL DEFAULT '';
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -237,6 +239,18 @@ CREATE INDEX IF NOT EXISTS idx_office_bookings_tenant_date
     ON office_bookings(tenant_id, booking_date);
 CREATE INDEX IF NOT EXISTS idx_office_bookings_user
     ON office_bookings(user_id);
+
+CREATE TABLE IF NOT EXISTS office_booking_holidays (
+    id            SERIAL PRIMARY KEY,
+    tenant_id     INT NOT NULL,
+    holiday_date  DATE NOT NULL,
+    name          VARCHAR(255) NOT NULL DEFAULT '',
+    created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+    UNIQUE (tenant_id, holiday_date)
+);
+CREATE INDEX IF NOT EXISTS idx_office_booking_holidays_tenant_date
+    ON office_booking_holidays(tenant_id, holiday_date);
 
 -- ---------- Projects ----------
 CREATE TABLE IF NOT EXISTS projects (
@@ -382,7 +396,7 @@ BEGIN
     FOR t IN SELECT unnest(ARRAY[
         'tenants','users','customers','resources','projects',
         'smtp_config','year_config','tenant_config','customer_licenses',
-        'tenant_roles','office_booking_config','office_bookings'
+        'tenant_roles','office_booking_config','office_bookings','office_booking_holidays'
     ]) LOOP
         EXECUTE format(
             'DROP TRIGGER IF EXISTS trg_%s_upd ON %I; '

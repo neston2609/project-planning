@@ -348,7 +348,7 @@ export default function ResourcePlanning() {
                     <div style={{ width: RESOURCE_W + totalWidth, height: 1 }} />
                 </div>
                 <div ref={mainScrollRef} onScroll={onMainScroll}
-                     className="card !rounded-t-none overflow-x-auto overflow-y-hidden">
+                     className="card !rounded-t-none overflow-x-auto overflow-y-hidden resource-planning-gantt">
                     <div className="relative" style={{ minWidth: RESOURCE_W + totalWidth }}>
                         {/* Today vertical line — spans the full grid below the header */}
                         {todayLeft >= 0 && (
@@ -370,15 +370,15 @@ export default function ResourcePlanning() {
                         )}
 
                         {/* Header rows: months + weeks */}
-                        <div className="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-slate-200">
+                        <div className="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-slate-200 rp-gantt-header">
                             {/* Month band */}
                             <div className="flex">
                                 <div className="shrink-0 flex border-r-2 border-slate-300" style={{ width: RESOURCE_W }}>
-                                    <div className="px-3 py-2 text-xs font-bold text-slate-600 uppercase tracking-wider border-r border-slate-200"
+                                    <div className="px-3 py-2 text-xs font-bold text-slate-600 uppercase tracking-wider border-r border-slate-200 rp-resource-header"
                                          style={{ width: COL_NAME_W }}>Full Name</div>
-                                    <div className="px-3 py-2 text-xs font-bold text-slate-600 uppercase tracking-wider border-r border-slate-200"
+                                    <div className="px-3 py-2 text-xs font-bold text-slate-600 uppercase tracking-wider border-r border-slate-200 rp-resource-header"
                                          style={{ width: COL_NICK_W }}>Nickname</div>
-                                    <div className="px-3 py-2 text-xs font-bold text-slate-600 uppercase tracking-wider"
+                                    <div className="px-3 py-2 text-xs font-bold text-slate-600 uppercase tracking-wider rp-resource-header"
                                          style={{ width: COL_SKILL_W }}>Skill</div>
                                 </div>
                                 <div className="flex relative" style={{ width: totalWidth }}>
@@ -387,7 +387,7 @@ export default function ResourcePlanning() {
                                         if (!span) return null;
                                         return (
                                             <div key={mi}
-                                                 className="text-center text-xs font-bold text-slate-600 border-l border-slate-200 bg-gradient-to-b from-slate-50 to-white py-1"
+                                                 className="text-center text-xs font-bold text-slate-600 border-l border-slate-200 bg-gradient-to-b from-slate-50 to-white py-1 rp-month-header"
                                                  style={{ width: span * WEEK_W }}>
                                                 {m}
                                             </div>
@@ -402,7 +402,7 @@ export default function ResourcePlanning() {
                                     {weeks.map(w => (
                                         <div key={w.weekIdx}
                                              title={`${w.startISO} – ${w.endISO}`}
-                                             className="text-center text-[10px] text-slate-500 border-l border-slate-100 py-1"
+                                             className="text-center text-[10px] text-slate-500 border-l border-slate-100 py-1 rp-week-header"
                                              style={{ width: WEEK_W }}>
                                             W{w.weekIdx}
                                         </div>

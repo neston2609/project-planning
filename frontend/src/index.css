@@ -311,3 +311,30 @@ html.dark .theme-toggle-dark .theme-toggle-thumb {
     background: #6366f1 !important;
     color: #ffffff !important;
 }
+
+html.dark .resource-planning-gantt .rp-gantt-header {
+    background: rgba(15, 23, 42, 0.98) !important;
+    border-color: rgba(100, 116, 139, 0.86) !important;
+}
+
+html.dark .resource-planning-gantt .rp-resource-header,
+html.dark .resource-planning-gantt .rp-month-header,
+html.dark .resource-planning-gantt .rp-week-header {
+    color: #e2e8f0 !important;
+    border-color: rgba(100, 116, 139, 0.78) !important;
+}
+
+html.dark .resource-planning-gantt .rp-resource-header {
+    background: rgba(15, 23, 42, 0.98) !important;
+}
+
+html.dark .resource-planning-gantt .rp-month-header {
+    background: linear-gradient(180deg, rgba(49, 46, 129, 0.88), rgba(30, 41, 59, 0.98)) !important;
+    color: #ffffff !important;
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+}
+
+html.dark .resource-planning-gantt .rp-week-header {
+    background: rgba(15, 23, 42, 0.94) !important;
+    color: #cbd5e1 !important;
+}

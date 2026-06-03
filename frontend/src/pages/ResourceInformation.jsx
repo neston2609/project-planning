@@ -7,7 +7,7 @@ import { useAuth } from '../auth';
 import {
     UserCircleIcon, MagnifyingGlassIcon, FunnelIcon,
     EnvelopeIcon, IdentificationIcon, BriefcaseIcon,
-    PencilSquareIcon, ArrowUpTrayIcon, TrashIcon
+    PencilSquareIcon, ArrowUpTrayIcon, TrashIcon, PhoneIcon
 } from '@heroicons/react/24/outline';
 
 export default function ResourceInformation() {
@@ -52,6 +52,7 @@ export default function ResourceInformation() {
                 nick_name: f.nick_name || '',
                 role: f.role || '',
                 email: f.email || '',
+                mobile_phone: f.mobile_phone || '',
                 skill: f.skill || '',
                 picture_data: f.picture_data || null
             };
@@ -85,6 +86,7 @@ export default function ResourceInformation() {
                 (r.nick_name    || '').toLowerCase().includes(q) ||
                 (r.role         || '').toLowerCase().includes(q) ||
                 (r.email        || '').toLowerCase().includes(q) ||
+                (r.mobile_phone || '').toLowerCase().includes(q) ||
                 (r.skill        || '').toLowerCase().includes(q) ||
                 (r.emp_id       || '').toLowerCase().includes(q)
             );
@@ -155,7 +157,7 @@ export default function ResourceInformation() {
                 <div className="flex items-center gap-2 flex-1 min-w-[240px]">
                     <MagnifyingGlassIcon className="w-5 h-5 text-slate-400" />
                     <input className="input !border-0 !bg-transparent !p-0 focus:!ring-0 flex-1"
-                        placeholder="Search by name / nickname / role / email / skill..."
+                        placeholder="Search by name / nickname / role / email / mobile / skill..."
                         value={search} onChange={e => setSearch(e.target.value)} />
                 </div>
                 <div className="flex items-center gap-1.5">
@@ -260,6 +262,12 @@ function ResourceCard({ r, userId, onEdit }) {
                         <a href={`mailto:${r.email}`} className="truncate text-indigo-600 hover:underline">{r.email}</a>
                     </div>
                 )}
+                {r.mobile_phone && (
+                    <div className="flex items-center gap-2 text-slate-600 min-w-0">
+                        <PhoneIcon className="w-4 h-4 text-slate-400 shrink-0" />
+                        <a href={`tel:${r.mobile_phone}`} className="truncate text-indigo-600 hover:underline">{r.mobile_phone}</a>
+                    </div>
+                )}
                 {r.erp_username && (
                     <div className="flex items-center gap-2 text-slate-600">
                         <UserCircleIcon className="w-4 h-4 text-slate-400 shrink-0" />
@@ -338,6 +346,7 @@ function OwnResourceForm({ initial, onClose, onSave }) {
                 <div><label className="label">Nickname</label><input className="input" value={f.nick_name || ''} onChange={e => setF({ ...f, nick_name: e.target.value })} /></div>
                 <div><label className="label">Role</label><input className="input" value={f.role || ''} onChange={e => setF({ ...f, role: e.target.value })} /></div>
                 <div><label className="label">Email</label><input className="input" value={f.email || ''} onChange={e => setF({ ...f, email: e.target.value })} /></div>
+                <div><label className="label">Mobile Phone</label><input className="input" value={f.mobile_phone || ''} onChange={e => setF({ ...f, mobile_phone: e.target.value })} /></div>
                 <div><label className="label">Emp ID</label><input className="input bg-slate-100" value={f.emp_id || ''} disabled /></div>
                 <div className="col-span-2"><label className="label">ERP Username</label><input className="input bg-slate-100" value={f.erp_username || ''} disabled /></div>
                 <div className="col-span-2"><label className="label">Skill</label><textarea rows={3} className="input" value={f.skill || ''} onChange={e => setF({ ...f, skill: e.target.value })} /></div>

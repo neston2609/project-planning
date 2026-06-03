@@ -304,10 +304,10 @@ router.post('/:id/create-user',
                 || resource.nick_name
                 || username;
             const { rows: userRows } = await client.query(
-                `INSERT INTO users(tenant_id, username, password_hash, full_name, email, role, tenant_role_id, must_change_password)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE)
+                `INSERT INTO users(tenant_id, username, password_hash, full_name, email, phone_number, role, tenant_role_id, must_change_password)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE)
                  RETURNING id`,
-                [req.tenantId, username, hash, fullName, resource.email || '', role.base_role, role.id]
+                [req.tenantId, username, hash, fullName, resource.email || '', resource.mobile_phone || '', role.base_role, role.id]
             );
 
             await client.query(
@@ -351,6 +351,7 @@ const resourceValidators = [
     body('emp_id').optional().isString(),
     body('role').optional().isString(),
     body('email').optional().isString(),
+    body('mobile_phone').optional().isString(),
     body('erp_username').optional().isString(),
     body('skill').optional().isString(),
     body('picture_data').optional({ nullable: true }).custom((v) => {
@@ -368,10 +369,10 @@ router.post('/', resourceValidators, async (req, res) => {
     const b = req.body;
     try {
         const { rows } = await db.query(
-            `INSERT INTO resources(tenant_id, emp_id, first_name, last_name, nick_name, role, email, erp_username, skill, picture_data)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+            `INSERT INTO resources(tenant_id, emp_id, first_name, last_name, nick_name, role, email, mobile_phone, erp_username, skill, picture_data)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
             [req.tenantId, b.emp_id || null, b.first_name || '', b.last_name || '', b.nick_name || '',
-             b.role || '', b.email || '', b.erp_username || '', b.skill || '',
+             b.role || '', b.email || '', b.mobile_phone || '', b.erp_username || '', b.skill || '',
              b.picture_data || null]
         );
         res.status(201).json(rows[0]);
@@ -408,18 +409,19 @@ router.put('/:id', param('id').isInt(), resourceValidators, async (req, res) => 
             nick_name: b.nick_name !== undefined ? b.nick_name : existing.nick_name,
             role: b.role !== undefined ? b.role : existing.role,
             email: b.email !== undefined ? b.email : existing.email,
+            mobile_phone: b.mobile_phone !== undefined ? b.mobile_phone : existing.mobile_phone,
             erp_username: isManager && b.erp_username !== undefined ? b.erp_username : existing.erp_username,
             skill: b.skill !== undefined ? b.skill : existing.skill
         };
 
         const { rows } = await db.query(
             `UPDATE resources SET emp_id=$1, first_name=$2, last_name=$3, nick_name=$4,
-                                  role=$5, email=$6, erp_username=$7, skill=$8,
-                                  picture_data = CASE WHEN $9::text = '__KEEP__' THEN picture_data
-                                                      ELSE NULLIF($10::text, '__NULL__') END
-             WHERE id=$11 AND tenant_id=$12 RETURNING *`,
+                                  role=$5, email=$6, mobile_phone=$7, erp_username=$8, skill=$9,
+                                  picture_data = CASE WHEN $10::text = '__KEEP__' THEN picture_data
+                                                      ELSE NULLIF($11::text, '__NULL__') END
+             WHERE id=$12 AND tenant_id=$13 RETURNING *`,
             [next.emp_id || null, next.first_name || '', next.last_name || '', next.nick_name || '',
-             next.role || '', next.email || '', next.erp_username || '', next.skill || '',
+             next.role || '', next.email || '', next.mobile_phone || '', next.erp_username || '', next.skill || '',
              newPic === '__KEEP__' ? '__KEEP__' : 'replace',
              newPic === '__KEEP__' ? null : (newPic === null ? '__NULL__' : newPic),
              req.params.id, req.tenantId]

@@ -100,6 +100,18 @@ function capacityForDate(bookings, config) {
     };
 }
 
+async function holidaysBetween(tenantId, start, end, client = db) {
+    const { rows } = await client.query(
+        `SELECT id, to_char(holiday_date, 'YYYY-MM-DD') AS holiday_date, name
+           FROM office_booking_holidays
+          WHERE tenant_id=$1
+            AND holiday_date BETWEEN $2::date AND $3::date
+          ORDER BY holiday_date`,
+        [tenantId, start, end]
+    );
+    return rows;
+}
+
 router.get('/',
     query('start').custom(isISODate),
     query('end').custom(isISODate),
@@ -109,6 +121,7 @@ router.get('/',
         if (req.query.end < req.query.start) return res.status(400).json({ error: 'Invalid date range' });
 
         const config = await ensureConfig(req.tenantId);
+        const holidays = await holidaysBetween(req.tenantId, req.query.start, req.query.end);
         const { rows } = await db.query(
             `${bookingSelect}
               WHERE ob.tenant_id=$1
@@ -116,7 +129,83 @@ router.get('/',
               ORDER BY ob.booking_date, ob.is_extra, display_name, u.username`,
             [req.tenantId, req.query.start, req.query.end]
         );
-        res.json({ config, today: localDateISO(), bookings: rows });
+        res.json({ config, today: localDateISO(), bookings: rows, holidays });
+    }
+);
+
+router.get('/holidays',
+    query('year').optional({ nullable: true }).isInt({ min: 1900, max: 9999 }),
+    query('start').optional({ nullable: true }).custom(isISODate),
+    query('end').optional({ nullable: true }).custom(isISODate),
+    async (req, res) => {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+
+        let start = req.query.start;
+        let end = req.query.end;
+        if (!start && !end) {
+            const year = Number(req.query.year) || new Date().getFullYear();
+            start = `${year}-01-01`;
+            end = `${year}-12-31`;
+        }
+        if (!start || !end) return res.status(400).json({ error: 'start/end or year is required' });
+        if (end < start) return res.status(400).json({ error: 'Invalid date range' });
+        res.json(await holidaysBetween(req.tenantId, start, end));
+    }
+);
+
+router.post('/holidays',
+    requireRole('superadmin'),
+    body('holiday_date').custom(isISODate),
+    body('name').isString().trim().notEmpty().isLength({ max: 255 }),
+    async (req, res) => {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+        const { rows } = await db.query(
+            `INSERT INTO office_booking_holidays(tenant_id, holiday_date, name)
+             VALUES ($1,$2::date,$3)
+             ON CONFLICT (tenant_id, holiday_date) DO UPDATE
+                SET name=EXCLUDED.name,
+                    updated_at=NOW()
+             RETURNING id, to_char(holiday_date, 'YYYY-MM-DD') AS holiday_date, name`,
+            [req.tenantId, req.body.holiday_date, String(req.body.name || '').trim()]
+        );
+        res.status(201).json(rows[0]);
+    }
+);
+
+router.put('/holidays/:id',
+    requireRole('superadmin'),
+    param('id').isInt(),
+    body('holiday_date').custom(isISODate),
+    body('name').isString().trim().notEmpty().isLength({ max: 255 }),
+    async (req, res) => {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+        const { rows } = await db.query(
+            `UPDATE office_booking_holidays
+                SET holiday_date=$1::date,
+                    name=$2,
+                    updated_at=NOW()
+              WHERE id=$3 AND tenant_id=$4
+              RETURNING id, to_char(holiday_date, 'YYYY-MM-DD') AS holiday_date, name`,
+            [req.body.holiday_date, String(req.body.name || '').trim(), req.params.id, req.tenantId]
+        );
+        if (!rows[0]) return res.status(404).json({ error: 'Holiday not found' });
+        res.json(rows[0]);
+    }
+);
+
+router.delete('/holidays/:id',
+    requireRole('superadmin'),
+    param('id').isInt(),
+    async (req, res) => {
+        const { rowCount } = await db.query(
+            'DELETE FROM office_booking_holidays WHERE id=$1 AND tenant_id=$2',
+            [req.params.id, req.tenantId]
+        );
+        if (!rowCount) return res.status(404).json({ error: 'Holiday not found' });
+        res.json({ ok: true });
     }
 );
 

@@ -30,6 +30,11 @@ function monthLabel(date) {
     return date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
 }
 
+function bookingDayLabel(isoDate) {
+    const d = new Date(`${isoDate}T00:00:00`);
+    return `${WEEKDAYS[d.getDay()]} ${d.getDate()}`;
+}
+
 function monthStart(date) {
     return new Date(date.getFullYear(), date.getMonth(), 1);
 }
@@ -57,6 +62,7 @@ function calendarDays(monthDate) {
 export default function OfficeBooking() {
     const { user } = useAuth();
     const [bookings, setBookings] = useState([]);
+    const [holidays, setHolidays] = useState([]);
     const [config, setConfig] = useState({ max_bookings_per_day: 6, extra_bookings_per_day: 3 });
     const [today, setToday] = useState(dateISO(new Date()));
     const [loading, setLoading] = useState(true);
@@ -79,6 +85,12 @@ export default function OfficeBooking() {
         }
         return map;
     }, [bookings]);
+
+    const holidaysByDate = useMemo(() => {
+        const map = new Map();
+        for (const h of holidays) map.set(h.holiday_date, h);
+        return map;
+    }, [holidays]);
 
     const myBookings = useMemo(() => {
         return bookings
@@ -104,6 +116,7 @@ export default function OfficeBooking() {
         try {
             const res = await api.get(`/office-bookings?start=${range.start}&end=${range.end}`);
             setBookings(res.data.bookings || []);
+            setHolidays(res.data.holidays || []);
             setConfig(res.data.config || { max_bookings_per_day: 6, extra_bookings_per_day: 3 });
             setToday(res.data.today || dateISO(new Date()));
         } catch (err) {
@@ -253,6 +266,7 @@ export default function OfficeBooking() {
                                    today={today}
                                    userId={user.id}
                                    bookingsByDate={byDate}
+                                   holidaysByDate={holidaysByDate}
                                    config={config}
                                    loading={loading}
                                    onDayClick={onDayClick}
@@ -277,7 +291,7 @@ export default function OfficeBooking() {
     );
 }
 
-function MonthCalendar({ month, today, userId, bookingsByDate, config, loading, onDayClick, onSummary }) {
+function MonthCalendar({ month, today, userId, bookingsByDate, holidaysByDate, config, loading, onDayClick, onSummary }) {
     const days = calendarDays(month);
     return (
         <div className="card overflow-hidden">
@@ -295,6 +309,7 @@ function MonthCalendar({ month, today, userId, bookingsByDate, config, loading, 
                     if (!day) return <div key={`empty-${idx}`} className="min-h-[120px] border-r border-b border-slate-100 bg-slate-50/60" />;
                     const date = dateISO(day);
                     const bookings = bookingsByDate.get(date) || [];
+                    const holiday = holidaysByDate.get(date);
                     const normal = bookings.filter(b => !b.is_extra).length;
                     const extra = bookings.filter(b => b.is_extra).length;
                     const mine = bookings.some(b => Number(b.user_id) === Number(userId));
@@ -305,7 +320,9 @@ function MonthCalendar({ month, today, userId, bookingsByDate, config, loading, 
                                 className={`min-h-[120px] border-r border-b border-slate-100 p-2 text-left align-top transition
                                             ${isPast ? 'bg-slate-50 text-slate-400' : 'hover:bg-blue-50'}
                                             ${mine ? 'ring-2 ring-inset ring-blue-400 bg-blue-50/60' : ''}
-                                            ${isFull && !mine ? 'bg-amber-50/70' : ''}`}
+                                            ${isFull && !mine ? 'bg-amber-50/70' : ''}
+                                            ${holiday ? 'bg-rose-50/80 border-rose-200 hover:bg-rose-100/80' : ''}`}
+                                title={holiday ? holiday.name : undefined}
                                 onClick={() => onDayClick(day)}>
                             <div className="flex items-start justify-between gap-1">
                                 <span className="font-bold text-sm">{day.getDate()}</span>
@@ -313,6 +330,11 @@ function MonthCalendar({ month, today, userId, bookingsByDate, config, loading, 
                                     {normal}/{config.max_bookings_per_day}
                                 </span>
                             </div>
+                            {holiday && (
+                                <div className="mt-1 rounded bg-rose-100 px-2 py-1 text-[10px] font-semibold text-rose-700" title={holiday.name}>
+                                    {holiday.name}
+                                </div>
+                            )}
                             {extra > 0 && <div className="mt-1 text-[10px] text-amber-700">Extra {extra}/{config.extra_bookings_per_day}</div>}
                             <div className="mt-2 space-y-1">
                                 {loading && bookings.length === 0 && <div className="h-4 rounded bg-slate-100 animate-pulse" />}
@@ -466,7 +488,7 @@ function SummaryModal({ summary, onClose }) {
                                         {p.days.map(d => (
                                             <span key={d.booking_id}
                                                   className="rounded-full px-2 py-1 text-xs bg-blue-100 text-blue-800">
-                                                {d.booking_date.slice(-2)}
+                                                {bookingDayLabel(d.booking_date)}
                                             </span>
                                         ))}
                                     </div>
