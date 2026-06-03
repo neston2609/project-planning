@@ -41,6 +41,13 @@ function datesBetween(start, end) {
     return out;
 }
 
+function weekendHoliday(date) {
+    const day = new Date(`${date}T00:00:00`).getDay();
+    if (day === 0) return { id: null, holiday_date: date, name: 'Sunday', is_weekend: true };
+    if (day === 6) return { id: null, holiday_date: date, name: 'Saturday', is_weekend: true };
+    return null;
+}
+
 async function ensureConfig(tenantId, client = db) {
     await client.query(
         `INSERT INTO office_booking_config(tenant_id, max_bookings_per_day, extra_bookings_per_day)
@@ -116,6 +123,8 @@ async function holidaysBetween(tenantId, start, end, client = db) {
 }
 
 async function holidayForDate(tenantId, date, client = db) {
+    const weekend = weekendHoliday(date);
+    if (weekend) return weekend;
     const { rows } = await client.query(
         `SELECT id, to_char(holiday_date, 'YYYY-MM-DD') AS holiday_date, name
            FROM office_booking_holidays
@@ -410,7 +419,7 @@ router.post('/bulk',
             const holidaysByDate = new Map(holidays.map(h => [h.holiday_date, h]));
 
             for (const bookingDate of targetDates) {
-                const holiday = holidaysByDate.get(bookingDate);
+                const holiday = holidaysByDate.get(bookingDate) || weekendHoliday(bookingDate);
                 if (holiday) {
                     skipped.push({ booking_date: bookingDate, reason: 'holiday', holiday });
                     continue;

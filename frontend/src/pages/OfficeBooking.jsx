@@ -59,6 +59,13 @@ function calendarDays(monthDate) {
     return days;
 }
 
+function weekendHoliday(isoDate) {
+    const day = new Date(`${isoDate}T00:00:00`).getDay();
+    if (day === 0) return { holiday_date: isoDate, name: 'Sunday', is_weekend: true };
+    if (day === 6) return { holiday_date: isoDate, name: 'Saturday', is_weekend: true };
+    return null;
+}
+
 export default function OfficeBooking() {
     const { user } = useAuth();
     const [bookings, setBookings] = useState([]);
@@ -89,8 +96,16 @@ export default function OfficeBooking() {
     const holidaysByDate = useMemo(() => {
         const map = new Map();
         for (const h of holidays) map.set(h.holiday_date, h);
+        for (const month of months) {
+            for (const day of calendarDays(month)) {
+                if (!day) continue;
+                const iso = dateISO(day);
+                const weekend = weekendHoliday(iso);
+                if (weekend && !map.has(iso)) map.set(iso, weekend);
+            }
+        }
         return map;
-    }, [holidays]);
+    }, [holidays, months]);
 
     const myBookings = useMemo(() => {
         return bookings
@@ -257,7 +272,7 @@ export default function OfficeBooking() {
                             <p>3. ถ้าวันที่เลือกเต็มแล้ว ระบบจะแสดงรายชื่อผู้จอง และสามารถขอจองกรณีพิเศษพร้อมระบุเหตุผลได้</p>
                             <p>4. ใช้ Book by Weekday เพื่อเลือก จ.-ศ. แล้วจองซ้ำทุกวันนั้นในเดือนปัจจุบันและเดือนถัดไป</p>
                             <p>5. Hover ที่วันที่บน Calendar เพื่อดูรายชื่อคนที่ Book วันนั้นทั้งหมด</p>
-                            <p>6. วันที่เป็นวันหยุดบริษัทจะแสดงสีต่างจากวันอื่น และไม่สามารถ Book ได้</p>
+                            <p>6. วันที่เป็นวันหยุดบริษัท รวมถึงวันเสาร์-อาทิตย์ จะแสดงสีต่างจากวันอื่น และไม่สามารถ Book ได้</p>
                         </div>
                     </div>
                 </div>
@@ -324,13 +339,33 @@ function MonthCalendar({ month, today, userId, bookingsByDate, holidaysByDate, c
                         holiday ? `Holiday: ${holiday.name}` : '',
                         bookedNames
                     ].filter(Boolean).join('\n\n');
+                    if (holiday) {
+                        return (
+                            <button key={date}
+                                    className={`min-h-[120px] border-r border-b border-rose-300 p-2 text-left align-top cursor-not-allowed
+                                                bg-[repeating-linear-gradient(135deg,rgba(255,228,230,0.98)_0px,rgba(255,228,230,0.98)_10px,rgba(254,205,211,0.72)_10px,rgba(254,205,211,0.72)_20px)]
+                                                ${isPast ? 'text-rose-400' : 'text-rose-900'}`}
+                                    title={holiday.name}
+                                    onClick={() => onDayClick(day)}>
+                                <div className="flex items-start justify-between gap-1">
+                                    <span className="font-bold text-sm">{day.getDate()}</span>
+                                    <span className="text-[10px] rounded-full px-2 py-0.5 bg-rose-600 text-white">
+                                        Holiday
+                                    </span>
+                                </div>
+                                <div className="mt-3 rounded-lg border border-rose-300 bg-white/85 px-2 py-2 text-xs font-bold text-rose-800 shadow-sm"
+                                     title={holiday.name}>
+                                    {holiday.name}
+                                </div>
+                            </button>
+                        );
+                    }
                     return (
                         <button key={date}
                                 className={`min-h-[120px] border-r border-b border-slate-100 p-2 text-left align-top transition
                                             ${isPast ? 'bg-slate-50 text-slate-400' : 'hover:bg-blue-50'}
                                             ${mine ? 'ring-2 ring-inset ring-blue-400 bg-blue-50/60' : ''}
-                                            ${isFull && !mine ? 'bg-amber-50/70' : ''}
-                                            ${holiday ? 'bg-rose-50/80 border-rose-200 cursor-not-allowed' : ''}`}
+                                            ${isFull && !mine ? 'bg-amber-50/70' : ''}`}
                                 title={cellTitle || undefined}
                                 onClick={() => onDayClick(day)}>
                             <div className="flex items-start justify-between gap-1">
@@ -339,11 +374,6 @@ function MonthCalendar({ month, today, userId, bookingsByDate, holidaysByDate, c
                                     {normal}/{config.max_bookings_per_day}
                                 </span>
                             </div>
-                            {holiday && (
-                                <div className="mt-1 rounded bg-rose-100 px-2 py-1 text-[10px] font-semibold text-rose-700" title={holiday.name}>
-                                    {holiday.name}
-                                </div>
-                            )}
                             {extra > 0 && <div className="mt-1 text-[10px] text-amber-700">Extra {extra}/{config.extra_bookings_per_day}</div>}
                             <div className="mt-2 space-y-1">
                                 {loading && bookings.length === 0 && <div className="h-4 rounded bg-slate-100 animate-pulse" />}
