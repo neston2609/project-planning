@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import Modal from '../components/Modal';
 import { useAuth, isAdmin } from '../auth';
 import {
-    ArrowUpTrayIcon, BookOpenIcon, LinkIcon, MagnifyingGlassIcon,
+    ArrowUpTrayIcon, BookOpenIcon, FunnelIcon, LinkIcon, MagnifyingGlassIcon,
     PaperClipIcon, PencilSquareIcon, PlusIcon, TrashIcon
 } from '@heroicons/react/24/outline';
 
@@ -33,9 +33,24 @@ export default function KnowledgeBase() {
     const [articles, setArticles] = useState([]);
     const [config, setConfig] = useState({ categories: [], products: [], version_limit: 20 });
     const [search, setSearch] = useState('');
+    const [categoryFilter, setCategoryFilter] = useState(() => new Set());
+    const [productFilter, setProductFilter] = useState(() => new Set());
     const [selected, setSelected] = useState(null);
     const [edit, setEdit] = useState(null);
     const canDelete = isAdmin(user);
+
+    function toggleSetFilter(setter, value) {
+        setter(prev => {
+            const next = new Set(prev);
+            if (next.has(value)) next.delete(value); else next.add(value);
+            return next;
+        });
+    }
+
+    function clearFilters() {
+        setCategoryFilter(new Set());
+        setProductFilter(new Set());
+    }
 
     async function load() {
         const [cfg, list] = await Promise.all([
@@ -82,16 +97,47 @@ export default function KnowledgeBase() {
         }
     }
 
+    const categoryCounts = useMemo(() => {
+        const m = new Map();
+        for (const a of articles) {
+            const key = a.category_id ? String(a.category_id) : '__none__';
+            const label = (a.category_name || '').trim() || 'No category';
+            const cur = m.get(key) || { key, label, count: 0 };
+            cur.count += 1;
+            m.set(key, cur);
+        }
+        return Array.from(m.values()).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+    }, [articles]);
+
+    const productCounts = useMemo(() => {
+        const m = new Map();
+        for (const a of articles) {
+            const key = a.product_id ? String(a.product_id) : '__none__';
+            const label = (a.product_name || '').trim() || 'No product';
+            const cur = m.get(key) || { key, label, count: 0 };
+            cur.count += 1;
+            m.set(key, cur);
+        }
+        return Array.from(m.values()).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+    }, [articles]);
+
     const filtered = useMemo(() => {
+        let out = articles;
+        if (categoryFilter.size > 0) {
+            out = out.filter(a => categoryFilter.has(a.category_id ? String(a.category_id) : '__none__'));
+        }
+        if (productFilter.size > 0) {
+            out = out.filter(a => productFilter.has(a.product_id ? String(a.product_id) : '__none__'));
+        }
         const q = search.trim().toLowerCase();
-        if (!q) return articles;
-        return articles.filter(a =>
+        if (!q) return out;
+        return out.filter(a =>
             (a.title || '').toLowerCase().includes(q) ||
             (a.category_name || '').toLowerCase().includes(q) ||
             (a.product_name || '').toLowerCase().includes(q) ||
             (a.tags || []).some(tag => String(tag).toLowerCase().includes(q))
         );
-    }, [articles, search]);
+    }, [articles, search, categoryFilter, productFilter]);
 
     return (
         <div className="space-y-4">
@@ -112,8 +158,33 @@ export default function KnowledgeBase() {
                 <input className="input !border-0 !bg-transparent !p-0 focus:!ring-0 flex-1"
                        placeholder="Search title / category / product / tags..."
                        value={search} onChange={e => setSearch(e.target.value)} />
+                {(categoryFilter.size > 0 || productFilter.size > 0) && (
+                    <button type="button" onClick={clearFilters}
+                            className="text-xs text-slate-500 hover:text-indigo-600 underline whitespace-nowrap">
+                        Clear filters ({categoryFilter.size + productFilter.size})
+                    </button>
+                )}
                 <span className="text-xs text-slate-500">{filtered.length} article(s)</span>
             </div>
+
+            {articles.length > 0 && (
+                <div className="card p-3 space-y-3">
+                    <ArticleFilterChips label="By Category"
+                                        totalLabel="All Categories"
+                                        totalCount={articles.length}
+                                        items={categoryCounts}
+                                        selected={categoryFilter}
+                                        onToggle={value => toggleSetFilter(setCategoryFilter, value)}
+                                        onClear={() => setCategoryFilter(new Set())} />
+                    <ArticleFilterChips label="By Product"
+                                        totalLabel="All Products"
+                                        totalCount={articles.length}
+                                        items={productCounts}
+                                        selected={productFilter}
+                                        onToggle={value => toggleSetFilter(setProductFilter, value)}
+                                        onClear={() => setProductFilter(new Set())} />
+                </div>
+            )}
 
             <div className="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-4">
                 <div className="space-y-3">
@@ -160,6 +231,41 @@ export default function KnowledgeBase() {
                              onClose={() => setEdit(null)}
                              onSave={saveArticle} />
             )}
+        </div>
+    );
+}
+
+function ArticleFilterChips({ label, totalLabel, totalCount, items, selected, onToggle, onClear }) {
+    return (
+        <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1 text-xs uppercase tracking-wider font-bold text-slate-500 mr-1">
+                <FunnelIcon className="w-4 h-4 text-indigo-500" /> {label}
+            </span>
+            <button type="button" onClick={onClear}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-semibold shadow transition ${
+                        selected.size === 0
+                            ? 'text-white ring-2 ring-offset-2 ring-indigo-400'
+                            : 'text-white hover:brightness-110'
+                    }`}
+                    style={{ backgroundImage: 'var(--grad-brand)' }}>
+                <span className="text-base font-extrabold">{totalCount}</span>
+                <span className="opacity-90">{totalLabel}</span>
+            </button>
+            {items.map(item => {
+                const active = selected.has(item.key);
+                return (
+                    <button key={item.key} type="button"
+                            onClick={() => onToggle(item.key)}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm transition ${
+                                active
+                                    ? 'bg-indigo-600 text-white border border-indigo-600 shadow ring-2 ring-offset-2 ring-indigo-300'
+                                    : 'bg-white border border-slate-200 hover:border-indigo-300 hover:shadow-sm'
+                            }`}>
+                        <span className={`font-bold tabular-nums ${active ? 'text-white' : 'text-indigo-700'}`}>{item.count}</span>
+                        <span className={active ? 'text-white' : 'text-slate-600'}>{item.label}</span>
+                    </button>
+                );
+            })}
         </div>
     );
 }
