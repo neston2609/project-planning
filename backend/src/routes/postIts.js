@@ -7,6 +7,7 @@ const router = express.Router();
 router.use(requireAuth, requireTenant);
 
 const DEFAULT_EXPIRY_DAYS = 30;
+const DEFAULT_BOARD_SIZE = 40;
 const EXPIRING_SOON_DAYS = 7;
 const COLORS = ['yellow', 'pink', 'blue', 'green', 'purple', 'orange', 'mint', 'lavender', 'peach', 'cream', 'gray', 'teal', 'indigo', 'coral'];
 const FONT_COLORS = ['slate', 'blue', 'red', 'green', 'purple', 'brown', 'navy', 'cyan', 'orange', 'pink', 'gray'];
@@ -54,6 +55,15 @@ async function expiryDays(tenantId, client = db) {
     return Number.isInteger(n) && n > 0 ? n : DEFAULT_EXPIRY_DAYS;
 }
 
+async function boardSize(tenantId, client = db) {
+    const { rows } = await client.query(
+        "SELECT value FROM tenant_config WHERE tenant_id=$1 AND key='post_it_board_size'",
+        [tenantId]
+    );
+    const n = Number(rows[0]?.value || DEFAULT_BOARD_SIZE);
+    return Number.isInteger(n) && n >= 1 && n <= 100 ? n : DEFAULT_BOARD_SIZE;
+}
+
 function mapNote(row, userId) {
     const expiresAt = row.expires_at ? new Date(row.expires_at) : null;
     const today = new Date();
@@ -85,8 +95,9 @@ function mapReply(row) {
 }
 
 router.get('/', async (req, res) => {
-    const [days, notes] = await Promise.all([
+    const [days, size, notes] = await Promise.all([
         expiryDays(req.tenantId),
+        boardSize(req.tenantId),
         db.query(
             `SELECT n.id, n.user_id, n.content, n.color, n.font_color, n.font_size,
                     n.expires_at, n.created_at, n.updated_at,
@@ -104,6 +115,7 @@ router.get('/', async (req, res) => {
     res.json({
         config: {
             expiry_days: days,
+            board_size: size,
             expiring_soon_days: EXPIRING_SOON_DAYS
         },
         notes: notes.rows.map(row => mapNote(row, req.user.uid))

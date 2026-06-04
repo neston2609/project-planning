@@ -7,6 +7,7 @@ export default function AppConfigPage() {
     const [licenseDays, setLicenseDays] = useState('');
     const [loginRetentionDays, setLoginRetentionDays] = useState('14');
     const [postItExpiryDays, setPostItExpiryDays] = useState('30');
+    const [postItBoardSize, setPostItBoardSize] = useState('40');
     const [footerText, setFooterText] = useState('');
 
     async function load() {
@@ -15,6 +16,7 @@ export default function AppConfigPage() {
         setLicenseDays(r.data.license_expiring_days || '30');
         setLoginRetentionDays(r.data.login_log_retention_days || '14');
         setPostItExpiryDays(r.data.post_it_expiry_days || '30');
+        setPostItBoardSize(r.data.post_it_board_size || '40');
         setFooterText(r.data.footer_text || 'Implemented and Maintain by BSM RPA Team. For Internal use only');
     }
     useEffect(() => { load(); }, []);
@@ -66,6 +68,17 @@ export default function AppConfigPage() {
         } catch { toast.error('Save failed'); }
     }
 
+    async function savePostItBoardSize() {
+        const n = Number(postItBoardSize);
+        if (!Number.isInteger(n) || n < 1 || n > 100) {
+            return toast.error('Enter a whole number from 1 to 100');
+        }
+        try {
+            await api.put('/admin/app-config/post_it_board_size', { value: String(n) });
+            toast.success('Post-It board size saved');
+        } catch { toast.error('Save failed'); }
+    }
+
     return (
         <div className="space-y-4">
             <h1 className="text-2xl font-bold">App Configuration</h1>
@@ -114,6 +127,18 @@ export default function AppConfigPage() {
                     </p>
                 </div>
                 <button className="btn-primary" onClick={savePostItExpiry}>Save Post-It Expiry</button>
+            </div>
+
+            <div className="card p-4 max-w-md space-y-3">
+                <div>
+                    <label className="label">Post-It Per Board</label>
+                    <input type="number" min="1" max="100" className="input" value={postItBoardSize}
+                           onChange={e => setPostItBoardSize(e.target.value)} />
+                    <p className="text-xs text-slate-400 mt-1">
+                        Maximum number of Post-It notes on each board. The board layout expands notes to fill the board. Default 40.
+                    </p>
+                </div>
+                <button className="btn-primary" onClick={savePostItBoardSize}>Save Post-It Board Size</button>
             </div>
 
             <div className="card p-4 max-w-2xl space-y-3">

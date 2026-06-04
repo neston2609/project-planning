@@ -338,6 +338,7 @@ router.get('/app-config', async (req, res) => {
         footer_text: DEFAULT_FOOTER_TEXT,
         login_log_retention_days: String(DEFAULT_LOGIN_LOG_RETENTION_DAYS),
         post_it_expiry_days: '30',
+        post_it_board_size: '40',
         ...Object.fromEntries(rows.map(r => [r.key, r.value]))
     });
 });

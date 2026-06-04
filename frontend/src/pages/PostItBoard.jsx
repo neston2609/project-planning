@@ -7,7 +7,7 @@ import {
 import api from '../api';
 import Modal from '../components/Modal';
 
-const BOARD_SIZE = 40;
+const DEFAULT_BOARD_SIZE = 40;
 const COLORS = [
     { value: 'yellow', label: 'Yellow', className: 'from-yellow-50 to-yellow-200 border-yellow-300', dot: 'bg-yellow-200', from: '#fefce8', to: '#fde68a' },
     { value: 'pink', label: 'Pink', className: 'from-rose-50 to-rose-200 border-rose-300', dot: 'bg-rose-200', from: '#fff1f2', to: '#fecdd3' },
@@ -60,12 +60,24 @@ function paperBackground(color) {
     return `linear-gradient(135deg, ${color.from}, ${color.to})`;
 }
 
-function chunkBoards(notes) {
+function cleanBoardSize(value) {
+    const n = Number(value);
+    return Number.isInteger(n) && n >= 1 && n <= 100 ? n : DEFAULT_BOARD_SIZE;
+}
+
+function boardLayout(size) {
+    const columns = Math.min(size, Math.max(1, Math.ceil(Math.sqrt(size * 1.6))));
+    const rows = Math.max(1, Math.ceil(size / columns));
+    return { columns, rows };
+}
+
+function chunkBoards(notes, size) {
     const boards = [];
-    for (let i = 0; i < notes.length; i += BOARD_SIZE) {
-        boards.push(notes.slice(i, i + BOARD_SIZE));
+    const boardSize = cleanBoardSize(size);
+    for (let i = 0; i < notes.length; i += boardSize) {
+        boards.push(notes.slice(i, i + boardSize));
     }
-    if (boards.length === 0 || boards[boards.length - 1].length >= BOARD_SIZE) boards.push([]);
+    if (boards.length === 0 || boards[boards.length - 1].length >= boardSize) boards.push([]);
     return boards;
 }
 
@@ -82,7 +94,7 @@ function htmlToText(html) {
 
 export default function PostItBoard() {
     const [notes, setNotes] = useState([]);
-    const [config, setConfig] = useState({ expiry_days: 30, expiring_soon_days: 7 });
+    const [config, setConfig] = useState({ expiry_days: 30, expiring_soon_days: 7, board_size: DEFAULT_BOARD_SIZE });
     const [content, setContent] = useState('');
     const [color, setColor] = useState('yellow');
     const [fontColor, setFontColor] = useState('slate');
@@ -104,7 +116,11 @@ export default function PostItBoard() {
         try {
             const res = await api.get('/post-its');
             setNotes(res.data.notes || []);
-            setConfig(res.data.config || { expiry_days: 30, expiring_soon_days: 7 });
+            setConfig({
+                expiry_days: res.data.config?.expiry_days || 30,
+                expiring_soon_days: res.data.config?.expiring_soon_days || 7,
+                board_size: cleanBoardSize(res.data.config?.board_size)
+            });
         } catch (err) {
             toast.error(err.response?.data?.error || 'Could not load Post-It board');
         } finally {
@@ -254,8 +270,9 @@ export default function PostItBoard() {
         setBoardDragging(false);
     }
 
-    const boards = useMemo(() => chunkBoards(notes), [notes]);
-    const remaining = BOARD_SIZE - (notes.length % BOARD_SIZE || BOARD_SIZE);
+    const boardSize = cleanBoardSize(config.board_size);
+    const boards = useMemo(() => chunkBoards(notes, boardSize), [notes, boardSize]);
+    const remaining = boardSize - (notes.length % boardSize || boardSize);
 
     return (
         <div className="space-y-4">
@@ -320,6 +337,7 @@ export default function PostItBoard() {
                     {boards.map((boardNotes, idx) => (
                         <Board key={idx}
                                index={idx}
+                               boardSize={boardSize}
                                notes={boardNotes}
                                loading={loading && idx === 0}
                                onRemove={remove}
@@ -421,7 +439,8 @@ function RichPostItEditor({ value, paperColor, fontColor, fontSize, onChange, on
     );
 }
 
-function Board({ index, notes, loading, onRemove, onExtend, onEdit, onViewReplies, shouldSuppressClick }) {
+function Board({ index, boardSize, notes, loading, onRemove, onExtend, onEdit, onViewReplies, shouldSuppressClick }) {
+    const layout = boardLayout(boardSize);
     return (
         <section className="relative w-[calc(100vw-3rem)] min-w-[1120px] max-w-[1720px] shrink-0 rounded-xl border-[18px] border-amber-950/80 p-6 shadow-2xl"
                  style={{
@@ -436,9 +455,13 @@ function Board({ index, notes, loading, onRemove, onExtend, onEdit, onViewReplie
                  style={{ boxShadow: 'inset 0 0 0 3px rgba(255,220,160,.22), inset 0 0 18px rgba(0,0,0,.45)' }} />
             <div className="mb-4 flex items-center justify-between text-white drop-shadow">
                 <h2 className="text-lg font-extrabold">Board {index + 1}</h2>
-                <span className="rounded-full bg-black/20 px-3 py-1 text-xs font-semibold">{notes.length}/{BOARD_SIZE}</span>
+                <span className="rounded-full bg-black/20 px-3 py-1 text-xs font-semibold">{notes.length}/{boardSize}</span>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8 gap-5 min-h-[720px] content-start">
+            <div className="grid gap-5 min-h-[720px]"
+                 style={{
+                     gridTemplateColumns: `repeat(${layout.columns}, minmax(0, 1fr))`,
+                     gridTemplateRows: `repeat(${layout.rows}, minmax(160px, 1fr))`
+                 }}>
                 {loading && <div className="rounded bg-white/30 h-36 animate-pulse col-span-2" />}
                 {notes.map(note => (
                     <PostIt key={note.id}
@@ -471,7 +494,7 @@ function PostIt({ note, onRemove, onExtend, onEdit, onViewReplies, shouldSuppres
     }
 
     return (
-        <article className={`relative min-h-[160px] rotate-[-1deg] rounded-sm border bg-gradient-to-br ${color.className} p-4 pt-8 shadow-xl`}
+        <article className={`relative min-h-[160px] h-full rotate-[-1deg] rounded-sm border bg-gradient-to-br ${color.className} p-4 pt-8 shadow-xl`}
                  style={{
                      background: paperBackground(color),
                      borderColor: color.to,

@@ -22,6 +22,7 @@ async function seedTenantConfig(client, tenantId) {
         ['login_log_retention_days', '14'],
         ['kb_version_limit', '20'],
         ['post_it_expiry_days', '30'],
+        ['post_it_board_size', '40'],
         ['footer_text',           'Implemented and Maintain by BSM RPA Team. For Internal use only']
     ];
     for (const [key, value] of defaults) {
