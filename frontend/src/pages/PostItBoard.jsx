@@ -7,20 +7,20 @@ import api from '../api';
 
 const BOARD_SIZE = 40;
 const COLORS = [
-    { value: 'yellow', label: 'Yellow', className: 'from-yellow-50 to-yellow-200 border-yellow-300', dot: 'bg-yellow-200' },
-    { value: 'pink', label: 'Pink', className: 'from-rose-50 to-rose-200 border-rose-300', dot: 'bg-rose-200' },
-    { value: 'blue', label: 'Blue', className: 'from-cyan-50 to-cyan-200 border-cyan-300', dot: 'bg-cyan-200' },
-    { value: 'green', label: 'Green', className: 'from-emerald-50 to-emerald-200 border-emerald-300', dot: 'bg-emerald-200' },
-    { value: 'purple', label: 'Purple', className: 'from-violet-50 to-violet-200 border-violet-300', dot: 'bg-violet-200' },
-    { value: 'orange', label: 'Orange', className: 'from-orange-50 to-orange-200 border-orange-300', dot: 'bg-orange-200' },
-    { value: 'mint', label: 'Mint', className: 'from-teal-50 to-teal-200 border-teal-300', dot: 'bg-teal-200' },
-    { value: 'lavender', label: 'Lavender', className: 'from-fuchsia-50 to-fuchsia-200 border-fuchsia-300', dot: 'bg-fuchsia-200' },
-    { value: 'peach', label: 'Peach', className: 'from-rose-50 to-orange-200 border-orange-300', dot: 'bg-orange-200' },
-    { value: 'cream', label: 'Cream', className: 'from-stone-50 to-amber-100 border-amber-200', dot: 'bg-amber-100' },
-    { value: 'gray', label: 'Gray', className: 'from-slate-50 to-slate-200 border-slate-300', dot: 'bg-slate-200' },
-    { value: 'teal', label: 'Teal', className: 'from-emerald-50 to-cyan-200 border-cyan-300', dot: 'bg-cyan-200' },
-    { value: 'indigo', label: 'Indigo', className: 'from-indigo-50 to-indigo-200 border-indigo-300', dot: 'bg-indigo-200' },
-    { value: 'coral', label: 'Coral', className: 'from-pink-50 to-red-200 border-red-300', dot: 'bg-red-200' }
+    { value: 'yellow', label: 'Yellow', className: 'from-yellow-50 to-yellow-200 border-yellow-300', dot: 'bg-yellow-200', from: '#fefce8', to: '#fde68a' },
+    { value: 'pink', label: 'Pink', className: 'from-rose-50 to-rose-200 border-rose-300', dot: 'bg-rose-200', from: '#fff1f2', to: '#fecdd3' },
+    { value: 'blue', label: 'Blue', className: 'from-cyan-50 to-cyan-200 border-cyan-300', dot: 'bg-cyan-200', from: '#ecfeff', to: '#a5f3fc' },
+    { value: 'green', label: 'Green', className: 'from-emerald-50 to-emerald-200 border-emerald-300', dot: 'bg-emerald-200', from: '#ecfdf5', to: '#a7f3d0' },
+    { value: 'purple', label: 'Purple', className: 'from-violet-50 to-violet-200 border-violet-300', dot: 'bg-violet-200', from: '#f5f3ff', to: '#ddd6fe' },
+    { value: 'orange', label: 'Orange', className: 'from-orange-50 to-orange-200 border-orange-300', dot: 'bg-orange-200', from: '#fff7ed', to: '#fed7aa' },
+    { value: 'mint', label: 'Mint', className: 'from-teal-50 to-teal-200 border-teal-300', dot: 'bg-teal-200', from: '#f0fdfa', to: '#99f6e4' },
+    { value: 'lavender', label: 'Lavender', className: 'from-fuchsia-50 to-fuchsia-200 border-fuchsia-300', dot: 'bg-fuchsia-200', from: '#fdf4ff', to: '#f5d0fe' },
+    { value: 'peach', label: 'Peach', className: 'from-rose-50 to-orange-200 border-orange-300', dot: 'bg-orange-200', from: '#fff1f2', to: '#fed7aa' },
+    { value: 'cream', label: 'Cream', className: 'from-stone-50 to-amber-100 border-amber-200', dot: 'bg-amber-100', from: '#fafaf9', to: '#fef3c7' },
+    { value: 'gray', label: 'Gray', className: 'from-slate-50 to-slate-200 border-slate-300', dot: 'bg-slate-200', from: '#f8fafc', to: '#e2e8f0' },
+    { value: 'teal', label: 'Teal', className: 'from-emerald-50 to-cyan-200 border-cyan-300', dot: 'bg-cyan-200', from: '#ecfdf5', to: '#a5f3fc' },
+    { value: 'indigo', label: 'Indigo', className: 'from-indigo-50 to-indigo-200 border-indigo-300', dot: 'bg-indigo-200', from: '#eef2ff', to: '#c7d2fe' },
+    { value: 'coral', label: 'Coral', className: 'from-pink-50 to-red-200 border-red-300', dot: 'bg-red-200', from: '#fdf2f8', to: '#fecaca' }
 ];
 const FONT_COLORS = [
     { value: 'slate', label: 'Black', className: 'text-slate-900', dot: 'bg-slate-900', hex: '#0f172a' },
@@ -52,6 +52,10 @@ function fontColorFor(value) {
 
 function fontSizeFor(value) {
     return FONT_SIZES.find(s => s.value === value) || FONT_SIZES[1];
+}
+
+function paperBackground(color) {
+    return `linear-gradient(135deg, ${color.from}, ${color.to})`;
 }
 
 function chunkBoards(notes) {
@@ -297,11 +301,15 @@ function RichPostItEditor({ value, paperColor, fontColor, fontSize, onChange, on
             <div className="flex justify-center">
                 <div ref={editorRef}
                      contentEditable
-                     className={`min-h-[150px] w-full max-w-xl rounded-sm border bg-gradient-to-br ${paper.className} p-5 text-sm font-bold leading-relaxed text-slate-900 shadow-inner outline-none`}
+                     className={`min-h-[150px] w-full max-w-xl rounded-sm border ${paper.className} p-5 text-sm font-bold leading-relaxed shadow-inner outline-none`}
                      data-placeholder="Write a message for the board..."
                      onInput={update}
                      onBlur={update}
-                     style={{ wordBreak: 'break-word' }} />
+                     style={{
+                         wordBreak: 'break-word',
+                         background: paperBackground(paper),
+                         color: selectedFontColor.hex
+                     }} />
             </div>
         </div>
     );
