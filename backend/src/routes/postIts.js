@@ -8,8 +8,8 @@ router.use(requireAuth, requireTenant);
 
 const DEFAULT_EXPIRY_DAYS = 30;
 const EXPIRING_SOON_DAYS = 7;
-const COLORS = ['yellow', 'pink', 'blue', 'green', 'purple', 'orange'];
-const FONT_COLORS = ['slate', 'blue', 'red', 'green', 'purple', 'brown'];
+const COLORS = ['yellow', 'pink', 'blue', 'green', 'purple', 'orange', 'mint', 'lavender', 'peach', 'cream', 'gray', 'teal', 'indigo', 'coral'];
+const FONT_COLORS = ['slate', 'blue', 'red', 'green', 'purple', 'brown', 'navy', 'cyan', 'orange', 'pink', 'gray'];
 const FONT_SIZES = ['sm', 'md', 'lg', 'xl'];
 
 function stripHtml(value) {

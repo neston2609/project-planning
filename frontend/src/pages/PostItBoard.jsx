@@ -12,7 +12,15 @@ const COLORS = [
     { value: 'blue', label: 'Blue', className: 'from-cyan-50 to-cyan-200 border-cyan-300', dot: 'bg-cyan-200' },
     { value: 'green', label: 'Green', className: 'from-emerald-50 to-emerald-200 border-emerald-300', dot: 'bg-emerald-200' },
     { value: 'purple', label: 'Purple', className: 'from-violet-50 to-violet-200 border-violet-300', dot: 'bg-violet-200' },
-    { value: 'orange', label: 'Orange', className: 'from-orange-50 to-orange-200 border-orange-300', dot: 'bg-orange-200' }
+    { value: 'orange', label: 'Orange', className: 'from-orange-50 to-orange-200 border-orange-300', dot: 'bg-orange-200' },
+    { value: 'mint', label: 'Mint', className: 'from-teal-50 to-teal-200 border-teal-300', dot: 'bg-teal-200' },
+    { value: 'lavender', label: 'Lavender', className: 'from-fuchsia-50 to-fuchsia-200 border-fuchsia-300', dot: 'bg-fuchsia-200' },
+    { value: 'peach', label: 'Peach', className: 'from-rose-50 to-orange-200 border-orange-300', dot: 'bg-orange-200' },
+    { value: 'cream', label: 'Cream', className: 'from-stone-50 to-amber-100 border-amber-200', dot: 'bg-amber-100' },
+    { value: 'gray', label: 'Gray', className: 'from-slate-50 to-slate-200 border-slate-300', dot: 'bg-slate-200' },
+    { value: 'teal', label: 'Teal', className: 'from-emerald-50 to-cyan-200 border-cyan-300', dot: 'bg-cyan-200' },
+    { value: 'indigo', label: 'Indigo', className: 'from-indigo-50 to-indigo-200 border-indigo-300', dot: 'bg-indigo-200' },
+    { value: 'coral', label: 'Coral', className: 'from-pink-50 to-red-200 border-red-300', dot: 'bg-red-200' }
 ];
 const FONT_COLORS = [
     { value: 'slate', label: 'Black', className: 'text-slate-900', dot: 'bg-slate-900', hex: '#0f172a' },
@@ -20,7 +28,12 @@ const FONT_COLORS = [
     { value: 'red', label: 'Red', className: 'text-red-900', dot: 'bg-red-700', hex: '#b91c1c' },
     { value: 'green', label: 'Green', className: 'text-emerald-900', dot: 'bg-emerald-700', hex: '#047857' },
     { value: 'purple', label: 'Purple', className: 'text-violet-900', dot: 'bg-violet-800', hex: '#5b21b6' },
-    { value: 'brown', label: 'Brown', className: 'text-amber-950', dot: 'bg-amber-900', hex: '#78350f' }
+    { value: 'brown', label: 'Brown', className: 'text-amber-950', dot: 'bg-amber-900', hex: '#78350f' },
+    { value: 'navy', label: 'Navy', className: 'text-indigo-950', dot: 'bg-indigo-950', hex: '#1e1b4b' },
+    { value: 'cyan', label: 'Cyan', className: 'text-cyan-800', dot: 'bg-cyan-700', hex: '#0e7490' },
+    { value: 'orange', label: 'Orange', className: 'text-orange-900', dot: 'bg-orange-700', hex: '#c2410c' },
+    { value: 'pink', label: 'Pink', className: 'text-pink-900', dot: 'bg-pink-700', hex: '#be185d' },
+    { value: 'gray', label: 'Gray', className: 'text-slate-600', dot: 'bg-slate-500', hex: '#475569' }
 ];
 const FONT_SIZES = [
     { value: 'sm', label: 'S', className: 'text-xs', command: '2' },
