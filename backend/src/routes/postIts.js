@@ -9,6 +9,8 @@ router.use(requireAuth, requireTenant);
 const DEFAULT_EXPIRY_DAYS = 30;
 const EXPIRING_SOON_DAYS = 7;
 const COLORS = ['yellow', 'pink', 'blue', 'green', 'purple', 'orange'];
+const FONT_COLORS = ['slate', 'blue', 'red', 'green', 'purple', 'brown'];
+const FONT_SIZES = ['sm', 'md', 'lg', 'xl'];
 
 function cleanContent(value) {
     return String(value || '').trim().slice(0, 500);
@@ -17,6 +19,16 @@ function cleanContent(value) {
 function cleanColor(value) {
     const color = String(value || '').trim().toLowerCase();
     return COLORS.includes(color) ? color : 'yellow';
+}
+
+function cleanFontColor(value) {
+    const color = String(value || '').trim().toLowerCase();
+    return FONT_COLORS.includes(color) ? color : 'slate';
+}
+
+function cleanFontSize(value) {
+    const size = String(value || '').trim().toLowerCase();
+    return FONT_SIZES.includes(size) ? size : 'md';
 }
 
 async function expiryDays(tenantId, client = db) {
@@ -39,6 +51,8 @@ function mapNote(row, userId) {
         id: row.id,
         content: row.content,
         color: row.color,
+        font_color: row.font_color || 'slate',
+        font_size: row.font_size || 'md',
         expires_at: row.expires_at,
         created_at: row.created_at,
         updated_at: row.updated_at,
@@ -51,7 +65,7 @@ router.get('/', async (req, res) => {
     const [days, notes] = await Promise.all([
         expiryDays(req.tenantId),
         db.query(
-            `SELECT id, user_id, content, color, expires_at, created_at, updated_at
+            `SELECT id, user_id, content, color, font_color, font_size, expires_at, created_at, updated_at
                FROM post_it_notes
               WHERE tenant_id=$1
                 AND expires_at >= CURRENT_DATE
@@ -70,7 +84,7 @@ router.get('/', async (req, res) => {
 
 router.get('/mine/expiring', async (req, res) => {
     const { rows } = await db.query(
-        `SELECT id, user_id, content, color, expires_at, created_at, updated_at
+        `SELECT id, user_id, content, color, font_color, font_size, expires_at, created_at, updated_at
            FROM post_it_notes
           WHERE tenant_id=$1
             AND user_id=$2
@@ -85,16 +99,26 @@ router.get('/mine/expiring', async (req, res) => {
 router.post('/',
     body('content').isString().trim().notEmpty().isLength({ max: 500 }),
     body('color').optional().isString(),
+    body('font_color').optional().isString(),
+    body('font_size').optional().isString(),
     async (req, res) => {
         const errs = validationResult(req);
         if (!errs.isEmpty()) return res.status(400).json({ error: 'Message is required and must be 500 characters or fewer' });
 
         const days = await expiryDays(req.tenantId);
         const { rows } = await db.query(
-            `INSERT INTO post_it_notes(tenant_id, user_id, content, color, expires_at)
-             VALUES ($1,$2,$3,$4,CURRENT_DATE + ($5::int * INTERVAL '1 day'))
-             RETURNING id, user_id, content, color, expires_at, created_at, updated_at`,
-            [req.tenantId, req.user.uid, cleanContent(req.body.content), cleanColor(req.body.color), days]
+            `INSERT INTO post_it_notes(tenant_id, user_id, content, color, font_color, font_size, expires_at)
+             VALUES ($1,$2,$3,$4,$5,$6,CURRENT_DATE + ($7::int * INTERVAL '1 day'))
+             RETURNING id, user_id, content, color, font_color, font_size, expires_at, created_at, updated_at`,
+            [
+                req.tenantId,
+                req.user.uid,
+                cleanContent(req.body.content),
+                cleanColor(req.body.color),
+                cleanFontColor(req.body.font_color),
+                cleanFontSize(req.body.font_size),
+                days
+            ]
         );
         res.status(201).json(mapNote(rows[0], req.user.uid));
     }
@@ -109,7 +133,7 @@ router.post('/:id/extend',
                 SET expires_at=CURRENT_DATE + ($1::int * INTERVAL '1 day'),
                     updated_at=NOW()
               WHERE id=$2 AND tenant_id=$3 AND user_id=$4
-              RETURNING id, user_id, content, color, expires_at, created_at, updated_at`,
+              RETURNING id, user_id, content, color, font_color, font_size, expires_at, created_at, updated_at`,
             [days, req.params.id, req.tenantId, req.user.uid]
         );
         if (!rows[0]) return res.status(404).json({ error: 'Post-It not found' });

@@ -295,10 +295,14 @@ CREATE TABLE IF NOT EXISTS post_it_notes (
     user_id     INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     content     TEXT NOT NULL DEFAULT '',
     color       VARCHAR(32) NOT NULL DEFAULT 'yellow',
+    font_color  VARCHAR(32) NOT NULL DEFAULT 'slate',
+    font_size   VARCHAR(32) NOT NULL DEFAULT 'md',
     expires_at  DATE NOT NULL,
     created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at  TIMESTAMP NOT NULL DEFAULT NOW()
 );
+ALTER TABLE post_it_notes ADD COLUMN IF NOT EXISTS font_color VARCHAR(32) NOT NULL DEFAULT 'slate';
+ALTER TABLE post_it_notes ADD COLUMN IF NOT EXISTS font_size VARCHAR(32) NOT NULL DEFAULT 'md';
 CREATE INDEX IF NOT EXISTS idx_post_it_notes_tenant_expires
     ON post_it_notes(tenant_id, expires_at);
 CREATE INDEX IF NOT EXISTS idx_post_it_notes_user

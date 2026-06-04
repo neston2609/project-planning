@@ -7,16 +7,38 @@ import api from '../api';
 
 const BOARD_SIZE = 24;
 const COLORS = [
-    { value: 'yellow', className: 'from-yellow-100 to-yellow-300 border-yellow-300', dot: 'bg-yellow-300' },
-    { value: 'pink', className: 'from-pink-100 to-pink-300 border-pink-300', dot: 'bg-pink-300' },
-    { value: 'blue', className: 'from-sky-100 to-sky-300 border-sky-300', dot: 'bg-sky-300' },
-    { value: 'green', className: 'from-lime-100 to-lime-300 border-lime-300', dot: 'bg-lime-300' },
-    { value: 'purple', className: 'from-violet-100 to-violet-300 border-violet-300', dot: 'bg-violet-300' },
-    { value: 'orange', className: 'from-orange-100 to-orange-300 border-orange-300', dot: 'bg-orange-300' }
+    { value: 'yellow', label: 'Yellow', className: 'from-yellow-50 to-yellow-200 border-yellow-300', dot: 'bg-yellow-200' },
+    { value: 'pink', label: 'Pink', className: 'from-rose-50 to-rose-200 border-rose-300', dot: 'bg-rose-200' },
+    { value: 'blue', label: 'Blue', className: 'from-cyan-50 to-cyan-200 border-cyan-300', dot: 'bg-cyan-200' },
+    { value: 'green', label: 'Green', className: 'from-emerald-50 to-emerald-200 border-emerald-300', dot: 'bg-emerald-200' },
+    { value: 'purple', label: 'Purple', className: 'from-violet-50 to-violet-200 border-violet-300', dot: 'bg-violet-200' },
+    { value: 'orange', label: 'Orange', className: 'from-orange-50 to-orange-200 border-orange-300', dot: 'bg-orange-200' }
+];
+const FONT_COLORS = [
+    { value: 'slate', label: 'Black', className: 'text-slate-900', dot: 'bg-slate-900' },
+    { value: 'blue', label: 'Blue', className: 'text-blue-900', dot: 'bg-blue-800' },
+    { value: 'red', label: 'Red', className: 'text-red-900', dot: 'bg-red-700' },
+    { value: 'green', label: 'Green', className: 'text-emerald-900', dot: 'bg-emerald-700' },
+    { value: 'purple', label: 'Purple', className: 'text-violet-900', dot: 'bg-violet-800' },
+    { value: 'brown', label: 'Brown', className: 'text-amber-950', dot: 'bg-amber-900' }
+];
+const FONT_SIZES = [
+    { value: 'sm', label: 'S', className: 'text-xs' },
+    { value: 'md', label: 'M', className: 'text-sm' },
+    { value: 'lg', label: 'L', className: 'text-base' },
+    { value: 'xl', label: 'XL', className: 'text-lg' }
 ];
 
 function colorFor(value) {
     return COLORS.find(c => c.value === value) || COLORS[0];
+}
+
+function fontColorFor(value) {
+    return FONT_COLORS.find(c => c.value === value) || FONT_COLORS[0];
+}
+
+function fontSizeFor(value) {
+    return FONT_SIZES.find(s => s.value === value) || FONT_SIZES[1];
 }
 
 function chunkBoards(notes) {
@@ -38,6 +60,8 @@ export default function PostItBoard() {
     const [config, setConfig] = useState({ expiry_days: 30, expiring_soon_days: 7 });
     const [content, setContent] = useState('');
     const [color, setColor] = useState('yellow');
+    const [fontColor, setFontColor] = useState('slate');
+    const [fontSize, setFontSize] = useState('md');
     const [loading, setLoading] = useState(true);
 
     async function load() {
@@ -59,7 +83,7 @@ export default function PostItBoard() {
         const message = content.trim();
         if (!message) return toast.error('Please write a message');
         try {
-            await api.post('/post-its', { content: message, color });
+            await api.post('/post-its', { content: message, color, font_color: fontColor, font_size: fontSize });
             setContent('');
             toast.success('Post-It added');
             load();
@@ -112,14 +136,35 @@ export default function PostItBoard() {
                           placeholder="Write a message for the board..."
                           value={content}
                           onChange={e => setContent(e.target.value)} />
-                <div className="flex flex-wrap items-center gap-3">
+                <div className="flex flex-wrap items-center gap-4">
                     <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Paper</span>
                         {COLORS.map(c => (
                             <button key={c.value}
                                     type="button"
                                     className={`w-8 h-8 rounded-full border-2 ${c.dot} ${color === c.value ? 'border-slate-900 ring-2 ring-offset-2 ring-indigo-300' : 'border-white'}`}
-                                    title={c.value}
+                                    title={c.label}
                                     onClick={() => setColor(c.value)} />
+                        ))}
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Font</span>
+                        {FONT_COLORS.map(c => (
+                            <button key={c.value}
+                                    type="button"
+                                    className={`w-8 h-8 rounded-full border-2 ${c.dot} ${fontColor === c.value ? 'border-slate-900 ring-2 ring-offset-2 ring-indigo-300' : 'border-white'}`}
+                                    title={c.label}
+                                    onClick={() => setFontColor(c.value)} />
+                        ))}
+                    </div>
+                    <div className="inline-flex overflow-hidden rounded-lg border border-slate-200 bg-white">
+                        {FONT_SIZES.map(size => (
+                            <button key={size.value}
+                                    type="button"
+                                    className={`h-8 px-3 text-xs font-bold ${fontSize === size.value ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
+                                    onClick={() => setFontSize(size.value)}>
+                                {size.label}
+                            </button>
                         ))}
                     </div>
                     <span className="text-xs text-slate-500">{content.length}/500</span>
@@ -150,13 +195,16 @@ export default function PostItBoard() {
 
 function Board({ index, notes, loading, onRemove, onExtend }) {
     return (
-        <section className="w-[980px] max-w-[calc(100vw-3rem)] shrink-0 rounded-lg border border-amber-900/30 p-5 shadow-inner"
+        <section className="relative w-[980px] max-w-[calc(100vw-3rem)] shrink-0 rounded-xl border-[14px] border-amber-950/80 p-5 shadow-2xl"
                  style={{
-                     backgroundColor: '#b88952',
-                     backgroundImage: 'radial-gradient(rgba(80,45,20,.22) 1px, transparent 1px), radial-gradient(rgba(255,255,255,.18) 1px, transparent 1px)',
-                     backgroundSize: '9px 9px, 13px 13px',
-                     backgroundPosition: '0 0, 4px 6px'
+                     backgroundColor: '#b8864f',
+                     backgroundImage: 'linear-gradient(90deg, rgba(74,38,12,.14) 0 1px, transparent 1px), linear-gradient(0deg, rgba(74,38,12,.10) 0 1px, transparent 1px), radial-gradient(rgba(72,40,18,.30) 1px, transparent 1px), radial-gradient(rgba(255,245,215,.25) 1px, transparent 1px)',
+                     backgroundSize: '46px 46px, 46px 46px, 8px 8px, 14px 14px',
+                     backgroundPosition: '0 0, 0 0, 0 0, 5px 7px',
+                     boxShadow: 'inset 0 0 0 4px rgba(255,255,255,.12), inset 0 0 32px rgba(65,34,12,.45), 0 22px 50px rgba(15,23,42,.22)'
                  }}>
+            <div className="pointer-events-none absolute inset-[-14px] rounded-xl"
+                 style={{ boxShadow: 'inset 0 0 0 3px rgba(255,220,160,.22), inset 0 0 18px rgba(0,0,0,.45)' }} />
             <div className="mb-4 flex items-center justify-between text-white drop-shadow">
                 <h2 className="text-lg font-extrabold">Board {index + 1}</h2>
                 <span className="rounded-full bg-black/20 px-3 py-1 text-xs font-semibold">{notes.length}/{BOARD_SIZE}</span>
@@ -176,11 +224,17 @@ function Board({ index, notes, loading, onRemove, onExtend }) {
 
 function PostIt({ note, onRemove, onExtend }) {
     const color = colorFor(note.color);
+    const fontColor = fontColorFor(note.font_color);
+    const fontSize = fontSizeFor(note.font_size);
     const nearExpiry = note.is_mine && note.days_until_expiry != null && note.days_until_expiry <= 7;
     return (
-        <article className={`relative min-h-[150px] rotate-[-1deg] rounded-sm border bg-gradient-to-br ${color.className} p-4 pt-6 shadow-lg`}>
-            <span className="absolute left-1/2 top-1 h-4 w-4 -translate-x-1/2 rounded-full bg-red-500 shadow ring-2 ring-red-700/30" />
-            <p className="whitespace-pre-wrap break-words text-sm font-semibold leading-relaxed text-slate-800">
+        <article className={`relative min-h-[160px] rotate-[-1deg] rounded-sm border bg-gradient-to-br ${color.className} p-4 pt-8 shadow-xl`}
+                 style={{ boxShadow: '0 12px 18px rgba(30,20,10,.26), inset 0 -18px 24px rgba(255,255,255,.22)' }}>
+            <span className="absolute left-1/2 top-[-7px] h-7 w-7 -translate-x-1/2 rounded-full bg-gradient-to-br from-red-400 to-red-700 shadow-lg ring-2 ring-red-900/30">
+                <span className="absolute left-1/2 top-[18px] h-6 w-1 -translate-x-1/2 rotate-12 rounded-full bg-slate-500 shadow" />
+                <span className="absolute left-[7px] top-[6px] h-2 w-2 rounded-full bg-white/60" />
+            </span>
+            <p className={`whitespace-pre-wrap break-words ${fontSize.className} font-bold leading-relaxed ${fontColor.className}`}>
                 {note.content}
             </p>
             <div className="mt-4 flex items-center justify-between gap-2 text-[10px] font-semibold text-slate-600">
