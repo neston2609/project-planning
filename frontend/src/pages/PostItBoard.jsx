@@ -95,7 +95,8 @@ export default function PostItBoard() {
     const [replyText, setReplyText] = useState('');
     const [replySaving, setReplySaving] = useState(false);
     const boardScrollerRef = useRef(null);
-    const boardDragRef = useRef({ active: false, pointerId: null, x: 0, scrollLeft: 0 });
+    const boardDragRef = useRef({ active: false, pointerId: null, x: 0, scrollLeft: 0, moved: false });
+    const boardClickSuppressedRef = useRef(false);
     const [boardDragging, setBoardDragging] = useState(false);
 
     async function load() {
@@ -226,7 +227,8 @@ export default function PostItBoard() {
             active: true,
             pointerId: e.pointerId,
             x: e.clientX,
-            scrollLeft: boardScrollerRef.current.scrollLeft
+            scrollLeft: boardScrollerRef.current.scrollLeft,
+            moved: false
         };
         boardScrollerRef.current.setPointerCapture?.(e.pointerId);
         setBoardDragging(true);
@@ -235,6 +237,7 @@ export default function PostItBoard() {
     function moveBoardDrag(e) {
         const drag = boardDragRef.current;
         if (!drag.active || drag.pointerId !== e.pointerId || !boardScrollerRef.current) return;
+        if (Math.abs(e.clientX - drag.x) > 5) drag.moved = true;
         e.preventDefault();
         boardScrollerRef.current.scrollLeft = drag.scrollLeft - (e.clientX - drag.x);
     }
@@ -243,7 +246,11 @@ export default function PostItBoard() {
         const drag = boardDragRef.current;
         if (!drag.active || drag.pointerId !== e.pointerId) return;
         boardScrollerRef.current?.releasePointerCapture?.(e.pointerId);
-        boardDragRef.current = { active: false, pointerId: null, x: 0, scrollLeft: 0 };
+        if (drag.moved) {
+            boardClickSuppressedRef.current = true;
+            window.setTimeout(() => { boardClickSuppressedRef.current = false; }, 0);
+        }
+        boardDragRef.current = { active: false, pointerId: null, x: 0, scrollLeft: 0, moved: false };
         setBoardDragging(false);
     }
 
@@ -318,7 +325,8 @@ export default function PostItBoard() {
                                onRemove={remove}
                                onExtend={extend}
                                onEdit={startEdit}
-                               onViewReplies={openReplies} />
+                               onViewReplies={openReplies}
+                               shouldSuppressClick={() => boardClickSuppressedRef.current} />
                     ))}
                 </div>
             </div>
@@ -413,7 +421,7 @@ function RichPostItEditor({ value, paperColor, fontColor, fontSize, onChange, on
     );
 }
 
-function Board({ index, notes, loading, onRemove, onExtend, onEdit, onViewReplies }) {
+function Board({ index, notes, loading, onRemove, onExtend, onEdit, onViewReplies, shouldSuppressClick }) {
     return (
         <section className="relative w-[calc(100vw-3rem)] min-w-[1120px] max-w-[1720px] shrink-0 rounded-xl border-[18px] border-amber-950/80 p-6 shadow-2xl"
                  style={{
@@ -438,7 +446,8 @@ function Board({ index, notes, loading, onRemove, onExtend, onEdit, onViewReplie
                             onRemove={onRemove}
                             onExtend={onExtend}
                             onEdit={onEdit}
-                            onViewReplies={onViewReplies} />
+                            onViewReplies={onViewReplies}
+                            shouldSuppressClick={shouldSuppressClick} />
                 ))}
                 {!loading && notes.length === 0 && (
                     <div className="col-span-full flex h-40 items-center justify-center rounded border border-dashed border-white/50 text-sm font-semibold text-white/80">
@@ -450,24 +459,38 @@ function Board({ index, notes, loading, onRemove, onExtend, onEdit, onViewReplie
     );
 }
 
-function PostIt({ note, onRemove, onExtend, onEdit, onViewReplies }) {
+function PostIt({ note, onRemove, onExtend, onEdit, onViewReplies, shouldSuppressClick }) {
     const color = colorFor(note.color);
     const fontColor = fontColorFor(note.font_color);
     const fontSize = fontSizeFor(note.font_size);
     const nearExpiry = note.is_mine && note.days_until_expiry != null && note.days_until_expiry <= 7;
     const actionButtonStyle = { backgroundColor: 'rgba(255,255,255,0.60)', color: '#334155' };
+    function openFromPostIt() {
+        if (shouldSuppressClick?.()) return;
+        onViewReplies(note);
+    }
+
     return (
         <article className={`relative min-h-[160px] rotate-[-1deg] rounded-sm border bg-gradient-to-br ${color.className} p-4 pt-8 shadow-xl`}
                  style={{
                      background: paperBackground(color),
                      borderColor: color.to,
                      boxShadow: '0 12px 18px rgba(30,20,10,.26), inset 0 -18px 24px rgba(255,255,255,.22)'
+                 }}
+                 role="button"
+                 tabIndex={0}
+                 onClick={openFromPostIt}
+                 onKeyDown={e => {
+                     if (e.key === 'Enter' || e.key === ' ') {
+                         e.preventDefault();
+                         openFromPostIt();
+                     }
                  }}>
             <span className="absolute left-1/2 top-[-7px] h-7 w-7 -translate-x-1/2 rounded-full bg-gradient-to-br from-red-400 to-red-700 shadow-lg ring-2 ring-red-900/30">
                 <span className="absolute left-1/2 top-[18px] h-6 w-1 -translate-x-1/2 rotate-12 rounded-full bg-slate-500 shadow" />
                 <span className="absolute left-[7px] top-[6px] h-2 w-2 rounded-full bg-white/60" />
             </span>
-            <div className={`post-it-content break-words ${fontSize.className} font-bold leading-relaxed ${fontColor.className}`}
+            <div className={`post-it-content break-words ${fontSize.className} font-bold leading-relaxed`}
                  style={{ color: fontColor.hex }}
                  dangerouslySetInnerHTML={{ __html: note.content || '' }} />
             <div className="mt-4 flex items-center justify-between gap-2 text-[10px] font-semibold text-slate-600"
@@ -485,19 +508,22 @@ function PostIt({ note, onRemove, onExtend, onEdit, onViewReplies }) {
             <div className="mt-3 flex flex-wrap gap-1">
                 <button className="btn-ghost !bg-white/60 !py-1 !px-2 text-xs"
                         style={actionButtonStyle}
-                        onClick={() => onViewReplies(note)}>
+                        onClick={e => {
+                            e.stopPropagation();
+                            onViewReplies(note);
+                        }}>
                     <ChatBubbleLeftRightIcon className="w-4 h-4 text-indigo-700" />
                     View Reply{Number(note.reply_count || 0) > 0 ? ` (${note.reply_count})` : ''}
                 </button>
                 {note.is_mine && (
                     <>
-                    <button className="btn-ghost !bg-white/60 !py-1 !px-2" style={actionButtonStyle} title="Edit" onClick={() => onEdit(note)}>
+                    <button className="btn-ghost !bg-white/60 !py-1 !px-2" style={actionButtonStyle} title="Edit" onClick={e => { e.stopPropagation(); onEdit(note); }}>
                         <PencilSquareIcon className="w-4 h-4 text-blue-600" />
                     </button>
-                    <button className="btn-ghost !bg-white/60 !py-1 !px-2 text-xs" style={actionButtonStyle} onClick={() => onExtend(note)}>
+                    <button className="btn-ghost !bg-white/60 !py-1 !px-2 text-xs" style={actionButtonStyle} onClick={e => { e.stopPropagation(); onExtend(note); }}>
                         Extend
                     </button>
-                    <button className="btn-ghost !bg-white/60 !py-1 !px-2" style={actionButtonStyle} title="Remove" onClick={() => onRemove(note)}>
+                    <button className="btn-ghost !bg-white/60 !py-1 !px-2" style={actionButtonStyle} title="Remove" onClick={e => { e.stopPropagation(); onRemove(note); }}>
                         <TrashIcon className="w-4 h-4 text-red-500" />
                     </button>
                     </>
@@ -536,7 +562,7 @@ function ReplyModal({ data, loading, replyText, saving, onReplyText, onSubmit, o
                         <span className="absolute left-1/2 top-[20px] h-7 w-1 -translate-x-1/2 rotate-12 rounded-full bg-slate-500 shadow" />
                         <span className="absolute left-[8px] top-[7px] h-2.5 w-2.5 rounded-full bg-white/60" />
                     </span>
-                    <div className={`post-it-content break-words ${fontSize.className} font-bold leading-relaxed ${fontColor.className}`}
+                    <div className={`post-it-content break-words ${fontSize.className} font-bold leading-relaxed`}
                          style={{ color: fontColor.hex }}
                          dangerouslySetInnerHTML={{ __html: note.content || '' }} />
                     <div className="mt-5 text-xs font-semibold" style={{ color: '#475569' }}>
