@@ -192,26 +192,6 @@ export default function PostItBoard() {
                                     onClick={() => setColor(c.value)} />
                         ))}
                     </div>
-                    <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Font</span>
-                        {FONT_COLORS.map(c => (
-                            <button key={c.value}
-                                    type="button"
-                                    className={`w-8 h-8 rounded-full border-2 ${c.dot} ${fontColor === c.value ? 'border-slate-900 ring-2 ring-offset-2 ring-indigo-300' : 'border-white'}`}
-                                    title={c.label}
-                                    onClick={() => setFontColor(c.value)} />
-                        ))}
-                    </div>
-                    <div className="inline-flex overflow-hidden rounded-lg border border-slate-200 bg-white">
-                        {FONT_SIZES.map(size => (
-                            <button key={size.value}
-                                    type="button"
-                                    className={`h-8 px-3 text-xs font-bold ${fontSize === size.value ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
-                                    onClick={() => setFontSize(size.value)}>
-                                {size.label}
-                            </button>
-                        ))}
-                    </div>
                     <span className="text-xs text-slate-500">{htmlToText(content).length}/500</span>
                     <span className="text-xs text-slate-500">
                         Expires after {config.expiry_days} day(s). Current board has {remaining} open spot(s).
@@ -270,19 +250,24 @@ function RichPostItEditor({ value, paperColor, fontColor, fontSize, onChange, on
         run('fontSize', s.command);
     }
 
+    function toolbarAction(e, action) {
+        e.preventDefault();
+        action();
+    }
+
     return (
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
             <div className="mb-3 flex flex-wrap items-center gap-2">
-                <button type="button" className="btn-ghost !py-1 !px-2 font-bold" onClick={() => run('bold')}>B</button>
-                <button type="button" className="btn-ghost !py-1 !px-2 italic" onClick={() => run('italic')}>I</button>
-                <button type="button" className="btn-ghost !py-1 !px-2 underline" onClick={() => run('underline')}>U</button>
+                <button type="button" className="btn-ghost !py-1 !px-2 font-bold" onMouseDown={e => toolbarAction(e, () => run('bold'))}>B</button>
+                <button type="button" className="btn-ghost !py-1 !px-2 italic" onMouseDown={e => toolbarAction(e, () => run('italic'))}>I</button>
+                <button type="button" className="btn-ghost !py-1 !px-2 underline" onMouseDown={e => toolbarAction(e, () => run('underline'))}>U</button>
                 <span className="ml-1 text-xs font-bold uppercase tracking-wider text-slate-500">Text Color</span>
                 {FONT_COLORS.map(c => (
                     <button key={c.value}
                             type="button"
                             className={`w-7 h-7 rounded-full border-2 ${c.dot} ${selectedFontColor.value === c.value ? 'border-slate-900 ring-2 ring-offset-1 ring-indigo-300' : 'border-white'}`}
                             title={c.label}
-                            onClick={() => chooseFontColor(c)} />
+                            onMouseDown={e => toolbarAction(e, () => chooseFontColor(c))} />
                 ))}
                 <span className="ml-1 text-xs font-bold uppercase tracking-wider text-slate-500">Size</span>
                 <div className="inline-flex overflow-hidden rounded-lg border border-slate-200 bg-white">
@@ -290,7 +275,7 @@ function RichPostItEditor({ value, paperColor, fontColor, fontSize, onChange, on
                         <button key={size.value}
                                 type="button"
                                 className={`h-8 px-3 text-xs font-bold ${selectedFontSize.value === size.value ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
-                                onClick={() => chooseFontSize(size)}>
+                                onMouseDown={e => toolbarAction(e, () => chooseFontSize(size))}>
                             {size.label}
                         </button>
                     ))}
