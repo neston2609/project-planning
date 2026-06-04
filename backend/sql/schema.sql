@@ -288,6 +288,22 @@ CREATE TABLE IF NOT EXISTS office_booking_holidays (
 CREATE INDEX IF NOT EXISTS idx_office_booking_holidays_tenant_date
     ON office_booking_holidays(tenant_id, holiday_date);
 
+-- ---------- Post-It board ----------
+CREATE TABLE IF NOT EXISTS post_it_notes (
+    id          SERIAL PRIMARY KEY,
+    tenant_id   INT NOT NULL,
+    user_id     INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    content     TEXT NOT NULL DEFAULT '',
+    color       VARCHAR(32) NOT NULL DEFAULT 'yellow',
+    expires_at  DATE NOT NULL,
+    created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_post_it_notes_tenant_expires
+    ON post_it_notes(tenant_id, expires_at);
+CREATE INDEX IF NOT EXISTS idx_post_it_notes_user
+    ON post_it_notes(user_id);
+
 -- ---------- Knowledge Base ----------
 CREATE TABLE IF NOT EXISTS kb_categories (
     id          SERIAL PRIMARY KEY,
@@ -513,7 +529,7 @@ BEGIN
         'tenants','users','customers','resources','projects',
         'smtp_config','year_config','tenant_config','customer_licenses',
         'tenant_roles','office_booking_config','office_bookings','office_booking_holidays',
-        'kb_categories','kb_products','kb_articles'
+        'post_it_notes','kb_categories','kb_products','kb_articles'
     ]) LOOP
         EXECUTE format(
             'DROP TRIGGER IF EXISTS trg_%s_upd ON %I; '

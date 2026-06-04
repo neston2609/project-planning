@@ -286,6 +286,7 @@ router.get('/articles',
             params.push(`%${q.toLowerCase()}%`);
             where += ` AND (
                 LOWER(a.title) LIKE $${params.length}
+                OR LOWER(COALESCE(a.content,'')) LIKE $${params.length}
                 OR LOWER(COALESCE(c.name,'')) LIKE $${params.length}
                 OR LOWER(COALESCE(p.name,'')) LIKE $${params.length}
                 OR EXISTS (SELECT 1 FROM unnest(a.tags) tag WHERE LOWER(tag) LIKE $${params.length})

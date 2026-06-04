@@ -337,6 +337,7 @@ router.get('/app-config', async (req, res) => {
     res.json({
         footer_text: DEFAULT_FOOTER_TEXT,
         login_log_retention_days: String(DEFAULT_LOGIN_LOG_RETENTION_DAYS),
+        post_it_expiry_days: '30',
         ...Object.fromEntries(rows.map(r => [r.key, r.value]))
     });
 });

@@ -14,8 +14,9 @@ import {
     BuildingOfficeIcon, PresentationChartLineIcon, ShieldCheckIcon,
     UsersIcon, IdentificationIcon, CalendarDaysIcon, Cog6ToothIcon,
     EnvelopeIcon, DocumentTextIcon, UserCircleIcon, UserIcon, ClipboardDocumentListIcon,
-    MoonIcon, SunIcon, BookOpenIcon
+    MoonIcon, SunIcon, BookOpenIcon, ChatBubbleLeftRightIcon, ClockIcon
 } from '@heroicons/react/24/outline';
+import Modal from './Modal';
 
 const mainNav = [
     { key: 'dashboard.summary',        to: '/',                  label: 'Summary',           icon: ChartPieIcon },
@@ -26,6 +27,7 @@ const mainNav = [
     { key: 'dashboard.service_ma',     to: '/service-ma',        label: 'Service MA',        icon: LifebuoyIcon },
     { key: 'dashboard.outsource',      to: '/outsource',            label: 'Outsource',            icon: BriefcaseIcon },
     { key: 'dashboard.office_booking', to: '/office-booking',       label: 'Office Booking',       icon: CalendarDaysIcon },
+    { key: 'dashboard.post_it_board',  to: '/post-it-board',        label: 'Post-It Board',        icon: ChatBubbleLeftRightIcon },
     { key: 'knowledge.base',           to: '/knowledge-base',       label: 'Knowledge Base',       icon: BookOpenIcon },
     { key: 'resource.planning',        to: '/resource-planning',    label: 'Resource Planning',    icon: UserGroupIcon },
     { key: 'resource.information',     to: '/resource-information', label: 'Resource Information', icon: UserIcon },
@@ -82,6 +84,8 @@ export default function Layout() {
     const location = useLocation();
     const [open, setOpen] = useState(false);
     const [footerText, setFooterText] = useState(DEFAULT_FOOTER_TEXT);
+    const [expiringPostIts, setExpiringPostIts] = useState([]);
+    const [postItAlertOpen, setPostItAlertOpen] = useState(false);
 
     const tenantAdmin = isTenantAdmin(user);
     const tenantUser  = isTenantUser(user);
@@ -103,6 +107,22 @@ export default function Layout() {
             .then(r => setFooterText(r.data?.footer_text || DEFAULT_FOOTER_TEXT))
             .catch(() => setFooterText(DEFAULT_FOOTER_TEXT));
     }, [platform, user?.tenant_id]);
+
+    useEffect(() => {
+        if (platform || !user?.tenant_id || !hasMenuAccess(user, 'dashboard.post_it_board')) return;
+        const sessionKey = `post_it_expiry_alert_${user.id}_${new Date().toISOString().slice(0, 10)}`;
+        if (sessionStorage.getItem(sessionKey) === '1') return;
+        api.get('/post-its/mine/expiring')
+            .then(r => {
+                const rows = r.data || [];
+                if (rows.length > 0) {
+                    setExpiringPostIts(rows);
+                    setPostItAlertOpen(true);
+                    sessionStorage.setItem(sessionKey, '1');
+                }
+            })
+            .catch(() => {});
+    }, [platform, user?.id, user?.tenant_id]);
 
     // Platform roles can only use platform pages.
     // TenantUser is further restricted to the platform dashboard only.
@@ -133,6 +153,16 @@ export default function Layout() {
             await setThemeMode(darkMode ? 'light' : 'dark');
         } catch (err) {
             toast.error(err.response?.data?.error || 'Could not save theme');
+        }
+    }
+
+    async function extendPostIt(note) {
+        try {
+            await api.post(`/post-its/${note.id}/extend`);
+            setExpiringPostIts(prev => prev.filter(item => item.id !== note.id));
+            toast.success('Post-It extended');
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Could not extend Post-It');
         }
     }
 
@@ -278,6 +308,41 @@ export default function Layout() {
                     {footerText}
                 </footer>
             </div>
+            <Modal open={postItAlertOpen}
+                   onClose={() => setPostItAlertOpen(false)}
+                   title="Post-It Expiring Soon"
+                   size="lg"
+                   footer={<>
+                       <button className="btn-ghost" onClick={() => setPostItAlertOpen(false)}>Close</button>
+                       <button className="btn-primary" onClick={() => { setPostItAlertOpen(false); nav('/post-it-board'); }}>
+                           Open Board
+                       </button>
+                   </>}>
+                <div className="space-y-3">
+                    <p className="text-sm text-slate-600">
+                        Some of your Post-It notes will expire within 7 days. You can extend them now.
+                    </p>
+                    {expiringPostIts.map(note => (
+                        <div key={note.id} className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                            <div className="flex items-start gap-3">
+                                <ClockIcon className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                                <div className="min-w-0 flex-1">
+                                    <div className="text-sm font-semibold text-slate-800 line-clamp-2">{note.content}</div>
+                                    <div className="text-xs text-slate-500 mt-1">
+                                        Expires on {new Date(note.expires_at).toLocaleDateString()}
+                                    </div>
+                                </div>
+                                <button className="btn-ghost !py-1.5" onClick={() => extendPostIt(note)}>
+                                    Extend
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                    {expiringPostIts.length === 0 && (
+                        <div className="text-sm text-slate-500">All expiring Post-It notes have been extended.</div>
+                    )}
+                </div>
+            </Modal>
         </div>
     );
 }

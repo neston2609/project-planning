@@ -133,6 +133,7 @@ export default function KnowledgeBase() {
         if (!q) return out;
         return out.filter(a =>
             (a.title || '').toLowerCase().includes(q) ||
+            stripHtml(a.content).toLowerCase().includes(q) ||
             (a.category_name || '').toLowerCase().includes(q) ||
             (a.product_name || '').toLowerCase().includes(q) ||
             (a.tags || []).some(tag => String(tag).toLowerCase().includes(q))
@@ -156,7 +157,7 @@ export default function KnowledgeBase() {
             <div className="card p-3 flex items-center gap-2">
                 <MagnifyingGlassIcon className="w-5 h-5 text-slate-400" />
                 <input className="input !border-0 !bg-transparent !p-0 focus:!ring-0 flex-1"
-                       placeholder="Search title / category / product / tags..."
+                       placeholder="Search title / content / category / product / tags..."
                        value={search} onChange={e => setSearch(e.target.value)} />
                 {(categoryFilter.size > 0 || productFilter.size > 0) && (
                     <button type="button" onClick={clearFilters}

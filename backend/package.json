@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "check": "node --check src/server.js && node --check src/db.js && node --check src/middleware/auth.js && node --check src/routes/admin.js && node --check src/routes/auth.js && node --check src/routes/dashboards.js && node --check src/routes/knowledgeBase.js && node --check src/routes/officeBookings.js && node --check src/routes/platform.js && node --check src/routes/projectSummary.js && node --check src/routes/projects.js && node --check src/routes/resources.js && node --check src/routes/tenants.js && node --check src/utils/bootstrap.js && node --check src/utils/menuRegistry.js && node --check src/utils/revenue.js && node --check src/utils/roles.js",
+    "check": "node --check src/server.js && node --check src/db.js && node --check src/middleware/auth.js && node --check src/routes/admin.js && node --check src/routes/auth.js && node --check src/routes/dashboards.js && node --check src/routes/knowledgeBase.js && node --check src/routes/officeBookings.js && node --check src/routes/platform.js && node --check src/routes/postIts.js && node --check src/routes/projectSummary.js && node --check src/routes/projects.js && node --check src/routes/resources.js && node --check src/routes/tenants.js && node --check src/utils/bootstrap.js && node --check src/utils/menuRegistry.js && node --check src/utils/revenue.js && node --check src/utils/roles.js",
     "test": "node --test",
     "migrate:excel": "node scripts/migrateFromExcel.js"
   },
