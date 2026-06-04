@@ -12,8 +12,18 @@ const COLORS = ['yellow', 'pink', 'blue', 'green', 'purple', 'orange'];
 const FONT_COLORS = ['slate', 'blue', 'red', 'green', 'purple', 'brown'];
 const FONT_SIZES = ['sm', 'md', 'lg', 'xl'];
 
+function stripHtml(value) {
+    return String(value || '').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
+}
+
 function cleanContent(value) {
-    return String(value || '').trim().slice(0, 500);
+    return String(value || '')
+        .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
+        .replace(/\son\w+="[^"]*"/gi, '')
+        .replace(/\son\w+='[^']*'/gi, '')
+        .replace(/javascript:/gi, '')
+        .trim()
+        .slice(0, 4000);
 }
 
 function cleanColor(value) {
@@ -97,13 +107,15 @@ router.get('/mine/expiring', async (req, res) => {
 });
 
 router.post('/',
-    body('content').isString().trim().notEmpty().isLength({ max: 500 }),
+    body('content').isString().trim().notEmpty().isLength({ max: 4000 }),
     body('color').optional().isString(),
     body('font_color').optional().isString(),
     body('font_size').optional().isString(),
     async (req, res) => {
         const errs = validationResult(req);
-        if (!errs.isEmpty()) return res.status(400).json({ error: 'Message is required and must be 500 characters or fewer' });
+        if (!errs.isEmpty()) return res.status(400).json({ error: 'Message is required and must be 4000 characters or fewer' });
+        const content = cleanContent(req.body.content);
+        if (!stripHtml(content)) return res.status(400).json({ error: 'Message is required' });
 
         const days = await expiryDays(req.tenantId);
         const { rows } = await db.query(
@@ -113,7 +125,7 @@ router.post('/',
             [
                 req.tenantId,
                 req.user.uid,
-                cleanContent(req.body.content),
+                content,
                 cleanColor(req.body.color),
                 cleanFontColor(req.body.font_color),
                 cleanFontSize(req.body.font_size),
@@ -121,6 +133,42 @@ router.post('/',
             ]
         );
         res.status(201).json(mapNote(rows[0], req.user.uid));
+    }
+);
+
+router.put('/:id',
+    param('id').isInt(),
+    body('content').isString().trim().notEmpty().isLength({ max: 4000 }),
+    body('color').optional().isString(),
+    body('font_color').optional().isString(),
+    body('font_size').optional().isString(),
+    async (req, res) => {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ error: 'Message is required and must be 4000 characters or fewer' });
+        const content = cleanContent(req.body.content);
+        if (!stripHtml(content)) return res.status(400).json({ error: 'Message is required' });
+
+        const { rows } = await db.query(
+            `UPDATE post_it_notes
+                SET content=$1,
+                    color=$2,
+                    font_color=$3,
+                    font_size=$4,
+                    updated_at=NOW()
+              WHERE id=$5 AND tenant_id=$6 AND user_id=$7
+              RETURNING id, user_id, content, color, font_color, font_size, expires_at, created_at, updated_at`,
+            [
+                content,
+                cleanColor(req.body.color),
+                cleanFontColor(req.body.font_color),
+                cleanFontSize(req.body.font_size),
+                req.params.id,
+                req.tenantId,
+                req.user.uid
+            ]
+        );
+        if (!rows[0]) return res.status(404).json({ error: 'Post-It not found' });
+        res.json(mapNote(rows[0], req.user.uid));
     }
 );
 

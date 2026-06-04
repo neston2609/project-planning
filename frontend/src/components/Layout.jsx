@@ -67,6 +67,12 @@ const tenantUserNav = [
 
 const DEFAULT_FOOTER_TEXT = 'Implemented and Maintain by BSM RPA Team. For Internal use only';
 
+function stripHtml(html) {
+    const div = document.createElement('div');
+    div.innerHTML = html || '';
+    return div.textContent || div.innerText || '';
+}
+
 function NavItem({ to, label, icon: Icon }) {
     return (
         <NavLink to={to} end={to === '/'}
@@ -327,7 +333,7 @@ export default function Layout() {
                             <div className="flex items-start gap-3">
                                 <ClockIcon className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                                 <div className="min-w-0 flex-1">
-                                    <div className="text-sm font-semibold text-slate-800 line-clamp-2">{note.content}</div>
+                                    <div className="text-sm font-semibold text-slate-800 line-clamp-2">{stripHtml(note.content)}</div>
                                     <div className="text-xs text-slate-500 mt-1">
                                         Expires on {new Date(note.expires_at).toLocaleDateString()}
                                     </div>
