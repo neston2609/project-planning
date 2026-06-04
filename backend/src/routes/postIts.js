@@ -26,6 +26,10 @@ function cleanContent(value) {
         .slice(0, 4000);
 }
 
+function cleanReply(value) {
+    return String(value || '').trim().slice(0, 1000);
+}
+
 function cleanColor(value) {
     const color = String(value || '').trim().toLowerCase();
     return COLORS.includes(color) ? color : 'yellow';
@@ -67,7 +71,16 @@ function mapNote(row, userId) {
         created_at: row.created_at,
         updated_at: row.updated_at,
         is_mine: Number(row.user_id) === Number(userId),
+        reply_count: Number(row.reply_count || 0),
         days_until_expiry: daysUntilExpiry
+    };
+}
+
+function mapReply(row) {
+    return {
+        id: row.id,
+        content: row.content,
+        created_at: row.created_at
     };
 }
 
@@ -75,11 +88,16 @@ router.get('/', async (req, res) => {
     const [days, notes] = await Promise.all([
         expiryDays(req.tenantId),
         db.query(
-            `SELECT id, user_id, content, color, font_color, font_size, expires_at, created_at, updated_at
-               FROM post_it_notes
-              WHERE tenant_id=$1
-                AND expires_at >= CURRENT_DATE
-              ORDER BY created_at ASC, id ASC`,
+            `SELECT n.id, n.user_id, n.content, n.color, n.font_color, n.font_size,
+                    n.expires_at, n.created_at, n.updated_at,
+                    COUNT(r.id)::int AS reply_count
+               FROM post_it_notes n
+               LEFT JOIN post_it_replies r
+                 ON r.note_id=n.id AND r.tenant_id=n.tenant_id
+              WHERE n.tenant_id=$1
+                AND n.expires_at >= CURRENT_DATE
+              GROUP BY n.id
+              ORDER BY n.created_at ASC, n.id ASC`,
             [req.tenantId]
         )
     ]);
@@ -133,6 +151,72 @@ router.post('/',
             ]
         );
         res.status(201).json(mapNote(rows[0], req.user.uid));
+    }
+);
+
+router.get('/:id/replies',
+    param('id').isInt(),
+    async (req, res) => {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ error: 'Invalid Post-It' });
+
+        const noteResult = await db.query(
+            `SELECT n.id, n.user_id, n.content, n.color, n.font_color, n.font_size,
+                    n.expires_at, n.created_at, n.updated_at,
+                    COUNT(r.id)::int AS reply_count
+               FROM post_it_notes n
+               LEFT JOIN post_it_replies r
+                 ON r.note_id=n.id AND r.tenant_id=n.tenant_id
+              WHERE n.id=$1
+                AND n.tenant_id=$2
+                AND n.expires_at >= CURRENT_DATE
+              GROUP BY n.id`,
+            [req.params.id, req.tenantId]
+        );
+        if (!noteResult.rows[0]) return res.status(404).json({ error: 'Post-It not found' });
+
+        const replies = await db.query(
+            `SELECT id, content, created_at
+               FROM post_it_replies
+              WHERE tenant_id=$1
+                AND note_id=$2
+              ORDER BY created_at ASC, id ASC`,
+            [req.tenantId, req.params.id]
+        );
+
+        res.json({
+            note: mapNote(noteResult.rows[0], req.user.uid),
+            replies: replies.rows.map(mapReply)
+        });
+    }
+);
+
+router.post('/:id/replies',
+    param('id').isInt(),
+    body('content').isString().trim().notEmpty().isLength({ max: 1000 }),
+    async (req, res) => {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ error: 'Reply is required and must be 1000 characters or fewer' });
+        const content = cleanReply(req.body.content);
+        if (!content) return res.status(400).json({ error: 'Reply is required' });
+
+        const note = await db.query(
+            `SELECT id
+               FROM post_it_notes
+              WHERE id=$1
+                AND tenant_id=$2
+                AND expires_at >= CURRENT_DATE`,
+            [req.params.id, req.tenantId]
+        );
+        if (!note.rows[0]) return res.status(404).json({ error: 'Post-It not found' });
+
+        const { rows } = await db.query(
+            `INSERT INTO post_it_replies(tenant_id, note_id, user_id, content)
+             VALUES ($1,$2,$3,$4)
+             RETURNING id, content, created_at`,
+            [req.tenantId, req.params.id, req.user.uid, content]
+        );
+        res.status(201).json(mapReply(rows[0]));
     }
 );
 

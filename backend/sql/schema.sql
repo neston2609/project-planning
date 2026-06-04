@@ -308,6 +308,19 @@ CREATE INDEX IF NOT EXISTS idx_post_it_notes_tenant_expires
 CREATE INDEX IF NOT EXISTS idx_post_it_notes_user
     ON post_it_notes(user_id);
 
+CREATE TABLE IF NOT EXISTS post_it_replies (
+    id          SERIAL PRIMARY KEY,
+    tenant_id   INT NOT NULL,
+    note_id     INT NOT NULL REFERENCES post_it_notes(id) ON DELETE CASCADE,
+    user_id     INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    content     TEXT NOT NULL DEFAULT '',
+    created_at  TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_post_it_replies_note
+    ON post_it_replies(note_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_post_it_replies_tenant
+    ON post_it_replies(tenant_id);
+
 -- ---------- Knowledge Base ----------
 CREATE TABLE IF NOT EXISTS kb_categories (
     id          SERIAL PRIMARY KEY,

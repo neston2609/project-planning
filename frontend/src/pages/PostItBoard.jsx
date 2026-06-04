@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import {
-    ArrowPathIcon, PlusIcon, TrashIcon, ClockIcon, PencilSquareIcon, XMarkIcon
+    ArrowPathIcon, PlusIcon, TrashIcon, ClockIcon, PencilSquareIcon, XMarkIcon,
+    ChatBubbleLeftRightIcon, PaperAirplaneIcon
 } from '@heroicons/react/24/outline';
 import api from '../api';
+import Modal from '../components/Modal';
 
 const BOARD_SIZE = 40;
 const COLORS = [
@@ -88,6 +90,13 @@ export default function PostItBoard() {
     const [editing, setEditing] = useState(null);
     const [editorKey, setEditorKey] = useState(0);
     const [loading, setLoading] = useState(true);
+    const [replyModal, setReplyModal] = useState(null);
+    const [replyLoading, setReplyLoading] = useState(false);
+    const [replyText, setReplyText] = useState('');
+    const [replySaving, setReplySaving] = useState(false);
+    const boardScrollerRef = useRef(null);
+    const boardDragRef = useRef({ active: false, pointerId: null, x: 0, scrollLeft: 0 });
+    const [boardDragging, setBoardDragging] = useState(false);
 
     async function load() {
         setLoading(true);
@@ -164,6 +173,80 @@ export default function PostItBoard() {
         }
     }
 
+    async function openReplies(note) {
+        setReplyModal({ note, replies: [] });
+        setReplyText('');
+        setReplyLoading(true);
+        try {
+            const res = await api.get(`/post-its/${note.id}/replies`);
+            setReplyModal({
+                note: res.data.note || note,
+                replies: res.data.replies || []
+            });
+            setNotes(prev => prev.map(n => n.id === note.id ? { ...n, ...(res.data.note || {}) } : n));
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Could not load replies');
+            setReplyModal(null);
+        } finally {
+            setReplyLoading(false);
+        }
+    }
+
+    async function addReply() {
+        const message = replyText.trim();
+        if (!replyModal?.note?.id) return;
+        if (!message) return toast.error('Please write a reply');
+        if (message.length > 1000) return toast.error('Reply must be 1000 characters or fewer');
+        setReplySaving(true);
+        try {
+            const res = await api.post(`/post-its/${replyModal.note.id}/replies`, { content: message });
+            const nextReplies = [...(replyModal.replies || []), res.data];
+            const nextNote = {
+                ...replyModal.note,
+                reply_count: nextReplies.length
+            };
+            setReplyModal({ note: nextNote, replies: nextReplies });
+            setNotes(prev => prev.map(n => n.id === nextNote.id ? { ...n, reply_count: nextReplies.length } : n));
+            setReplyText('');
+            toast.success('Reply added');
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Could not add reply');
+        } finally {
+            setReplySaving(false);
+        }
+    }
+
+    function isInteractiveTarget(target) {
+        return Boolean(target?.closest?.('button, a, input, textarea, select, [contenteditable="true"], [role="button"]'));
+    }
+
+    function startBoardDrag(e) {
+        if (e.button !== 0 || isInteractiveTarget(e.target) || !boardScrollerRef.current) return;
+        boardDragRef.current = {
+            active: true,
+            pointerId: e.pointerId,
+            x: e.clientX,
+            scrollLeft: boardScrollerRef.current.scrollLeft
+        };
+        boardScrollerRef.current.setPointerCapture?.(e.pointerId);
+        setBoardDragging(true);
+    }
+
+    function moveBoardDrag(e) {
+        const drag = boardDragRef.current;
+        if (!drag.active || drag.pointerId !== e.pointerId || !boardScrollerRef.current) return;
+        e.preventDefault();
+        boardScrollerRef.current.scrollLeft = drag.scrollLeft - (e.clientX - drag.x);
+    }
+
+    function stopBoardDrag(e) {
+        const drag = boardDragRef.current;
+        if (!drag.active || drag.pointerId !== e.pointerId) return;
+        boardScrollerRef.current?.releasePointerCapture?.(e.pointerId);
+        boardDragRef.current = { active: false, pointerId: null, x: 0, scrollLeft: 0 };
+        setBoardDragging(false);
+    }
+
     const boards = useMemo(() => chunkBoards(notes), [notes]);
     const remaining = BOARD_SIZE - (notes.length % BOARD_SIZE || BOARD_SIZE);
 
@@ -219,7 +302,13 @@ export default function PostItBoard() {
                 </div>
             </div>
 
-            <div className="overflow-x-auto pb-3">
+            <div ref={boardScrollerRef}
+                 className={`overflow-x-auto pb-3 ${boardDragging ? 'cursor-grabbing select-none' : 'cursor-grab'}`}
+                 onPointerDown={startBoardDrag}
+                 onPointerMove={moveBoardDrag}
+                 onPointerUp={stopBoardDrag}
+                 onPointerCancel={stopBoardDrag}
+                 onPointerLeave={stopBoardDrag}>
                 <div className="flex gap-5 min-w-max">
                     {boards.map((boardNotes, idx) => (
                         <Board key={idx}
@@ -228,10 +317,19 @@ export default function PostItBoard() {
                                loading={loading && idx === 0}
                                onRemove={remove}
                                onExtend={extend}
-                               onEdit={startEdit} />
+                               onEdit={startEdit}
+                               onViewReplies={openReplies} />
                     ))}
                 </div>
             </div>
+
+            <ReplyModal data={replyModal}
+                        loading={replyLoading}
+                        replyText={replyText}
+                        saving={replySaving}
+                        onReplyText={setReplyText}
+                        onSubmit={addReply}
+                        onClose={() => setReplyModal(null)} />
         </div>
     );
 }
@@ -315,10 +413,11 @@ function RichPostItEditor({ value, paperColor, fontColor, fontSize, onChange, on
     );
 }
 
-function Board({ index, notes, loading, onRemove, onExtend, onEdit }) {
+function Board({ index, notes, loading, onRemove, onExtend, onEdit, onViewReplies }) {
     return (
         <section className="relative w-[calc(100vw-3rem)] min-w-[1120px] max-w-[1720px] shrink-0 rounded-xl border-[18px] border-amber-950/80 p-6 shadow-2xl"
                  style={{
+                     borderColor: 'rgba(69, 26, 3, 0.80)',
                      backgroundColor: '#b8864f',
                      backgroundImage: 'linear-gradient(90deg, rgba(74,38,12,.14) 0 1px, transparent 1px), linear-gradient(0deg, rgba(74,38,12,.10) 0 1px, transparent 1px), radial-gradient(rgba(72,40,18,.30) 1px, transparent 1px), radial-gradient(rgba(255,245,215,.25) 1px, transparent 1px)',
                      backgroundSize: '46px 46px, 46px 46px, 8px 8px, 14px 14px',
@@ -333,7 +432,14 @@ function Board({ index, notes, loading, onRemove, onExtend, onEdit }) {
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8 gap-5 min-h-[720px] content-start">
                 {loading && <div className="rounded bg-white/30 h-36 animate-pulse col-span-2" />}
-                {notes.map(note => <PostIt key={note.id} note={note} onRemove={onRemove} onExtend={onExtend} onEdit={onEdit} />)}
+                {notes.map(note => (
+                    <PostIt key={note.id}
+                            note={note}
+                            onRemove={onRemove}
+                            onExtend={onExtend}
+                            onEdit={onEdit}
+                            onViewReplies={onViewReplies} />
+                ))}
                 {!loading && notes.length === 0 && (
                     <div className="col-span-full flex h-40 items-center justify-center rounded border border-dashed border-white/50 text-sm font-semibold text-white/80">
                         Empty board
@@ -344,39 +450,137 @@ function Board({ index, notes, loading, onRemove, onExtend, onEdit }) {
     );
 }
 
-function PostIt({ note, onRemove, onExtend, onEdit }) {
+function PostIt({ note, onRemove, onExtend, onEdit, onViewReplies }) {
     const color = colorFor(note.color);
     const fontColor = fontColorFor(note.font_color);
     const fontSize = fontSizeFor(note.font_size);
     const nearExpiry = note.is_mine && note.days_until_expiry != null && note.days_until_expiry <= 7;
+    const actionButtonStyle = { backgroundColor: 'rgba(255,255,255,0.60)', color: '#334155' };
     return (
         <article className={`relative min-h-[160px] rotate-[-1deg] rounded-sm border bg-gradient-to-br ${color.className} p-4 pt-8 shadow-xl`}
-                 style={{ boxShadow: '0 12px 18px rgba(30,20,10,.26), inset 0 -18px 24px rgba(255,255,255,.22)' }}>
+                 style={{
+                     background: paperBackground(color),
+                     borderColor: color.to,
+                     boxShadow: '0 12px 18px rgba(30,20,10,.26), inset 0 -18px 24px rgba(255,255,255,.22)'
+                 }}>
             <span className="absolute left-1/2 top-[-7px] h-7 w-7 -translate-x-1/2 rounded-full bg-gradient-to-br from-red-400 to-red-700 shadow-lg ring-2 ring-red-900/30">
                 <span className="absolute left-1/2 top-[18px] h-6 w-1 -translate-x-1/2 rotate-12 rounded-full bg-slate-500 shadow" />
                 <span className="absolute left-[7px] top-[6px] h-2 w-2 rounded-full bg-white/60" />
             </span>
             <div className={`post-it-content break-words ${fontSize.className} font-bold leading-relaxed ${fontColor.className}`}
+                 style={{ color: fontColor.hex }}
                  dangerouslySetInnerHTML={{ __html: note.content || '' }} />
-            <div className="mt-4 flex items-center justify-between gap-2 text-[10px] font-semibold text-slate-600">
+            <div className="mt-4 flex items-center justify-between gap-2 text-[10px] font-semibold text-slate-600"
+                 style={{ color: '#475569' }}>
                 <span className="inline-flex items-center gap-1">
                     <ClockIcon className="w-3 h-3" /> {formatDate(note.expires_at)}
                 </span>
-                {nearExpiry && <span className="rounded-full bg-white/70 px-2 py-0.5 text-amber-700">Soon</span>}
+                {nearExpiry && (
+                    <span className="rounded-full bg-white/70 px-2 py-0.5 text-amber-700"
+                          style={{ backgroundColor: 'rgba(255,255,255,0.70)', color: '#b45309' }}>
+                        Soon
+                    </span>
+                )}
             </div>
-            {note.is_mine && (
-                <div className="mt-3 flex gap-1">
-                    <button className="btn-ghost !bg-white/60 !py-1 !px-2" title="Edit" onClick={() => onEdit(note)}>
+            <div className="mt-3 flex flex-wrap gap-1">
+                <button className="btn-ghost !bg-white/60 !py-1 !px-2 text-xs"
+                        style={actionButtonStyle}
+                        onClick={() => onViewReplies(note)}>
+                    <ChatBubbleLeftRightIcon className="w-4 h-4 text-indigo-700" />
+                    View Reply{Number(note.reply_count || 0) > 0 ? ` (${note.reply_count})` : ''}
+                </button>
+                {note.is_mine && (
+                    <>
+                    <button className="btn-ghost !bg-white/60 !py-1 !px-2" style={actionButtonStyle} title="Edit" onClick={() => onEdit(note)}>
                         <PencilSquareIcon className="w-4 h-4 text-blue-600" />
                     </button>
-                    <button className="btn-ghost !bg-white/60 !py-1 !px-2 text-xs" onClick={() => onExtend(note)}>
+                    <button className="btn-ghost !bg-white/60 !py-1 !px-2 text-xs" style={actionButtonStyle} onClick={() => onExtend(note)}>
                         Extend
                     </button>
-                    <button className="btn-ghost !bg-white/60 !py-1 !px-2" title="Remove" onClick={() => onRemove(note)}>
+                    <button className="btn-ghost !bg-white/60 !py-1 !px-2" style={actionButtonStyle} title="Remove" onClick={() => onRemove(note)}>
                         <TrashIcon className="w-4 h-4 text-red-500" />
                     </button>
-                </div>
-            )}
+                    </>
+                )}
+            </div>
         </article>
+    );
+}
+
+function ReplyModal({ data, loading, replyText, saving, onReplyText, onSubmit, onClose }) {
+    if (!data) return null;
+    const note = data.note || {};
+    const replies = data.replies || [];
+    const color = colorFor(note.color);
+    const fontColor = fontColorFor(note.font_color);
+    const fontSize = fontSizeFor(note.font_size);
+
+    return (
+        <Modal open={!!data} onClose={onClose} title="Post-It Replies" size="xl"
+               footer={(
+                   <>
+                       <button className="btn-ghost" onClick={onClose}>Close</button>
+                       <button className="btn-primary" onClick={onSubmit} disabled={saving || loading}>
+                           <PaperAirplaneIcon className="w-4 h-4" /> Reply
+                       </button>
+                   </>
+               )}>
+            <div className="grid gap-4 lg:grid-cols-[minmax(280px,0.9fr)_minmax(320px,1.1fr)]">
+                <div className={`relative min-h-[260px] rounded-sm border p-6 pt-10 shadow-xl ${color.className}`}
+                     style={{
+                         background: paperBackground(color),
+                         borderColor: color.to,
+                         boxShadow: '0 14px 24px rgba(30,20,10,.22), inset 0 -22px 30px rgba(255,255,255,.22)'
+                     }}>
+                    <span className="absolute left-1/2 top-[-7px] h-8 w-8 -translate-x-1/2 rounded-full bg-gradient-to-br from-red-400 to-red-700 shadow-lg ring-2 ring-red-900/30">
+                        <span className="absolute left-1/2 top-[20px] h-7 w-1 -translate-x-1/2 rotate-12 rounded-full bg-slate-500 shadow" />
+                        <span className="absolute left-[8px] top-[7px] h-2.5 w-2.5 rounded-full bg-white/60" />
+                    </span>
+                    <div className={`post-it-content break-words ${fontSize.className} font-bold leading-relaxed ${fontColor.className}`}
+                         style={{ color: fontColor.hex }}
+                         dangerouslySetInnerHTML={{ __html: note.content || '' }} />
+                    <div className="mt-5 text-xs font-semibold" style={{ color: '#475569' }}>
+                        Expires {formatDate(note.expires_at)}
+                    </div>
+                </div>
+
+                <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-bold text-slate-800">Replies</h4>
+                        <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">
+                            {replies.length}
+                        </span>
+                    </div>
+                    <div className="max-h-[330px] space-y-2 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        {loading && <div className="text-sm font-semibold text-slate-500">Loading replies...</div>}
+                        {!loading && replies.length === 0 && (
+                            <div className="rounded-lg border border-dashed border-slate-300 bg-white p-4 text-center text-sm font-semibold text-slate-500">
+                                No replies yet
+                            </div>
+                        )}
+                        {!loading && replies.map(reply => (
+                            <div key={reply.id} className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+                                <div className="whitespace-pre-wrap break-words text-sm font-semibold text-slate-800">
+                                    {reply.content}
+                                </div>
+                                <div className="mt-2 text-[11px] font-semibold text-slate-500">
+                                    {formatDate(reply.created_at)}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    <div>
+                        <textarea className="input min-h-[110px]"
+                                  value={replyText}
+                                  maxLength={1000}
+                                  onChange={e => onReplyText(e.target.value)}
+                                  placeholder="Write an anonymous reply..." />
+                        <div className="mt-1 text-right text-xs font-semibold text-slate-500">
+                            {replyText.length}/1000
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </Modal>
     );
 }
