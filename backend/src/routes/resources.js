@@ -687,10 +687,7 @@ router.put('/:id', param('id').isInt(), resourceValidators, async (req, res) => 
             skill: b.skill !== undefined ? b.skill : existing.skill
         };
 
-        const client = await db.getClient();
-        try {
-            await client.query('BEGIN');
-            const { rows } = await client.query(
+        const { rows } = await db.query(
             `UPDATE resources SET emp_id=$1, first_name=$2, last_name=$3, nick_name=$4,
                                   role=$5, email=$6, mobile_phone=$7, instagram=$8, line_id=$9, facebook=$10,
                                   erp_username=$11, skill=$12,
@@ -703,33 +700,29 @@ router.put('/:id', param('id').isInt(), resourceValidators, async (req, res) => 
              newPic === '__KEEP__' ? '__KEEP__' : 'replace',
              newPic === '__KEEP__' ? null : (newPic === null ? '__NULL__' : newPic),
              req.params.id, req.tenantId]
-            );
-            if (!rows[0]) {
-                await client.query('ROLLBACK');
-                return res.status(404).json({ error: 'Not found' });
-            }
+        );
+        if (!rows[0]) return res.status(404).json({ error: 'Not found' });
+
+        // Keep the linked login display name aligned, but never fail saving the
+        // resource because of a secondary user-profile sync.
+        try {
             if (rows[0].user_id) {
                 const fullName = [rows[0].first_name, rows[0].last_name].filter(Boolean).join(' ').trim()
                     || rows[0].nick_name
                     || rows[0].erp_username
                     || '';
-                await client.query(
+                await db.query(
                     `UPDATE users
                         SET full_name=$1,
-                            email=$2,
-                            phone_number=$3
-                      WHERE id=$4 AND tenant_id=$5`,
-                    [fullName, rows[0].email || '', rows[0].mobile_phone || '', rows[0].user_id, req.tenantId]
+                            phone_number=$2
+                      WHERE id=$3 AND tenant_id=$4`,
+                    [fullName, rows[0].mobile_phone || '', rows[0].user_id, req.tenantId]
                 );
             }
-            await client.query('COMMIT');
-            res.json(await getResourceWithUser(req.params.id, req.tenantId));
-        } catch (err) {
-            await client.query('ROLLBACK');
-            throw err;
-        } finally {
-            client.release();
+        } catch (syncErr) {
+            console.error('[resources] linked user sync failed:', syncErr.message);
         }
+        res.json(await getResourceWithUser(req.params.id, req.tenantId));
     } catch (err) {
         if (err.code === '23505') return res.status(409).json({ error: 'Emp ID already exists' });
         throw err;

@@ -17,6 +17,12 @@ export default function Resources() {
     async function load() { setList((await api.get('/resources')).data); }
     useEffect(() => { load(); }, []);
 
+    function saveErrorMessage(err) {
+        return err.response?.data?.error
+            || err.response?.data?.errors?.[0]?.msg
+            || 'Save failed';
+    }
+
     function resourcePayload(f) {
         return {
             emp_id: f.emp_id || null,
@@ -41,7 +47,7 @@ export default function Resources() {
             if (f.id) await api.put(`/resources/${f.id}`, payload);
             else      await api.post('/resources', payload);
             toast.success('Saved'); setEdit(null); load();
-        } catch (err) { toast.error(err.response?.data?.error || 'Save failed'); }
+        } catch (err) { toast.error(saveErrorMessage(err)); }
     }
     async function remove(id) {
         if (!confirm('Delete resource?')) return;
