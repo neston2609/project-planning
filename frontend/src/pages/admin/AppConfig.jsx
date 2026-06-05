@@ -2,6 +2,14 @@ import { useEffect, useState } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 
+const AI_PROVIDERS = [
+    { value: 'openai', label: 'OpenAI' },
+    { value: 'anthropic', label: 'Anthropic' },
+    { value: 'google', label: 'Google Gemini' },
+    { value: 'azure_openai', label: 'Azure OpenAI' },
+    { value: 'custom', label: 'Custom Endpoint' }
+];
+
 export default function AppConfigPage() {
     const [defaultYear, setDefaultYear] = useState('');
     const [licenseDays, setLicenseDays] = useState('');
@@ -9,15 +17,28 @@ export default function AppConfigPage() {
     const [postItExpiryDays, setPostItExpiryDays] = useState('30');
     const [postItBoardSize, setPostItBoardSize] = useState('40');
     const [footerText, setFooterText] = useState('');
+    const [aiProvider, setAiProvider] = useState('openai');
+    const [aiApiKey, setAiApiKey] = useState('');
+    const [aiEndpoint, setAiEndpoint] = useState('');
+    const [aiModel, setAiModel] = useState('');
+    const [aiModels, setAiModels] = useState([]);
+    const [loadingModels, setLoadingModels] = useState(false);
 
     async function load() {
-        const r = await api.get('/admin/app-config');
+        const [r, ai] = await Promise.all([
+            api.get('/admin/app-config'),
+            api.get('/admin/ai-config')
+        ]);
         setDefaultYear(r.data.default_year || '');
         setLicenseDays(r.data.license_expiring_days || '30');
         setLoginRetentionDays(r.data.login_log_retention_days || '14');
         setPostItExpiryDays(r.data.post_it_expiry_days || '30');
         setPostItBoardSize(r.data.post_it_board_size || '40');
         setFooterText(r.data.footer_text || 'Implemented and Maintain by BSM RPA Team. For Internal use only');
+        setAiProvider(ai.data.provider || 'openai');
+        setAiApiKey(ai.data.api_key || '');
+        setAiEndpoint(ai.data.endpoint || '');
+        setAiModel(ai.data.model || '');
     }
     useEffect(() => { load(); }, []);
 
@@ -77,6 +98,49 @@ export default function AppConfigPage() {
             await api.put('/admin/app-config/post_it_board_size', { value: String(n) });
             toast.success('Post-It board size saved');
         } catch { toast.error('Save failed'); }
+    }
+
+    async function saveAiConfig() {
+        if ((aiProvider === 'azure_openai' || aiProvider === 'custom') && !aiEndpoint.trim()) {
+            return toast.error('Endpoint is required for this provider');
+        }
+        try {
+            const r = await api.put('/admin/ai-config', {
+                provider: aiProvider,
+                api_key: aiApiKey,
+                endpoint: aiEndpoint,
+                model: aiModel
+            });
+            setAiApiKey(r.data.api_key || '');
+            toast.success('AI configuration saved');
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Save failed');
+        }
+    }
+
+    async function loadAiModels() {
+        setLoadingModels(true);
+        try {
+            const r = await api.post('/admin/ai-config/models', {
+                provider: aiProvider,
+                api_key: aiApiKey,
+                endpoint: aiEndpoint
+            });
+            const models = r.data.models || [];
+            setAiModels(models);
+            if (!aiModel && models[0]) setAiModel(models[0]);
+            toast.success(models.length ? `Loaded ${models.length} model(s)` : 'No models returned');
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Could not load models');
+        } finally {
+            setLoadingModels(false);
+        }
+    }
+
+    function changeAiProvider(value) {
+        setAiProvider(value);
+        setAiModels([]);
+        if (value !== 'azure_openai' && value !== 'custom') setAiEndpoint('');
     }
 
     return (
@@ -139,6 +203,60 @@ export default function AppConfigPage() {
                     </p>
                 </div>
                 <button className="btn-primary" onClick={savePostItBoardSize}>Save Post-It Board Size</button>
+            </div>
+
+            <div className="card p-4 max-w-2xl space-y-3">
+                <div>
+                    <label className="label">AI Model Configuration</label>
+                    <p className="text-xs text-slate-400 mt-1">
+                        Configure the tenant AI provider for future AI features in the web app.
+                    </p>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                    <div>
+                        <label className="label">Provider</label>
+                        <select className="input" value={aiProvider}
+                                onChange={e => changeAiProvider(e.target.value)}>
+                            {AI_PROVIDERS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="label">API Key</label>
+                        <input className="input" type="password" value={aiApiKey}
+                               onChange={e => setAiApiKey(e.target.value)}
+                               placeholder="Paste API key" />
+                    </div>
+                    {(aiProvider === 'azure_openai' || aiProvider === 'custom') && (
+                        <div className="md:col-span-2">
+                            <label className="label">{aiProvider === 'azure_openai' ? 'Azure OpenAI Endpoint' : 'Custom Endpoint'}</label>
+                            <input className="input" value={aiEndpoint}
+                                   onChange={e => setAiEndpoint(e.target.value)}
+                                   placeholder={aiProvider === 'azure_openai'
+                                       ? 'https://your-resource.openai.azure.com'
+                                       : 'https://your-ai-gateway.example.com/v1'} />
+                        </div>
+                    )}
+                    <div className="md:col-span-2">
+                        <label className="label">Model</label>
+                        {aiModels.length > 0 ? (
+                            <select className="input" value={aiModel}
+                                    onChange={e => setAiModel(e.target.value)}>
+                                <option value="">Select model</option>
+                                {aiModels.map(model => <option key={model} value={model}>{model}</option>)}
+                            </select>
+                        ) : (
+                            <input className="input" value={aiModel}
+                                   onChange={e => setAiModel(e.target.value)}
+                                   placeholder={aiProvider === 'custom' ? 'custom-model-name' : 'Load models or enter model manually'} />
+                        )}
+                    </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                    <button className="btn-ghost" onClick={loadAiModels} disabled={loadingModels}>
+                        {loadingModels ? 'Loading Models...' : 'Load Supported Models'}
+                    </button>
+                    <button className="btn-primary" onClick={saveAiConfig}>Save AI Configuration</button>
+                </div>
             </div>
 
             <div className="card p-4 max-w-2xl space-y-3">

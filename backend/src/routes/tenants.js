@@ -23,6 +23,10 @@ async function seedTenantConfig(client, tenantId) {
         ['kb_version_limit', '20'],
         ['post_it_expiry_days', '30'],
         ['post_it_board_size', '40'],
+        ['ai_provider', 'openai'],
+        ['ai_api_key', ''],
+        ['ai_endpoint', ''],
+        ['ai_model', ''],
         ['footer_text',           'Implemented and Maintain by BSM RPA Team. For Internal use only']
     ];
     for (const [key, value] of defaults) {

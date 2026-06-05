@@ -10,6 +10,8 @@ const { ensureDefaultRoles } = require('../utils/roles');
 const router = express.Router();
 const DEFAULT_FOOTER_TEXT = 'Implemented and Maintain by BSM RPA Team. For Internal use only';
 const DEFAULT_LOGIN_LOG_RETENTION_DAYS = 14;
+const AI_PROVIDERS = ['openai', 'anthropic', 'google', 'azure_openai', 'custom'];
+const AI_CONFIG_KEYS = ['ai_provider', 'ai_api_key', 'ai_endpoint', 'ai_model'];
 // All admin routes are tenant-scoped. The global TenantAdmin manages tenants
 // and team users via /api/tenants, not these per-tenant admin endpoints.
 router.use(requireAuth, requireTenant);
@@ -40,6 +42,101 @@ function validMenuKeysForBase(baseRole, menuPermissions = null) {
     const allowedByBase = new Set(defaultMenuKeysForRole(baseRole));
     const requested = Array.isArray(menuPermissions) ? menuPermissions : defaultMenuKeysForRole(baseRole);
     return [...new Set(requested)].filter(key => registered.has(key) && allowedByBase.has(key));
+}
+
+function cleanAiProvider(value) {
+    const provider = String(value || '').trim().toLowerCase();
+    return AI_PROVIDERS.includes(provider) ? provider : 'openai';
+}
+
+function maskSecret(value) {
+    return value ? '********' : '';
+}
+
+function normalizeEndpoint(value) {
+    return String(value || '').trim().replace(/\/+$/, '');
+}
+
+async function getTenantConfigMap(tenantId, keys) {
+    const { rows } = await db.query(
+        'SELECT key, value FROM tenant_config WHERE tenant_id=$1 AND key = ANY($2)',
+        [tenantId, keys]
+    );
+    return Object.fromEntries(rows.map(r => [r.key, r.value]));
+}
+
+async function saveTenantConfig(client, tenantId, key, value) {
+    await client.query(
+        `INSERT INTO tenant_config(tenant_id, key, value) VALUES ($1, $2, $3)
+         ON CONFLICT (tenant_id, key) DO UPDATE SET value=EXCLUDED.value, updated_at=NOW()`,
+        [tenantId, key, String(value ?? '')]
+    );
+}
+
+async function fetchJson(url, options = {}) {
+    const response = await fetch(url, options);
+    const text = await response.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+    if (!response.ok) {
+        const message = data?.error?.message || data?.error || data?.message || response.statusText || 'Model loading failed';
+        const err = new Error(message);
+        err.status = response.status;
+        throw err;
+    }
+    return data;
+}
+
+function namesFromModels(data, provider) {
+    if (!data) return [];
+    if (Array.isArray(data.data)) return data.data.map(m => m.id || m.name).filter(Boolean).sort();
+    if (Array.isArray(data.models)) {
+        return data.models
+            .map(m => m.name || m.id)
+            .filter(Boolean)
+            .map(name => provider === 'google' ? String(name).replace(/^models\//, '') : String(name))
+            .sort();
+    }
+    if (Array.isArray(data.value)) return data.value.map(m => m.id || m.name).filter(Boolean).sort();
+    return [];
+}
+
+async function loadAiModels({ provider, apiKey, endpoint }) {
+    const cleanProvider = cleanAiProvider(provider);
+    const cleanEndpoint = normalizeEndpoint(endpoint);
+    if (!apiKey && cleanProvider !== 'custom') throw new Error('API key is required');
+
+    if (cleanProvider === 'openai') {
+        const data = await fetchJson('https://api.openai.com/v1/models', {
+            headers: { Authorization: `Bearer ${apiKey}` }
+        });
+        return namesFromModels(data, cleanProvider);
+    }
+    if (cleanProvider === 'anthropic') {
+        const data = await fetchJson('https://api.anthropic.com/v1/models', {
+            headers: {
+                'x-api-key': apiKey,
+                'anthropic-version': '2023-06-01'
+            }
+        });
+        return namesFromModels(data, cleanProvider);
+    }
+    if (cleanProvider === 'google') {
+        const data = await fetchJson(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`);
+        return namesFromModels(data, cleanProvider);
+    }
+    if (cleanProvider === 'azure_openai') {
+        if (!cleanEndpoint) throw new Error('Azure OpenAI endpoint is required');
+        const data = await fetchJson(`${cleanEndpoint}/openai/deployments?api-version=2024-10-21`, {
+            headers: { 'api-key': apiKey }
+        });
+        return namesFromModels(data, cleanProvider);
+    }
+    if (!cleanEndpoint) throw new Error('Custom endpoint is required');
+    const data = await fetchJson(`${cleanEndpoint}/models`, {
+        headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {}
+    });
+    return namesFromModels(data, cleanProvider);
 }
 
 // ---------- Users (Superadmin only, within the caller's tenant) ----------
@@ -351,6 +448,71 @@ router.put('/app-config/:key', param('key').isString(), async (req, res) => {
         [req.tenantId, req.params.key, String(req.body.value ?? '')]
     );
     res.json(rows[0]);
+});
+
+// ---------- AI Model config (per tenant) ----------
+router.get('/ai-config', async (req, res) => {
+    const cfg = await getTenantConfigMap(req.tenantId, AI_CONFIG_KEYS);
+    res.json({
+        provider: cleanAiProvider(cfg.ai_provider || 'openai'),
+        endpoint: cfg.ai_endpoint || '',
+        model: cfg.ai_model || '',
+        api_key: maskSecret(cfg.ai_api_key)
+    });
+});
+
+router.put('/ai-config', async (req, res) => {
+    const provider = cleanAiProvider(req.body.provider);
+    const endpoint = normalizeEndpoint(req.body.endpoint);
+    const model = String(req.body.model || '').trim();
+    const incomingKey = String(req.body.api_key || '').trim();
+    const current = await getTenantConfigMap(req.tenantId, ['ai_api_key']);
+    const apiKey = incomingKey === '********' ? (current.ai_api_key || '') : incomingKey;
+
+    if (provider === 'azure_openai' && !endpoint) {
+        return res.status(400).json({ error: 'Azure OpenAI endpoint is required' });
+    }
+    if (provider === 'custom' && !endpoint) {
+        return res.status(400).json({ error: 'Custom endpoint is required' });
+    }
+
+    const client = await db.connect();
+    try {
+        await client.query('BEGIN');
+        await saveTenantConfig(client, req.tenantId, 'ai_provider', provider);
+        await saveTenantConfig(client, req.tenantId, 'ai_endpoint', endpoint);
+        await saveTenantConfig(client, req.tenantId, 'ai_model', model);
+        await saveTenantConfig(client, req.tenantId, 'ai_api_key', apiKey);
+        await client.query('COMMIT');
+        res.json({
+            provider,
+            endpoint,
+            model,
+            api_key: maskSecret(apiKey)
+        });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('[ai-config/save]', err);
+        res.status(500).json({ error: 'Save failed' });
+    } finally {
+        client.release();
+    }
+});
+
+router.post('/ai-config/models', async (req, res) => {
+    const cfg = await getTenantConfigMap(req.tenantId, AI_CONFIG_KEYS);
+    const provider = cleanAiProvider(req.body.provider || cfg.ai_provider || 'openai');
+    const endpoint = normalizeEndpoint(req.body.endpoint ?? cfg.ai_endpoint);
+    const incomingKey = String(req.body.api_key || '').trim();
+    const apiKey = incomingKey && incomingKey !== '********' ? incomingKey : (cfg.ai_api_key || '');
+
+    try {
+        const models = await loadAiModels({ provider, apiKey, endpoint });
+        res.json({ provider, models });
+    } catch (err) {
+        console.error('[ai-config/models]', err.message);
+        res.status(err.status || 400).json({ error: err.message || 'Could not load models' });
+    }
 });
 
 // ---------- SMTP config (PER TENANT) ----------

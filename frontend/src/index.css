@@ -428,3 +428,22 @@ html.dark .kb-image-resize-handle {
 .post-it-content font[size="7"] {
     font-size: 1.5rem !important;
 }
+
+.post-it-action-button,
+html.dark .post-it-action-button {
+    background: rgba(255, 255, 255, 0.72) !important;
+    border-color: rgba(148, 163, 184, 0.55) !important;
+    color: #334155 !important;
+}
+
+.post-it-action-button:hover,
+html.dark .post-it-action-button:hover {
+    background: rgba(255, 255, 255, 0.90) !important;
+    border-color: rgba(99, 102, 241, 0.45) !important;
+    color: #1e293b !important;
+}
+
+.post-it-action-button svg,
+html.dark .post-it-action-button svg {
+    color: currentColor !important;
+}

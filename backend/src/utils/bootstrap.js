@@ -173,7 +173,7 @@ async function bootstrap() {
     // Pre-Phase-4, these lived in the global app_config. Each tenant now owns
     // its own copy. The default tenant inherits the legacy values; every other
     // existing tenant gets a baseline (current year + 30 days).
-    const perTenantKeys = ['default_year', 'license_expiring_days', 'footer_text', 'login_log_retention_days', 'kb_version_limit', 'post_it_expiry_days', 'post_it_board_size'];
+    const perTenantKeys = ['default_year', 'license_expiring_days', 'footer_text', 'login_log_retention_days', 'kb_version_limit', 'post_it_expiry_days', 'post_it_board_size', 'ai_provider', 'ai_api_key', 'ai_endpoint', 'ai_model'];
     try {
         for (const key of perTenantKeys) {
             // Read legacy global value (if any).
@@ -193,7 +193,11 @@ async function bootstrap() {
                                 ? '30'
                                 : key === 'post_it_board_size'
                                     ? '40'
-                                    : 'Implemented and Maintain by BSM RPA Team. For Internal use only';
+                                    : key === 'ai_provider'
+                                        ? 'openai'
+                                        : key === 'ai_api_key' || key === 'ai_endpoint' || key === 'ai_model'
+                                            ? ''
+                                            : 'Implemented and Maintain by BSM RPA Team. For Internal use only';
 
             // For the default tenant: take legacy if present, else fallback.
             // For every other existing tenant: take fallback.

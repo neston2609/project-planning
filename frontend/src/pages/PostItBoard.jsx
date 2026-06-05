@@ -487,7 +487,7 @@ function PostIt({ note, onRemove, onExtend, onEdit, onViewReplies, shouldSuppres
     const fontColor = fontColorFor(note.font_color);
     const fontSize = fontSizeFor(note.font_size);
     const nearExpiry = note.is_mine && note.days_until_expiry != null && note.days_until_expiry <= 7;
-    const actionButtonStyle = { backgroundColor: 'rgba(255,255,255,0.60)', color: '#334155' };
+    const actionButtonStyle = { backgroundColor: 'rgba(255,255,255,0.72)', color: '#334155', borderColor: 'rgba(148,163,184,0.55)' };
     function openFromPostIt() {
         if (shouldSuppressClick?.()) return;
         onViewReplies(note);
@@ -529,25 +529,25 @@ function PostIt({ note, onRemove, onExtend, onEdit, onViewReplies, shouldSuppres
                 )}
             </div>
             <div className="mt-3 flex flex-wrap gap-1">
-                <button className="btn-ghost !bg-white/60 !py-1 !px-2 text-xs"
+                <button className="btn-ghost post-it-action-button !py-1 !px-2 text-xs"
                         style={actionButtonStyle}
                         onClick={e => {
                             e.stopPropagation();
                             onViewReplies(note);
                         }}>
-                    <ChatBubbleLeftRightIcon className="w-4 h-4 text-indigo-700" />
+                    <ChatBubbleLeftRightIcon className="w-4 h-4" />
                     View Reply{Number(note.reply_count || 0) > 0 ? ` (${note.reply_count})` : ''}
                 </button>
                 {note.is_mine && (
                     <>
-                    <button className="btn-ghost !bg-white/60 !py-1 !px-2" style={actionButtonStyle} title="Edit" onClick={e => { e.stopPropagation(); onEdit(note); }}>
-                        <PencilSquareIcon className="w-4 h-4 text-blue-600" />
+                    <button className="btn-ghost post-it-action-button !py-1 !px-2" style={actionButtonStyle} title="Edit" onClick={e => { e.stopPropagation(); onEdit(note); }}>
+                        <PencilSquareIcon className="w-4 h-4" />
                     </button>
-                    <button className="btn-ghost !bg-white/60 !py-1 !px-2 text-xs" style={actionButtonStyle} onClick={e => { e.stopPropagation(); onExtend(note); }}>
+                    <button className="btn-ghost post-it-action-button !py-1 !px-2 text-xs" style={actionButtonStyle} onClick={e => { e.stopPropagation(); onExtend(note); }}>
                         Extend
                     </button>
-                    <button className="btn-ghost !bg-white/60 !py-1 !px-2" style={actionButtonStyle} title="Remove" onClick={e => { e.stopPropagation(); onRemove(note); }}>
-                        <TrashIcon className="w-4 h-4 text-red-500" />
+                    <button className="btn-ghost post-it-action-button !py-1 !px-2" style={actionButtonStyle} title="Remove" onClick={e => { e.stopPropagation(); onRemove(note); }}>
+                        <TrashIcon className="w-4 h-4" />
                     </button>
                     </>
                 )}
