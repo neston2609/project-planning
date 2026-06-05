@@ -5,9 +5,10 @@ import { useYear } from '../YearContext';
 import { useAuth, isPlatformRole } from '../auth';
 import { baht, formatDate, pct } from '../format';
 import StatusPill from '../components/StatusPill';
+import Modal from '../components/Modal';
 import {
     BuildingOffice2Icon, CalendarDaysIcon, MagnifyingGlassIcon,
-    PresentationChartLineIcon
+    PresentationChartLineIcon, PaperClipIcon, ArrowDownTrayIcon, EyeIcon
 } from '@heroicons/react/24/outline';
 
 const moneyCols = [
@@ -25,6 +26,19 @@ const moneyCols = [
     'total_recognized'
 ];
 
+function fileSize(bytes) {
+    const n = Number(bytes || 0);
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+    return `${(n / 1024 / 1024 / 1024).toFixed(1)} GB`;
+}
+
+function canPreview(file) {
+    const type = String(file.mime_type || '');
+    return type.startsWith('image/') || type === 'application/pdf';
+}
+
 export default function ProjectSummary() {
     const { user } = useAuth();
     const location = useLocation();
@@ -40,6 +54,8 @@ export default function ProjectSummary() {
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [status, setStatus] = useState('all');
+    const [attachmentModal, setAttachmentModal] = useState(null);
+    const [preview, setPreview] = useState(null);
 
     const cur = new Date().getFullYear();
     const years = useMemo(() => {
@@ -114,6 +130,47 @@ export default function ProjectSummary() {
         t.implementation_recognize_pct = ratio(t.implementation_recognize, t.implementation_revenue);
         return t;
     }, [rows]);
+
+    function summaryTenantQuery() {
+        return platform ? `?tenant_id=${tenantId}` : '';
+    }
+
+    async function openAttachments(project) {
+        setAttachmentModal({ project, files: [], loading: true });
+        try {
+            const r = await api.get(`/project-summary/${project.project_id}/attachments${summaryTenantQuery()}`);
+            setAttachmentModal({ project, files: r.data || [], loading: false });
+        } catch (err) {
+            setAttachmentModal(null);
+            alert(err.response?.data?.error || 'Could not load attachments');
+        }
+    }
+
+    async function fetchAttachmentBlob(url) {
+        const r = await api.get(url, { responseType: 'blob' });
+        return URL.createObjectURL(r.data);
+    }
+
+    async function downloadSummaryAttachment(file) {
+        const objectUrl = await fetchAttachmentBlob(`/project-summary/attachments/${file.id}/download${summaryTenantQuery()}`);
+        const a = document.createElement('a');
+        a.href = objectUrl;
+        a.download = file.original_name || 'attachment';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    }
+
+    async function previewSummaryAttachment(file) {
+        const objectUrl = await fetchAttachmentBlob(`/project-summary/attachments/${file.id}/preview${summaryTenantQuery()}`);
+        setPreview({ ...file, url: objectUrl });
+    }
+
+    function closePreview() {
+        if (preview?.url) URL.revokeObjectURL(preview.url);
+        setPreview(null);
+    }
 
     return (
         <div className="space-y-5">
@@ -215,7 +272,19 @@ export default function ProjectSummary() {
                         )}
                         {rows.map(r => (
                             <tr key={r.project_id}>
-                                <td className="font-mono text-xs font-semibold text-indigo-600">{r.project_code}</td>
+                                <td className="font-mono text-xs font-semibold text-indigo-600">
+                                    <span className="inline-flex items-center gap-1.5">
+                                        {r.project_code}
+                                        {Number(r.attachment_count || 0) > 0 && (
+                                            <button type="button"
+                                                    className="btn-ghost !p-1"
+                                                    title={`${r.attachment_count} attachment(s)`}
+                                                    onClick={() => openAttachments(r)}>
+                                                <PaperClipIcon className="w-4 h-4 text-indigo-600" />
+                                            </button>
+                                        )}
+                                    </span>
+                                </td>
                                 <td className="max-w-[280px] truncate" title={r.project_description}>{r.project_description}</td>
                                 <td className="font-medium">{r.customer || '-'}</td>
                                 <td><StatusPill status={r.status} /></td>
@@ -264,6 +333,46 @@ export default function ProjectSummary() {
                     </tbody>
                 </table>
             </div>
+            {attachmentModal && (
+                <Modal open onClose={() => setAttachmentModal(null)}
+                       title={`Project Attachments - ${attachmentModal.project.project_code}`}
+                       size="lg">
+                    {attachmentModal.loading ? (
+                        <div className="text-center text-slate-400 py-8 animate-pulse">Loading attachments...</div>
+                    ) : attachmentModal.files.length === 0 ? (
+                        <div className="text-center text-slate-400 py-8">No attachments.</div>
+                    ) : (
+                        <div className="space-y-2">
+                            {attachmentModal.files.map(file => (
+                                <div key={file.id} className="flex items-center gap-2 rounded-md border border-slate-200 p-3">
+                                    <PaperClipIcon className="w-5 h-5 text-slate-400 shrink-0" />
+                                    <div className="min-w-0 flex-1">
+                                        <div className="font-semibold truncate">{file.original_name}</div>
+                                        <div className="text-xs text-slate-400">{fileSize(file.file_size)} - {file.mime_type || 'application/octet-stream'}</div>
+                                    </div>
+                                    {canPreview(file) && (
+                                        <button className="btn-ghost !p-2" title="Preview" onClick={() => previewSummaryAttachment(file)}>
+                                            <EyeIcon className="w-4 h-4 text-indigo-600" />
+                                        </button>
+                                    )}
+                                    <button className="btn-ghost !p-2" title="Download" onClick={() => downloadSummaryAttachment(file)}>
+                                        <ArrowDownTrayIcon className="w-4 h-4 text-emerald-600" />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </Modal>
+            )}
+            {preview && (
+                <Modal open onClose={closePreview} title={`Preview - ${preview.original_name}`} size="xl">
+                    {String(preview.mime_type || '').startsWith('image/') ? (
+                        <img src={preview.url} alt={preview.original_name} className="max-h-[75vh] mx-auto object-contain" />
+                    ) : (
+                        <iframe src={preview.url} title={preview.original_name} className="w-full h-[75vh] rounded border border-slate-200" />
+                    )}
+                </Modal>
+            )}
         </div>
     );
 }

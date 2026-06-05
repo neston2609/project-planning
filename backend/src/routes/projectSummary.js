@@ -2,6 +2,11 @@ const express = require('express');
 const db = require('../db');
 const { requireAuth, tenantOf } = require('../middleware/auth');
 const {
+    listProjectAttachments,
+    getProjectAttachment,
+    sendProjectAttachment
+} = require('../utils/projectAttachments');
+const {
     recognizeSubscription, recognizePerpetualMA, recognizeServiceMA,
     recognizeImplementation, recognizeOutsource
 } = require('../utils/revenue');
@@ -52,6 +57,7 @@ function emptyRow(project) {
         status: project.status,
         start_date: project.project_start_date,
         end_date: project.project_end_date,
+        attachment_count: Number(project.attachment_count || 0),
         in_selected_year: false,
 
         software_subscription_revenue: 0,
@@ -116,6 +122,39 @@ function resolveTenantId(req) {
     return tenantOf(req);
 }
 
+async function projectBelongsToTenant(projectId, tenantId) {
+    const { rowCount } = await db.query(
+        'SELECT 1 FROM projects WHERE id=$1 AND tenant_id=$2',
+        [projectId, tenantId]
+    );
+    return rowCount > 0;
+}
+
+router.get('/:projectId/attachments', async (req, res) => {
+    const tenantId = resolveTenantId(req);
+    if (!tenantId) return res.status(400).json({ error: 'tenant_id is required for platform users' });
+    if (!await projectBelongsToTenant(req.params.projectId, tenantId)) {
+        return res.status(404).json({ error: 'Project not found' });
+    }
+    res.json(await listProjectAttachments(db, req.params.projectId, tenantId));
+});
+
+router.get('/attachments/:attachmentId/download', async (req, res) => {
+    const tenantId = resolveTenantId(req);
+    if (!tenantId) return res.status(400).json({ error: 'tenant_id is required for platform users' });
+    const row = await getProjectAttachment(db, req.params.attachmentId, tenantId);
+    if (!row) return res.status(404).json({ error: 'Attachment not found' });
+    sendProjectAttachment(res, row, false);
+});
+
+router.get('/attachments/:attachmentId/preview', async (req, res) => {
+    const tenantId = resolveTenantId(req);
+    if (!tenantId) return res.status(400).json({ error: 'tenant_id is required for platform users' });
+    const row = await getProjectAttachment(db, req.params.attachmentId, tenantId);
+    if (!row) return res.status(404).json({ error: 'Attachment not found' });
+    sendProjectAttachment(res, row, true);
+});
+
 router.get('/', async (req, res) => {
     const year = pickYear(req);
     const tenantId = resolveTenantId(req);
@@ -127,9 +166,15 @@ router.get('/', async (req, res) => {
     if (!tenant.rowCount) return res.status(404).json({ error: 'Tenant not found' });
 
     const { rows: projects } = await db.query(`
-        SELECT p.*, c.alias AS customer_alias
+        SELECT p.*, c.alias AS customer_alias, COALESCE(att.n, 0)::int AS attachment_count
           FROM projects p
           LEFT JOIN customers c ON c.id = p.customer_id
+          LEFT JOIN (
+            SELECT project_id, COUNT(*) AS n
+              FROM project_attachments
+             WHERE tenant_id=$1
+             GROUP BY project_id
+          ) att ON att.project_id = p.id
          WHERE p.tenant_id=$1 AND p.status <> 'Loss'
          ORDER BY p.project_code
     `, [tenantId]);

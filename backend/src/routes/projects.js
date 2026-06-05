@@ -3,6 +3,13 @@ const { randomInt } = require('crypto');
 const { body, param, validationResult } = require('express-validator');
 const db = require('../db');
 const { requireAuth, requireTenant } = require('../middleware/auth');
+const {
+    listProjectAttachments,
+    saveProjectAttachmentStream,
+    getProjectAttachment,
+    deleteProjectAttachment,
+    sendProjectAttachment
+} = require('../utils/projectAttachments');
 
 const router = express.Router();
 
@@ -201,6 +208,49 @@ router.delete('/:id', param('id').isInt(), async (req, res) => {
         'DELETE FROM projects WHERE id=$1 AND tenant_id=$2', [req.params.id, req.tenantId]
     );
     if (!rowCount) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true });
+});
+
+router.get('/:id/attachments', param('id').isInt(), async (req, res) => {
+    if (!await projectInTenant(req.params.id, req.tenantId)) {
+        return res.status(404).json({ error: 'Not found' });
+    }
+    res.json(await listProjectAttachments(db, req.params.id, req.tenantId));
+});
+
+router.post('/:id/attachments',
+    param('id').isInt(),
+    async (req, res) => {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+        const saved = await saveProjectAttachmentStream(db, {
+            tenantId: req.tenantId,
+            projectId: req.params.id,
+            userId: req.user?.uid,
+            originalName: req.query.filename || req.headers['x-file-name'],
+            mimeType: req.headers['x-file-type'] || req.headers['content-type'],
+            stream: req
+        });
+        if (!saved) return res.status(404).json({ error: 'Not found' });
+        res.status(201).json(saved);
+    }
+);
+
+router.get('/attachments/:attachmentId/download', param('attachmentId').isInt(), async (req, res) => {
+    const row = await getProjectAttachment(db, req.params.attachmentId, req.tenantId);
+    if (!row) return res.status(404).json({ error: 'Attachment not found' });
+    sendProjectAttachment(res, row, false);
+});
+
+router.get('/attachments/:attachmentId/preview', param('attachmentId').isInt(), async (req, res) => {
+    const row = await getProjectAttachment(db, req.params.attachmentId, req.tenantId);
+    if (!row) return res.status(404).json({ error: 'Attachment not found' });
+    sendProjectAttachment(res, row, true);
+});
+
+router.delete('/attachments/:attachmentId', param('attachmentId').isInt(), async (req, res) => {
+    const ok = await deleteProjectAttachment(db, req.params.attachmentId, req.tenantId);
+    if (!ok) return res.status(404).json({ error: 'Attachment not found' });
     res.json({ ok: true });
 });
 

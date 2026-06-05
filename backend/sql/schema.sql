@@ -424,6 +424,20 @@ CREATE INDEX IF NOT EXISTS idx_projects_status   ON projects(status);
 CREATE INDEX IF NOT EXISTS idx_projects_customer ON projects(customer_id);
 CREATE INDEX IF NOT EXISTS idx_projects_tenant   ON projects(tenant_id);
 
+CREATE TABLE IF NOT EXISTS project_attachments (
+    id            SERIAL PRIMARY KEY,
+    tenant_id     INT NOT NULL,
+    project_id    INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    original_name VARCHAR(255) NOT NULL,
+    stored_name   VARCHAR(255) NOT NULL,
+    mime_type     VARCHAR(255) NOT NULL DEFAULT 'application/octet-stream',
+    file_size     BIGINT NOT NULL DEFAULT 0,
+    uploaded_by   INT REFERENCES users(id) ON DELETE SET NULL,
+    created_at    TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_project_attachments_project ON project_attachments(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_attachments_tenant ON project_attachments(tenant_id);
+
 -- Subscription License (1 per project)
 CREATE TABLE IF NOT EXISTS project_subscriptions (
     id                  SERIAL PRIMARY KEY,

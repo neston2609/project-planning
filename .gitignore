@@ -7,3 +7,4 @@ build/
 *.log
 *.traineddata
 backend/.cache/
+backend/uploads/

@@ -1,11 +1,43 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import { useYear } from '../../YearContext';
 import StatusPill from '../../components/StatusPill';
 import Modal from '../../components/Modal';
 import { baht, formatDate } from '../../format';
-import { PencilSquareIcon, TrashIcon, PlusIcon, MagnifyingGlassIcon, FunnelIcon, ArrowsUpDownIcon } from '@heroicons/react/24/outline';
+import {
+    PencilSquareIcon, TrashIcon, PlusIcon, MagnifyingGlassIcon, FunnelIcon,
+    ArrowsUpDownIcon, PaperClipIcon, ArrowDownTrayIcon, EyeIcon
+} from '@heroicons/react/24/outline';
+
+function fileSize(bytes) {
+    const n = Number(bytes || 0);
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+    return `${(n / 1024 / 1024 / 1024).toFixed(1)} GB`;
+}
+
+function canPreview(file) {
+    const type = String(file.mime_type || '');
+    return type.startsWith('image/') || type === 'application/pdf';
+}
+
+async function fetchBlob(url) {
+    const res = await api.get(url, { responseType: 'blob' });
+    return URL.createObjectURL(res.data);
+}
+
+async function downloadAttachment(url, fileName) {
+    const objectUrl = await fetchBlob(url);
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = fileName || 'attachment';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+}
 
 export default function ProjectManagement() {
     const { year } = useYear();
@@ -243,6 +275,7 @@ function ProjectEditor({ project, customers, onClose, onSaved, year }) {
                title={`Edit — ${project.project_code} ${project.description ? '— ' + project.description : ''}`}>
             {/* Master form — always visible at the top */}
             <MasterForm project={project} customers={customers} onSaved={onSaved} />
+            <ProjectAttachmentsPanel project={project} />
 
             {/* Tab strip for the 5 revenue types */}
             <div className="mt-6 border-b border-slate-200 flex flex-wrap gap-1">
@@ -326,6 +359,130 @@ function MasterForm({ project, customers, onSaved }) {
                 <div className="col-span-2"><label className="label">Note</label>
                     <textarea className="input" rows={2} value={f.note} onChange={e => setF({ ...f, note: e.target.value })} /></div>
             </div>
+        </div>
+    );
+}
+
+function ProjectAttachmentsPanel({ project }) {
+    const fileRef = useRef(null);
+    const [files, setFiles] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [uploading, setUploading] = useState(false);
+    const [preview, setPreview] = useState(null);
+
+    async function load() {
+        setLoading(true);
+        try {
+            const r = await api.get(`/projects/${project.id}/attachments`);
+            setFiles(r.data || []);
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Could not load attachments');
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    useEffect(() => { load(); }, [project.id]);
+
+    async function upload(e) {
+        const selected = Array.from(e.target.files || []);
+        e.target.value = '';
+        if (selected.length === 0) return;
+        setUploading(true);
+        try {
+            for (const file of selected) {
+                await api.post(`/projects/${project.id}/attachments?filename=${encodeURIComponent(file.name)}`, file, {
+                    headers: {
+                        'Content-Type': 'application/octet-stream',
+                        'X-File-Name': encodeURIComponent(file.name),
+                        'X-File-Type': file.type || 'application/octet-stream'
+                    },
+                    timeout: 0
+                });
+            }
+            toast.success(`Uploaded ${selected.length} file(s)`);
+            await load();
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Upload failed');
+        } finally {
+            setUploading(false);
+        }
+    }
+
+    async function remove(file) {
+        if (!confirm(`Delete "${file.original_name}"?`)) return;
+        try {
+            await api.delete(`/projects/attachments/${file.id}`);
+            toast.success('Attachment deleted');
+            await load();
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Delete failed');
+        }
+    }
+
+    async function openPreview(file) {
+        try {
+            const url = await fetchBlob(`/projects/attachments/${file.id}/preview`);
+            setPreview({ ...file, url });
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Preview failed');
+        }
+    }
+
+    function closePreview() {
+        if (preview?.url) URL.revokeObjectURL(preview.url);
+        setPreview(null);
+    }
+
+    return (
+        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+                <div className="flex items-center gap-2 font-bold text-slate-700">
+                    <PaperClipIcon className="w-5 h-5 text-indigo-500" /> Project Attachments
+                </div>
+                <button type="button" className="btn-ghost ml-auto" disabled={uploading} onClick={() => fileRef.current?.click()}>
+                    <PlusIcon className="w-4 h-4" /> {uploading ? 'Uploading...' : 'Add Files'}
+                </button>
+                <input ref={fileRef} type="file" multiple className="hidden" onChange={upload} />
+            </div>
+            {loading ? (
+                <div className="text-sm text-slate-400 animate-pulse">Loading attachments...</div>
+            ) : files.length === 0 ? (
+                <div className="text-sm text-slate-400">No attachments.</div>
+            ) : (
+                <div className="space-y-2">
+                    {files.map(file => (
+                        <div key={file.id} className="flex items-center gap-2 rounded-md bg-white border border-slate-200 px-3 py-2">
+                            <PaperClipIcon className="w-4 h-4 text-slate-400 shrink-0" />
+                            <div className="min-w-0 flex-1">
+                                <div className="font-semibold text-sm truncate">{file.original_name}</div>
+                                <div className="text-xs text-slate-400">{fileSize(file.file_size)} - {file.mime_type || 'application/octet-stream'}</div>
+                            </div>
+                            {canPreview(file) && (
+                                <button className="btn-ghost !p-2" title="Preview" onClick={() => openPreview(file)}>
+                                    <EyeIcon className="w-4 h-4 text-indigo-600" />
+                                </button>
+                            )}
+                            <button className="btn-ghost !p-2" title="Download"
+                                    onClick={() => downloadAttachment(`/projects/attachments/${file.id}/download`, file.original_name)}>
+                                <ArrowDownTrayIcon className="w-4 h-4 text-emerald-600" />
+                            </button>
+                            <button className="btn-ghost !p-2" title="Delete" onClick={() => remove(file)}>
+                                <TrashIcon className="w-4 h-4 text-red-500" />
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
+            {preview && (
+                <Modal open onClose={closePreview} title={`Preview - ${preview.original_name}`} size="xl">
+                    {String(preview.mime_type || '').startsWith('image/') ? (
+                        <img src={preview.url} alt={preview.original_name} className="max-h-[75vh] mx-auto object-contain" />
+                    ) : (
+                        <iframe src={preview.url} title={preview.original_name} className="w-full h-[75vh] rounded border border-slate-200" />
+                    )}
+                </Modal>
+            )}
         </div>
     );
 }
