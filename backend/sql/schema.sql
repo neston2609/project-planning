@@ -424,10 +424,22 @@ CREATE INDEX IF NOT EXISTS idx_projects_status   ON projects(status);
 CREATE INDEX IF NOT EXISTS idx_projects_customer ON projects(customer_id);
 CREATE INDEX IF NOT EXISTS idx_projects_tenant   ON projects(tenant_id);
 
+CREATE TABLE IF NOT EXISTS project_attachment_types (
+    id          SERIAL PRIMARY KEY,
+    tenant_id   INT NOT NULL,
+    name        VARCHAR(128) NOT NULL,
+    is_system   BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+    UNIQUE (tenant_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_project_attachment_types_tenant ON project_attachment_types(tenant_id);
+
 CREATE TABLE IF NOT EXISTS project_attachments (
     id            SERIAL PRIMARY KEY,
     tenant_id     INT NOT NULL,
     project_id    INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    document_type_id INT REFERENCES project_attachment_types(id) ON DELETE SET NULL,
     original_name VARCHAR(255) NOT NULL,
     stored_name   VARCHAR(255) NOT NULL,
     mime_type     VARCHAR(255) NOT NULL DEFAULT 'application/octet-stream',
@@ -435,6 +447,7 @@ CREATE TABLE IF NOT EXISTS project_attachments (
     uploaded_by   INT REFERENCES users(id) ON DELETE SET NULL,
     created_at    TIMESTAMP NOT NULL DEFAULT NOW()
 );
+ALTER TABLE project_attachments ADD COLUMN IF NOT EXISTS document_type_id INT REFERENCES project_attachment_types(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_project_attachments_project ON project_attachments(project_id);
 CREATE INDEX IF NOT EXISTS idx_project_attachments_tenant ON project_attachments(tenant_id);
 

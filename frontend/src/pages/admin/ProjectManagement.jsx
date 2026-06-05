@@ -39,10 +39,25 @@ async function downloadAttachment(url, fileName) {
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 }
 
+async function uploadProjectAttachment(projectId, file, documentTypeId) {
+    const params = new URLSearchParams({ filename: file.name });
+    if (documentTypeId) params.set('document_type_id', String(documentTypeId));
+    return api.post(`/projects/${projectId}/attachments?${params.toString()}`, file, {
+        headers: {
+            'Content-Type': 'application/octet-stream',
+            'X-File-Name': encodeURIComponent(file.name),
+            'X-File-Type': file.type || 'application/octet-stream',
+            'X-Document-Type-Id': documentTypeId || ''
+        },
+        timeout: 0
+    });
+}
+
 export default function ProjectManagement() {
     const { year } = useYear();
     const [list, setList] = useState([]);
     const [customers, setCustomers] = useState([]);
+    const [documentTypes, setDocumentTypes] = useState([]);
     const [editing, setEditing] = useState(null); // project being edited
     const [creating, setCreating] = useState(false);
     const [search, setSearch] = useState('');
@@ -50,8 +65,13 @@ export default function ProjectManagement() {
     const [sortBy, setSortBy] = useState('project_code_asc');
 
     async function load() {
-        const [p, c] = await Promise.all([api.get(`/projects?year=${year}`), api.get('/customers')]);
+        const [p, c, t] = await Promise.all([
+            api.get(`/projects?year=${year}`),
+            api.get('/customers'),
+            api.get('/admin/project-attachment-types')
+        ]);
         setList(p.data); setCustomers(c.data);
+        setDocumentTypes(t.data || []);
     }
     useEffect(() => { load(); }, [year]);
 
@@ -176,25 +196,40 @@ export default function ProjectManagement() {
             </div>
 
             {creating && (
-                <CreateProjectModal customers={customers} onClose={() => setCreating(false)} onCreated={(id) => { setCreating(false); load(); openProject(id); }} />
+                <CreateProjectModal customers={customers} documentTypes={documentTypes} onClose={() => setCreating(false)} onCreated={(id) => { setCreating(false); load(); openProject(id); }} />
             )}
 
             {editing && (
-                <ProjectEditor project={editing} customers={customers} onClose={() => setEditing(null)} onSaved={async () => { await load(); const r = await api.get(`/projects/${editing.id}`); setEditing(r.data); }} year={year} />
+                <ProjectEditor project={editing} customers={customers} documentTypes={documentTypes} onClose={() => setEditing(null)} onSaved={async () => { await load(); const r = await api.get(`/projects/${editing.id}`); setEditing(r.data); }} year={year} />
             )}
         </div>
     );
 }
 
 // ---------- Create Project ----------
-function CreateProjectModal({ customers, onClose, onCreated }) {
+function defaultDocumentTypeId(types) {
+    return (types || []).find(t => t.name === 'General')?.id || (types || [])[0]?.id || '';
+}
+
+function normalizedDocumentTypes(types) {
+    return (types || []).length > 0 ? types : [{ id: '', name: 'General' }];
+}
+
+function CreateProjectModal({ customers, documentTypes, onClose, onCreated }) {
+    const fileRef = useRef(null);
     const [f, setF] = useState({
         project_code: '', description: '', customer_id: '',
         project_start_date: '', project_end_date: '',
         status: 'Pipeline', pipeline_target_date: '', note: ''
     });
+    const [attachments, setAttachments] = useState([]);
+    const [documentTypeId, setDocumentTypeId] = useState(() => defaultDocumentTypeId(documentTypes));
     const [busy, setBusy] = useState(false);
     const [generatingCode, setGeneratingCode] = useState(false);
+
+    useEffect(() => {
+        if (!documentTypeId) setDocumentTypeId(defaultDocumentTypeId(documentTypes));
+    }, [documentTypes, documentTypeId]);
 
     async function generateDummyCode() {
         setGeneratingCode(true);
@@ -209,6 +244,17 @@ function CreateProjectModal({ customers, onClose, onCreated }) {
         }
     }
 
+    function chooseAttachments(e) {
+        const selected = Array.from(e.target.files || []);
+        e.target.value = '';
+        if (selected.length === 0) return;
+        setAttachments(prev => [...prev, ...selected]);
+    }
+
+    function removePendingAttachment(idx) {
+        setAttachments(prev => prev.filter((_, i) => i !== idx));
+    }
+
     async function submit(e) {
         e.preventDefault();
         setBusy(true);
@@ -219,7 +265,14 @@ function CreateProjectModal({ customers, onClose, onCreated }) {
                 project_end_date:   f.project_end_date   || null,
                 pipeline_target_date: f.pipeline_target_date || null
             });
-            toast.success('Project created');
+            if (attachments.length > 0) {
+                for (const file of attachments) {
+                    await uploadProjectAttachment(r.data.id, file, documentTypeId);
+                }
+                toast.success(`Project created with ${attachments.length} attachment(s)`);
+            } else {
+                toast.success('Project created');
+            }
             onCreated(r.data.id);
         } catch (err) {
             toast.error(err.response?.data?.error || 'Create failed');
@@ -261,13 +314,47 @@ function CreateProjectModal({ customers, onClose, onCreated }) {
                     <input type="date" className="input" value={f.project_end_date} onChange={e => setF({ ...f, project_end_date: e.target.value })} /></div>
                 <div className="col-span-2"><label className="label">Pipeline Target Date</label>
                     <input type="date" className="input" value={f.pipeline_target_date} onChange={e => setF({ ...f, pipeline_target_date: e.target.value })} /></div>
+                <div className="col-span-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex items-center gap-2 font-bold text-slate-700">
+                            <PaperClipIcon className="w-5 h-5 text-indigo-500" /> Attachments
+                        </div>
+                        <select className="input !w-44 !py-1.5" value={documentTypeId}
+                                onChange={e => setDocumentTypeId(e.target.value)}>
+                            {normalizedDocumentTypes(documentTypes).map(t => <option key={t.id || t.name} value={t.id}>{t.name}</option>)}
+                        </select>
+                        <button type="button" className="btn-ghost ml-auto" disabled={busy} onClick={() => fileRef.current?.click()}>
+                            <PlusIcon className="w-4 h-4" /> Add Files
+                        </button>
+                        <input ref={fileRef} type="file" multiple className="hidden" onChange={chooseAttachments} />
+                    </div>
+                    {attachments.length === 0 ? (
+                        <div className="text-sm text-slate-400 mt-2">No files selected.</div>
+                    ) : (
+                        <div className="mt-3 space-y-2">
+                            {attachments.map((file, idx) => (
+                                <div key={`${file.name}-${idx}`} className="flex items-center gap-2 rounded-md bg-white border border-slate-200 px-3 py-2">
+                                    <PaperClipIcon className="w-4 h-4 text-slate-400 shrink-0" />
+                                    <div className="min-w-0 flex-1">
+                                        <div className="font-semibold text-sm truncate">{file.name}</div>
+                                        <div className="text-xs text-slate-400">{fileSize(file.size)} - {file.type || 'application/octet-stream'}</div>
+                                    </div>
+                                    <button type="button" className="btn-ghost !p-2" disabled={busy} onClick={() => removePendingAttachment(idx)}>
+                                        <TrashIcon className="w-4 h-4 text-red-500" />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    <p className="text-xs text-slate-400 mt-2">Files will be uploaded after the project is created.</p>
+                </div>
             </form>
         </Modal>
     );
 }
 
 // ---------- Project Editor: master form on top + 5 revenue tabs below ----------
-function ProjectEditor({ project, customers, onClose, onSaved, year }) {
+function ProjectEditor({ project, customers, documentTypes, onClose, onSaved, year }) {
     const tabs = ['Subscription','Perpetual / SW MA','Service MA','Implementation','Outsource'];
     const [active, setActive] = useState('Subscription');
     return (
@@ -275,7 +362,7 @@ function ProjectEditor({ project, customers, onClose, onSaved, year }) {
                title={`Edit — ${project.project_code} ${project.description ? '— ' + project.description : ''}`}>
             {/* Master form — always visible at the top */}
             <MasterForm project={project} customers={customers} onSaved={onSaved} />
-            <ProjectAttachmentsPanel project={project} />
+            <ProjectAttachmentsPanel project={project} documentTypes={documentTypes} />
 
             {/* Tab strip for the 5 revenue types */}
             <div className="mt-6 border-b border-slate-200 flex flex-wrap gap-1">
@@ -363,12 +450,13 @@ function MasterForm({ project, customers, onSaved }) {
     );
 }
 
-function ProjectAttachmentsPanel({ project }) {
+function ProjectAttachmentsPanel({ project, documentTypes }) {
     const fileRef = useRef(null);
     const [files, setFiles] = useState([]);
     const [loading, setLoading] = useState(true);
     const [uploading, setUploading] = useState(false);
     const [preview, setPreview] = useState(null);
+    const [documentTypeId, setDocumentTypeId] = useState(() => defaultDocumentTypeId(documentTypes));
 
     async function load() {
         setLoading(true);
@@ -383,6 +471,9 @@ function ProjectAttachmentsPanel({ project }) {
     }
 
     useEffect(() => { load(); }, [project.id]);
+    useEffect(() => {
+        if (!documentTypeId) setDocumentTypeId(defaultDocumentTypeId(documentTypes));
+    }, [documentTypes, documentTypeId]);
 
     async function upload(e) {
         const selected = Array.from(e.target.files || []);
@@ -391,14 +482,7 @@ function ProjectAttachmentsPanel({ project }) {
         setUploading(true);
         try {
             for (const file of selected) {
-                await api.post(`/projects/${project.id}/attachments?filename=${encodeURIComponent(file.name)}`, file, {
-                    headers: {
-                        'Content-Type': 'application/octet-stream',
-                        'X-File-Name': encodeURIComponent(file.name),
-                        'X-File-Type': file.type || 'application/octet-stream'
-                    },
-                    timeout: 0
-                });
+                await uploadProjectAttachment(project.id, file, documentTypeId);
             }
             toast.success(`Uploaded ${selected.length} file(s)`);
             await load();
@@ -440,6 +524,10 @@ function ProjectAttachmentsPanel({ project }) {
                 <div className="flex items-center gap-2 font-bold text-slate-700">
                     <PaperClipIcon className="w-5 h-5 text-indigo-500" /> Project Attachments
                 </div>
+                <select className="input !w-44 !py-1.5" value={documentTypeId}
+                        onChange={e => setDocumentTypeId(e.target.value)}>
+                    {normalizedDocumentTypes(documentTypes).map(t => <option key={t.id || t.name} value={t.id}>{t.name}</option>)}
+                </select>
                 <button type="button" className="btn-ghost ml-auto" disabled={uploading} onClick={() => fileRef.current?.click()}>
                     <PlusIcon className="w-4 h-4" /> {uploading ? 'Uploading...' : 'Add Files'}
                 </button>
@@ -456,7 +544,7 @@ function ProjectAttachmentsPanel({ project }) {
                             <PaperClipIcon className="w-4 h-4 text-slate-400 shrink-0" />
                             <div className="min-w-0 flex-1">
                                 <div className="font-semibold text-sm truncate">{file.original_name}</div>
-                                <div className="text-xs text-slate-400">{fileSize(file.file_size)} - {file.mime_type || 'application/octet-stream'}</div>
+                                <div className="text-xs text-slate-400">{file.document_type_name || 'General'} - {fileSize(file.file_size)} - {file.mime_type || 'application/octet-stream'}</div>
                             </div>
                             {canPreview(file) && (
                                 <button className="btn-ghost !p-2" title="Preview" onClick={() => openPreview(file)}>

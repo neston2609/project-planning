@@ -98,6 +98,12 @@ router.post('/',
             // Seed sensible per-tenant config defaults.
             await seedTenantConfig(client, tenant.id);
             const defaultRoles = await ensureDefaultRoles(tenant.id, client);
+            await client.query(
+                `INSERT INTO project_attachment_types(tenant_id, name, is_system)
+                 VALUES ($1,'General',TRUE)
+                 ON CONFLICT (tenant_id, name) DO NOTHING`,
+                [tenant.id]
+            );
             const dup = await client.query(
                 `SELECT 1 FROM users
                   WHERE tenant_id=$1 AND LOWER(username)=LOWER($2)

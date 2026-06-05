@@ -29,45 +29,41 @@ async function ensureProjectInTenant(db, projectId, tenantId) {
 
 async function listProjectAttachments(db, projectId, tenantId) {
     const { rows } = await db.query(
-        `SELECT id, project_id, original_name, mime_type, file_size, created_at
-           FROM project_attachments
-          WHERE project_id=$1 AND tenant_id=$2
-          ORDER BY created_at DESC, id DESC`,
+        `SELECT a.id, a.project_id, a.document_type_id,
+                COALESCE(t.name, 'General') AS document_type_name,
+                a.original_name, a.mime_type, a.file_size, a.created_at
+           FROM project_attachments a
+           LEFT JOIN project_attachment_types t
+             ON t.id = a.document_type_id AND t.tenant_id = a.tenant_id
+          WHERE a.project_id=$1 AND a.tenant_id=$2
+          ORDER BY a.created_at DESC, a.id DESC`,
         [projectId, tenantId]
     );
     return rows;
 }
 
-async function saveProjectAttachment(db, { tenantId, projectId, userId, originalName, mimeType, buffer }) {
-    const project = await ensureProjectInTenant(db, projectId, tenantId);
-    if (!project) return null;
-    const fileName = cleanFileName(originalName);
-    const storedName = `${randomUUID()}${path.extname(fileName) || ''}`;
-    const dir = path.join(ROOT, String(tenantId), String(projectId));
-    await fsp.mkdir(dir, { recursive: true });
-    await fsp.writeFile(path.join(dir, storedName), buffer);
+async function attachmentTypeInTenant(db, typeId, tenantId) {
+    if (!typeId) {
+        const { rows } = await db.query(
+            `INSERT INTO project_attachment_types(tenant_id, name, is_system)
+             VALUES ($1,'General',TRUE)
+             ON CONFLICT (tenant_id, name) DO UPDATE SET name=EXCLUDED.name
+             RETURNING id`,
+            [tenantId]
+        );
+        return rows[0]?.id || null;
+    }
     const { rows } = await db.query(
-        `INSERT INTO project_attachments(
-            tenant_id, project_id, original_name, stored_name, mime_type, file_size, uploaded_by
-         )
-         VALUES ($1,$2,$3,$4,$5,$6,$7)
-         RETURNING id, project_id, original_name, mime_type, file_size, created_at`,
-        [
-            tenantId,
-            projectId,
-            fileName,
-            storedName,
-            String(mimeType || 'application/octet-stream').slice(0, 255),
-            buffer.length,
-            userId || null
-        ]
+        'SELECT id FROM project_attachment_types WHERE id=$1 AND tenant_id=$2',
+        [typeId, tenantId]
     );
-    return rows[0];
+    return rows[0]?.id || null;
 }
 
-async function saveProjectAttachmentStream(db, { tenantId, projectId, userId, originalName, mimeType, stream }) {
+async function saveProjectAttachmentStream(db, { tenantId, projectId, userId, documentTypeId, originalName, mimeType, stream }) {
     const project = await ensureProjectInTenant(db, projectId, tenantId);
     if (!project) return null;
+    const typeId = await attachmentTypeInTenant(db, documentTypeId, tenantId);
     const fileName = cleanFileName(originalName);
     const storedName = `${randomUUID()}${path.extname(fileName) || ''}`;
     const dir = path.join(ROOT, String(tenantId), String(projectId));
@@ -84,13 +80,14 @@ async function saveProjectAttachmentStream(db, { tenantId, projectId, userId, or
         await pipeline(stream, counter, fs.createWriteStream(filePath));
         const { rows } = await db.query(
             `INSERT INTO project_attachments(
-                tenant_id, project_id, original_name, stored_name, mime_type, file_size, uploaded_by
+                tenant_id, project_id, document_type_id, original_name, stored_name, mime_type, file_size, uploaded_by
              )
-             VALUES ($1,$2,$3,$4,$5,$6,$7)
-             RETURNING id, project_id, original_name, mime_type, file_size, created_at`,
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+             RETURNING id, project_id, document_type_id, original_name, mime_type, file_size, created_at`,
             [
                 tenantId,
                 projectId,
+                typeId,
                 fileName,
                 storedName,
                 String(mimeType || 'application/octet-stream').slice(0, 255),
@@ -146,7 +143,6 @@ function sendProjectAttachment(res, row, inline = false) {
 module.exports = {
     ensureProjectInTenant,
     listProjectAttachments,
-    saveProjectAttachment,
     saveProjectAttachmentStream,
     getProjectAttachment,
     deleteProjectAttachment,

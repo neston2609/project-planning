@@ -235,6 +235,12 @@ async function bootstrap() {
         const { rows: allTenants } = await db.query('SELECT id FROM tenants');
         for (const t of allTenants) {
             await ensureDefaultRoles(t.id);
+            await db.query(
+                `INSERT INTO project_attachment_types(tenant_id, name, is_system)
+                 VALUES ($1,'General',TRUE)
+                 ON CONFLICT (tenant_id, name) DO NOTHING`,
+                [t.id]
+            );
         }
     } catch (err) {
         console.error('[bootstrap] default role seed failed:', err.message);

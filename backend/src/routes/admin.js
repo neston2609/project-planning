@@ -470,6 +470,115 @@ router.put('/app-config/:key', param('key').isString(), async (req, res) => {
     res.json(rows[0]);
 });
 
+async function ensureDefaultProjectAttachmentType(tenantId, client = db) {
+    await client.query(
+        `INSERT INTO project_attachment_types(tenant_id, name, is_system)
+         VALUES ($1,'General',TRUE)
+         ON CONFLICT (tenant_id, name) DO NOTHING`,
+        [tenantId]
+    );
+}
+
+router.get('/project-attachment-types', async (req, res) => {
+    await ensureDefaultProjectAttachmentType(req.tenantId);
+    const { rows } = await db.query(
+        `SELECT id, name, is_system
+           FROM project_attachment_types
+          WHERE tenant_id=$1
+          ORDER BY is_system DESC, name`,
+        [req.tenantId]
+    );
+    res.json(rows);
+});
+
+router.post('/project-attachment-types',
+    body('name').isString().trim().notEmpty().isLength({ max: 128 }),
+    async (req, res) => {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+        try {
+            const { rows } = await db.query(
+                `INSERT INTO project_attachment_types(tenant_id, name, is_system)
+                 VALUES ($1,$2,FALSE)
+                 RETURNING id, name, is_system`,
+                [req.tenantId, String(req.body.name || '').trim()]
+            );
+            res.status(201).json(rows[0]);
+        } catch (err) {
+            if (err.code === '23505') return res.status(409).json({ error: 'Document type already exists' });
+            throw err;
+        }
+    }
+);
+
+router.put('/project-attachment-types/:id',
+    param('id').isInt(),
+    body('name').isString().trim().notEmpty().isLength({ max: 128 }),
+    async (req, res) => {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+        try {
+            const { rows } = await db.query(
+                `UPDATE project_attachment_types
+                    SET name=$1, updated_at=NOW()
+                  WHERE id=$2 AND tenant_id=$3
+                  RETURNING id, name, is_system`,
+                [String(req.body.name || '').trim(), req.params.id, req.tenantId]
+            );
+            if (!rows[0]) return res.status(404).json({ error: 'Document type not found' });
+            res.json(rows[0]);
+        } catch (err) {
+            if (err.code === '23505') return res.status(409).json({ error: 'Document type already exists' });
+            throw err;
+        }
+    }
+);
+
+router.delete('/project-attachment-types/:id', param('id').isInt(), async (req, res) => {
+    await ensureDefaultProjectAttachmentType(req.tenantId);
+    const fallback = await db.query(
+        `SELECT id FROM project_attachment_types
+          WHERE tenant_id=$1 AND name='General'
+          ORDER BY id LIMIT 1`,
+        [req.tenantId]
+    );
+    const fallbackId = fallback.rows[0]?.id || null;
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+        if (fallbackId && Number(fallbackId) !== Number(req.params.id)) {
+            await client.query(
+                `UPDATE project_attachments
+                    SET document_type_id=$1
+                  WHERE tenant_id=$2 AND document_type_id=$3`,
+                [fallbackId, req.tenantId, req.params.id]
+            );
+        } else {
+            await client.query(
+                `UPDATE project_attachments
+                    SET document_type_id=NULL
+                  WHERE tenant_id=$1 AND document_type_id=$2`,
+                [req.tenantId, req.params.id]
+            );
+        }
+        const { rowCount } = await client.query(
+            'DELETE FROM project_attachment_types WHERE id=$1 AND tenant_id=$2',
+            [req.params.id, req.tenantId]
+        );
+        if (!rowCount) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Document type not found' });
+        }
+        await client.query('COMMIT');
+        res.json({ ok: true });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+    } finally {
+        client.release();
+    }
+});
+
 // ---------- AI Model config (per tenant) ----------
 router.get('/ai-config', async (req, res) => {
     const cfg = await getTenantConfigMap(req.tenantId, AI_CONFIG_KEYS);

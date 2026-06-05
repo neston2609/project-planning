@@ -38,14 +38,19 @@ export default function AppConfigPage() {
     const [webSearchApiKey, setWebSearchApiKey] = useState('');
     const [webSearchEndpoint, setWebSearchEndpoint] = useState('');
     const [webSearchCx, setWebSearchCx] = useState('');
+    const [documentTypes, setDocumentTypes] = useState([]);
+    const [newDocumentType, setNewDocumentType] = useState('');
+    const [editingDocumentType, setEditingDocumentType] = useState(null);
+    const [editingDocumentTypeName, setEditingDocumentTypeName] = useState('');
     const announcementEditorRef = useRef(null);
     const announcementImageRef = useRef(null);
 
     async function load() {
-        const [r, ai, search] = await Promise.all([
+        const [r, ai, search, docTypes] = await Promise.all([
             api.get('/admin/app-config'),
             api.get('/admin/ai-config'),
-            api.get('/admin/web-search-config')
+            api.get('/admin/web-search-config'),
+            api.get('/admin/project-attachment-types')
         ]);
         setDefaultYear(r.data.default_year || '');
         setLicenseDays(r.data.license_expiring_days || '30');
@@ -64,6 +69,7 @@ export default function AppConfigPage() {
         setWebSearchApiKey(search.data.api_key || '');
         setWebSearchEndpoint(search.data.endpoint || '');
         setWebSearchCx(search.data.cx || '');
+        setDocumentTypes(docTypes.data || []);
     }
     useEffect(() => { load(); }, []);
 
@@ -253,6 +259,52 @@ export default function AppConfigPage() {
         if (value !== 'google_cse') setWebSearchCx('');
     }
 
+    async function reloadDocumentTypes() {
+        const r = await api.get('/admin/project-attachment-types');
+        setDocumentTypes(r.data || []);
+    }
+
+    async function addDocumentType() {
+        if (!newDocumentType.trim()) return toast.error('Please enter a document type');
+        try {
+            await api.post('/admin/project-attachment-types', { name: newDocumentType.trim() });
+            setNewDocumentType('');
+            toast.success('Document type added');
+            reloadDocumentTypes();
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Save failed');
+        }
+    }
+
+    function beginEditDocumentType(item) {
+        setEditingDocumentType(item.id);
+        setEditingDocumentTypeName(item.name || '');
+    }
+
+    async function saveDocumentType(item) {
+        if (!editingDocumentTypeName.trim()) return toast.error('Please enter a document type');
+        try {
+            await api.put(`/admin/project-attachment-types/${item.id}`, { name: editingDocumentTypeName.trim() });
+            setEditingDocumentType(null);
+            setEditingDocumentTypeName('');
+            toast.success('Document type updated');
+            reloadDocumentTypes();
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Update failed');
+        }
+    }
+
+    async function deleteDocumentType(item) {
+        if (!confirm(`Delete "${item.name}"? Existing files will move to General.`)) return;
+        try {
+            await api.delete(`/admin/project-attachment-types/${item.id}`);
+            toast.success('Document type deleted');
+            reloadDocumentTypes();
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Delete failed');
+        }
+    }
+
     return (
         <div className="space-y-4">
             <h1 className="text-2xl font-bold">App Configuration</h1>
@@ -313,6 +365,68 @@ export default function AppConfigPage() {
                     </p>
                 </div>
                 <button className="btn-primary" onClick={savePostItBoardSize}>Save Post-It Board Size</button>
+            </div>
+
+            <div className="card p-4 max-w-2xl space-y-3">
+                <div>
+                    <label className="label">Project Attachment Document Types</label>
+                    <p className="text-xs text-slate-400 mt-1">
+                        Used when uploading project attachments. Default type is General.
+                    </p>
+                </div>
+                <div className="flex gap-2">
+                    <input className="input" placeholder="New document type"
+                           value={newDocumentType}
+                           onChange={e => setNewDocumentType(e.target.value)}
+                           onKeyDown={e => { if (e.key === 'Enter') addDocumentType(); }} />
+                    <button className="btn-primary" onClick={addDocumentType}>Add</button>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="table-clean">
+                        <thead>
+                            <tr><th>Name</th><th>Default</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                            {documentTypes.map(item => {
+                                const editing = editingDocumentType === item.id;
+                                return (
+                                    <tr key={item.id}>
+                                        <td>
+                                            {editing ? (
+                                                <input className="input !py-1.5"
+                                                       value={editingDocumentTypeName}
+                                                       onChange={e => setEditingDocumentTypeName(e.target.value)}
+                                                       onKeyDown={e => {
+                                                           if (e.key === 'Enter') saveDocumentType(item);
+                                                           if (e.key === 'Escape') setEditingDocumentType(null);
+                                                       }} />
+                                            ) : (
+                                                <span className="font-semibold">{item.name}</span>
+                                            )}
+                                        </td>
+                                        <td>{item.is_system ? <span className="pill bg-blue-100 text-blue-700">Default</span> : ''}</td>
+                                        <td className="text-right">
+                                            {editing ? (
+                                                <>
+                                                    <button className="btn-ghost" onClick={() => saveDocumentType(item)}>Save</button>
+                                                    <button className="btn-ghost" onClick={() => setEditingDocumentType(null)}>Cancel</button>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <button className="btn-ghost" onClick={() => beginEditDocumentType(item)}>Edit</button>
+                                                    <button className="btn-ghost text-red-600" onClick={() => deleteDocumentType(item)}>Delete</button>
+                                                </>
+                                            )}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                            {documentTypes.length === 0 && (
+                                <tr><td colSpan={3} className="text-center text-slate-400 py-6">No document types.</td></tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
             <div className="card p-4 max-w-2xl space-y-3">

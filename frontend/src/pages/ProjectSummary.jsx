@@ -348,7 +348,7 @@ export default function ProjectSummary() {
                                     <PaperClipIcon className="w-5 h-5 text-slate-400 shrink-0" />
                                     <div className="min-w-0 flex-1">
                                         <div className="font-semibold truncate">{file.original_name}</div>
-                                        <div className="text-xs text-slate-400">{fileSize(file.file_size)} - {file.mime_type || 'application/octet-stream'}</div>
+                                        <div className="text-xs text-slate-400">{file.document_type_name || 'General'} - {fileSize(file.file_size)} - {file.mime_type || 'application/octet-stream'}</div>
                                     </div>
                                     {canPreview(file) && (
                                         <button className="btn-ghost !p-2" title="Preview" onClick={() => previewSummaryAttachment(file)}>

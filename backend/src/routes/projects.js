@@ -227,6 +227,7 @@ router.post('/:id/attachments',
             tenantId: req.tenantId,
             projectId: req.params.id,
             userId: req.user?.uid,
+            documentTypeId: Number(req.query.document_type_id || req.headers['x-document-type-id'] || 0) || null,
             originalName: req.query.filename || req.headers['x-file-name'],
             mimeType: req.headers['x-file-type'] || req.headers['content-type'],
             stream: req
