@@ -1,4 +1,5 @@
 const express = require('express');
+const { randomInt } = require('crypto');
 const { body, param, validationResult } = require('express-validator');
 const db = require('../db');
 const { requireAuth, requireTenant } = require('../middleware/auth');
@@ -99,6 +100,18 @@ router.get('/', async (req, res) => {
         params
     );
     res.json(rows);
+});
+
+router.get('/dummy-code', async (req, res) => {
+    for (let i = 0; i < 100; i += 1) {
+        const code = `DUM${String(randomInt(0, 1000000)).padStart(6, '0')}`;
+        const existing = await db.query(
+            'SELECT 1 FROM projects WHERE tenant_id=$1 AND project_code=$2 LIMIT 1',
+            [req.tenantId, code]
+        );
+        if (!existing.rowCount) return res.json({ project_code: code });
+    }
+    res.status(409).json({ error: 'Could not generate a unique dummy project code' });
 });
 
 router.get('/:id', param('id').isInt(), async (req, res) => {

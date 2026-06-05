@@ -162,6 +162,20 @@ function CreateProjectModal({ customers, onClose, onCreated }) {
         status: 'Pipeline', pipeline_target_date: '', note: ''
     });
     const [busy, setBusy] = useState(false);
+    const [generatingCode, setGeneratingCode] = useState(false);
+
+    async function generateDummyCode() {
+        setGeneratingCode(true);
+        try {
+            const r = await api.get('/projects/dummy-code');
+            setF(s => ({ ...s, project_code: r.data.project_code || '' }));
+            toast.success('Dummy project code generated');
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Generate dummy code failed');
+        } finally {
+            setGeneratingCode(false);
+        }
+    }
 
     async function submit(e) {
         e.preventDefault();
@@ -187,8 +201,17 @@ function CreateProjectModal({ customers, onClose, onCreated }) {
                    <button className="btn-primary" disabled={busy} onClick={submit}>Create</button>
                </>}>
             <form onSubmit={submit} className="grid grid-cols-2 gap-3">
-                <div className="col-span-2"><label className="label">Project Code</label>
-                    <input className="input" required value={f.project_code} onChange={e => setF({ ...f, project_code: e.target.value })} /></div>
+                <div className="col-span-2">
+                    <div className="flex items-center justify-between gap-2">
+                        <label className="label">Project Code</label>
+                        <button type="button" className="btn-ghost !py-1.5 text-xs"
+                                disabled={generatingCode}
+                                onClick={generateDummyCode}>
+                            {generatingCode ? 'Generating...' : 'Gen Dummy Code'}
+                        </button>
+                    </div>
+                    <input className="input" required value={f.project_code} onChange={e => setF({ ...f, project_code: e.target.value })} />
+                </div>
                 <div className="col-span-2"><label className="label">Description</label>
                     <input className="input" value={f.description} onChange={e => setF({ ...f, description: e.target.value })} /></div>
                 <div><label className="label">Customer</label>
