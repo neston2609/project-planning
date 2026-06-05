@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import Modal from '../../components/Modal';
 import {
     PencilSquareIcon, TrashIcon, PlusIcon, UserCircleIcon, ArrowUpTrayIcon,
-    UserPlusIcon, LinkIcon, XMarkIcon, SparklesIcon
+    UserPlusIcon, LinkIcon, XMarkIcon, SparklesIcon, MagnifyingGlassIcon
 } from '@heroicons/react/24/outline';
 
 export default function Resources() {
@@ -278,6 +278,10 @@ function ResourceForm({ initial, onClose, onSave }) {
     const [suggesting, setSuggesting] = useState(false);
     const [suggestions, setSuggestions] = useState([]);
     const [selectedSuggestions, setSelectedSuggestions] = useState(() => new Set());
+    const [searchingSources, setSearchingSources] = useState(false);
+    const [sourceResults, setSourceResults] = useState([]);
+    const [selectedSources, setSelectedSources] = useState(() => new Set());
+    const [sourceUrls, setSourceUrls] = useState('');
     const fileRef = useRef(null);
 
     function pickPicture() { fileRef.current?.click(); }
@@ -302,10 +306,49 @@ function ResourceForm({ initial, onClose, onSave }) {
         setF(s => ({ ...s, picture_data: null }));
     }
 
+    function sourcePayload() {
+        const picked = sourceResults.filter((_, idx) => selectedSources.has(idx));
+        const manual = String(sourceUrls || '').split(/\n/)
+            .map(v => v.trim())
+            .filter(Boolean)
+            .map(url => ({ title: url, url, snippet: 'Manual source URL' }));
+        return [...picked, ...manual];
+    }
+
+    async function searchSources() {
+        setSearchingSources(true);
+        try {
+            const res = await api.post('/resources/source-search', f);
+            const next = res.data.results || [];
+            setSourceResults(next);
+            setSelectedSources(new Set(next.map((_, idx) => idx)));
+            if (next.length === 0) {
+                toast(res.data.reason || 'No source results found');
+            } else {
+                toast.success(`Found ${next.length} source result(s)`);
+            }
+        } catch (err) {
+            toast.error(err.response?.data?.reason || err.response?.data?.error || 'Source search failed');
+        } finally {
+            setSearchingSources(false);
+        }
+    }
+
+    function toggleSource(idx) {
+        setSelectedSources(prev => {
+            const next = new Set(prev);
+            if (next.has(idx)) next.delete(idx); else next.add(idx);
+            return next;
+        });
+    }
+
     async function askAiSuggest() {
         setSuggesting(true);
         try {
-            const res = await api.post('/resources/ai-suggest', f);
+            const res = await api.post('/resources/ai-suggest', {
+                resource: f,
+                sources: sourcePayload()
+            });
             const next = res.data.suggestions || [];
             setSuggestions(next);
             setSelectedSuggestions(new Set(next.map(item => item.field)));
@@ -347,6 +390,9 @@ function ResourceForm({ initial, onClose, onSave }) {
         <Modal open onClose={onClose}
                title={f.id ? `Edit Resource — ${f.first_name} ${f.last_name}` : 'New Resource'}
                footer={<>
+                   <button className="btn-ghost" onClick={searchSources} disabled={searchingSources}>
+                       <MagnifyingGlassIcon className="w-4 h-4 text-blue-500" /> {searchingSources ? 'Searching...' : 'Search Sources'}
+                   </button>
                    <button className="btn-ghost mr-auto" onClick={askAiSuggest} disabled={suggesting}>
                        <SparklesIcon className="w-4 h-4 text-indigo-500" /> {suggesting ? 'AI Suggesting...' : 'AI Suggest'}
                    </button>
@@ -354,6 +400,43 @@ function ResourceForm({ initial, onClose, onSave }) {
                    <button className="btn-primary" onClick={() => onSave(f)}>Save</button>
                </>}>
             <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2 rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <div>
+                            <div className="font-semibold text-slate-800">AI Source Review</div>
+                            <div className="text-xs text-slate-500">Search or paste source URLs, then select which sources AI may use.</div>
+                        </div>
+                        {sourceResults.length > 0 && (
+                            <span className="ml-auto text-xs text-slate-500">
+                                {selectedSources.size} of {sourceResults.length} selected
+                            </span>
+                        )}
+                    </div>
+                    {sourceResults.length > 0 && (
+                        <div className="max-h-40 overflow-y-auto space-y-2">
+                            {sourceResults.map((item, idx) => (
+                                <label key={`${item.url}-${idx}`} className="flex items-start gap-2 rounded-md border border-slate-200 bg-white p-2 text-sm">
+                                    <input type="checkbox"
+                                           className="mt-1"
+                                           checked={selectedSources.has(idx)}
+                                           onChange={() => toggleSource(idx)} />
+                                    <span className="min-w-0">
+                                        <span className="block font-semibold text-slate-800 truncate">{item.title || item.url}</span>
+                                        <span className="block text-xs text-blue-600 truncate">{item.url}</span>
+                                        {item.snippet && <span className="block text-xs text-slate-500 line-clamp-2">{item.snippet}</span>}
+                                    </span>
+                                </label>
+                            ))}
+                        </div>
+                    )}
+                    <div>
+                        <label className="label">Manual Source URLs</label>
+                        <textarea className="input" rows={2}
+                                  placeholder="One URL per line, e.g. Facebook or LinkedIn profile"
+                                  value={sourceUrls}
+                                  onChange={e => setSourceUrls(e.target.value)} />
+                    </div>
+                </div>
                 {suggestions.length > 0 && (
                     <div className="col-span-2 rounded-lg border border-indigo-200 bg-indigo-50/70 p-3 space-y-3">
                         <div className="flex items-center gap-2">

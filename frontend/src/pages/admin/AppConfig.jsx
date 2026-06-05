@@ -10,6 +10,14 @@ const AI_PROVIDERS = [
     { value: 'custom', label: 'Custom Endpoint' }
 ];
 
+const WEB_SEARCH_PROVIDERS = [
+    { value: 'disabled', label: 'Disabled' },
+    { value: 'google_cse', label: 'Google Custom Search' },
+    { value: 'bing', label: 'Bing Web Search' },
+    { value: 'serpapi', label: 'SerpAPI' },
+    { value: 'custom', label: 'Custom Endpoint' }
+];
+
 export default function AppConfigPage() {
     const [defaultYear, setDefaultYear] = useState('');
     const [licenseDays, setLicenseDays] = useState('');
@@ -26,13 +34,18 @@ export default function AppConfigPage() {
     const [aiModels, setAiModels] = useState([]);
     const [loadingModels, setLoadingModels] = useState(false);
     const [testingAi, setTestingAi] = useState(false);
+    const [webSearchProvider, setWebSearchProvider] = useState('disabled');
+    const [webSearchApiKey, setWebSearchApiKey] = useState('');
+    const [webSearchEndpoint, setWebSearchEndpoint] = useState('');
+    const [webSearchCx, setWebSearchCx] = useState('');
     const announcementEditorRef = useRef(null);
     const announcementImageRef = useRef(null);
 
     async function load() {
-        const [r, ai] = await Promise.all([
+        const [r, ai, search] = await Promise.all([
             api.get('/admin/app-config'),
-            api.get('/admin/ai-config')
+            api.get('/admin/ai-config'),
+            api.get('/admin/web-search-config')
         ]);
         setDefaultYear(r.data.default_year || '');
         setLicenseDays(r.data.license_expiring_days || '30');
@@ -47,6 +60,10 @@ export default function AppConfigPage() {
         setAiApiKey(ai.data.api_key || '');
         setAiEndpoint(ai.data.endpoint || '');
         setAiModel(ai.data.model || '');
+        setWebSearchProvider(search.data.provider || 'disabled');
+        setWebSearchApiKey(search.data.api_key || '');
+        setWebSearchEndpoint(search.data.endpoint || '');
+        setWebSearchCx(search.data.cx || '');
     }
     useEffect(() => { load(); }, []);
 
@@ -206,6 +223,36 @@ export default function AppConfigPage() {
         if (value !== 'azure_openai' && value !== 'custom') setAiEndpoint('');
     }
 
+    async function saveWebSearchConfig() {
+        if (webSearchProvider === 'google_cse' && (!webSearchApiKey.trim() || !webSearchCx.trim())) {
+            return toast.error('Google Custom Search requires API key and Search Engine ID');
+        }
+        if ((webSearchProvider === 'bing' || webSearchProvider === 'serpapi') && !webSearchApiKey.trim()) {
+            return toast.error('This search provider requires an API key');
+        }
+        if (webSearchProvider === 'custom' && !webSearchEndpoint.trim()) {
+            return toast.error('Custom search endpoint is required');
+        }
+        try {
+            const r = await api.put('/admin/web-search-config', {
+                provider: webSearchProvider,
+                api_key: webSearchApiKey,
+                endpoint: webSearchEndpoint,
+                cx: webSearchCx
+            });
+            setWebSearchApiKey(r.data.api_key || '');
+            toast.success('Web Search configuration saved');
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Save failed');
+        }
+    }
+
+    function changeWebSearchProvider(value) {
+        setWebSearchProvider(value);
+        if (value !== 'custom') setWebSearchEndpoint('');
+        if (value !== 'google_cse') setWebSearchCx('');
+    }
+
     return (
         <div className="space-y-4">
             <h1 className="text-2xl font-bold">App Configuration</h1>
@@ -355,6 +402,52 @@ export default function AppConfigPage() {
                     </button>
                     <button className="btn-primary" onClick={saveAiConfig}>Save AI Configuration</button>
                 </div>
+            </div>
+
+            <div className="card p-4 max-w-2xl space-y-3">
+                <div>
+                    <label className="label">Web Search Configuration</label>
+                    <p className="text-xs text-slate-400 mt-1">
+                        Used by Resource AI Suggest to find source results before suggesting missing profile fields.
+                    </p>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                    <div>
+                        <label className="label">Provider</label>
+                        <select className="input" value={webSearchProvider}
+                                onChange={e => changeWebSearchProvider(e.target.value)}>
+                            {WEB_SEARCH_PROVIDERS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                        </select>
+                    </div>
+                    {webSearchProvider !== 'disabled' && (
+                        <div>
+                            <label className="label">API Key</label>
+                            <input className="input" type="password" value={webSearchApiKey}
+                                   onChange={e => setWebSearchApiKey(e.target.value)}
+                                   placeholder="Paste search API key" />
+                        </div>
+                    )}
+                    {webSearchProvider === 'google_cse' && (
+                        <div className="md:col-span-2">
+                            <label className="label">Search Engine ID</label>
+                            <input className="input" value={webSearchCx}
+                                   onChange={e => setWebSearchCx(e.target.value)}
+                                   placeholder="Google Programmable Search Engine ID (cx)" />
+                        </div>
+                    )}
+                    {webSearchProvider === 'custom' && (
+                        <div className="md:col-span-2">
+                            <label className="label">Custom Search Endpoint</label>
+                            <input className="input" value={webSearchEndpoint}
+                                   onChange={e => setWebSearchEndpoint(e.target.value)}
+                                   placeholder="https://your-search-gateway.example.com/search" />
+                            <p className="text-xs text-slate-400 mt-1">
+                                The app calls this endpoint with ?q=... and expects results/items with title, url/link, and snippet.
+                            </p>
+                        </div>
+                    )}
+                </div>
+                <button className="btn-primary" onClick={saveWebSearchConfig}>Save Web Search Configuration</button>
             </div>
 
             <div className="card p-4 max-w-2xl space-y-3">

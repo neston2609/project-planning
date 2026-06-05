@@ -11,6 +11,7 @@ const router = express.Router();
 router.use(requireAuth, requireTenant);
 
 const AI_CONFIG_KEYS = ['ai_provider', 'ai_api_key', 'ai_endpoint', 'ai_model'];
+const WEB_SEARCH_CONFIG_KEYS = ['web_search_provider', 'web_search_api_key', 'web_search_endpoint', 'web_search_cx'];
 const AI_PROVIDERS = ['openai', 'anthropic', 'google', 'azure_openai', 'custom'];
 const AI_SUGGEST_FIELDS = [
     'first_name', 'last_name', 'nick_name', 'role', 'email', 'mobile_phone',
@@ -82,6 +83,14 @@ async function getAiConfig(tenantId) {
     return Object.fromEntries(rows.map(r => [r.key, r.value]));
 }
 
+async function getWebSearchConfig(tenantId) {
+    const { rows } = await db.query(
+        'SELECT key, value FROM tenant_config WHERE tenant_id=$1 AND key = ANY($2)',
+        [tenantId, WEB_SEARCH_CONFIG_KEYS]
+    );
+    return Object.fromEntries(rows.map(r => [r.key, r.value]));
+}
+
 async function fetchJson(url, options = {}) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), Number(options.timeout_ms || 10000));
@@ -115,7 +124,63 @@ function parseJsonObjectText(value) {
     }
 }
 
-async function runResourceSuggestionAi(tenantId, resource) {
+function cleanSearchResult(item = {}) {
+    const url = cleanSuggestionValue(item.url || item.link || item.href, 1000);
+    if (!url || !/^https?:\/\//i.test(url)) return null;
+    return {
+        title: cleanSuggestionValue(item.title || item.name || url, 255),
+        url,
+        snippet: cleanSuggestionValue(item.snippet || item.description || item.text || '', 1000)
+    };
+}
+
+function searchQueryForResource(resource = {}) {
+    const name = [resource.first_name, resource.last_name].map(v => cleanSuggestionValue(v, 120)).filter(Boolean).join(' ').trim();
+    const extras = [resource.email, resource.erp_username].map(v => cleanSuggestionValue(v, 120)).filter(Boolean);
+    return [name, ...extras].filter(Boolean).join(' ');
+}
+
+async function runResourceSourceSearch(tenantId, resource) {
+    const cfg = await getWebSearchConfig(tenantId);
+    const provider = String(cfg.web_search_provider || 'disabled').trim().toLowerCase();
+    const apiKey = cfg.web_search_api_key || '';
+    const endpoint = normalizeEndpoint(cfg.web_search_endpoint);
+    const cx = String(cfg.web_search_cx || '').trim();
+    const q = searchQueryForResource(resource);
+    if (!q) return { enabled: false, reason: 'Name, email, or ERP Username is required before searching sources', results: [] };
+    if (provider === 'disabled') return { enabled: false, reason: 'Web Search is not configured', results: [] };
+
+    let results = [];
+    if (provider === 'google_cse') {
+        if (!apiKey || !cx) return { enabled: false, reason: 'Google Custom Search is missing API key or Search Engine ID', results: [] };
+        const data = await fetchJson(`https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(apiKey)}&cx=${encodeURIComponent(cx)}&q=${encodeURIComponent(q)}&num=5`, { timeout_ms: 12000 });
+        results = (data.items || []).map(cleanSearchResult).filter(Boolean);
+    } else if (provider === 'bing') {
+        if (!apiKey) return { enabled: false, reason: 'Bing Web Search API key is missing', results: [] };
+        const data = await fetchJson(`https://api.bing.microsoft.com/v7.0/search?q=${encodeURIComponent(q)}&count=5`, {
+            headers: { 'Ocp-Apim-Subscription-Key': apiKey },
+            timeout_ms: 12000
+        });
+        results = (data.webPages?.value || []).map(cleanSearchResult).filter(Boolean);
+    } else if (provider === 'serpapi') {
+        if (!apiKey) return { enabled: false, reason: 'SerpAPI key is missing', results: [] };
+        const data = await fetchJson(`https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(q)}&api_key=${encodeURIComponent(apiKey)}&num=5`, { timeout_ms: 12000 });
+        results = (data.organic_results || []).map(cleanSearchResult).filter(Boolean);
+    } else if (provider === 'custom') {
+        if (!endpoint) return { enabled: false, reason: 'Custom search endpoint is missing', results: [] };
+        const data = await fetchJson(`${endpoint}?q=${encodeURIComponent(q)}`, {
+            headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+            timeout_ms: 12000
+        });
+        const raw = Array.isArray(data) ? data : (data.results || data.items || []);
+        results = raw.map(cleanSearchResult).filter(Boolean);
+    } else {
+        return { enabled: false, reason: 'Unsupported web search provider', results: [] };
+    }
+    return { enabled: true, query: q, results: results.slice(0, 8) };
+}
+
+async function runResourceSuggestionAi(tenantId, resource, sources = []) {
     const cfg = await getAiConfig(tenantId);
     const provider = cleanAiProvider(cfg.ai_provider || 'openai');
     const apiKey = cfg.ai_api_key || '';
@@ -130,13 +195,22 @@ async function runResourceSuggestionAi(tenantId, resource) {
     const blankFields = AI_SUGGEST_FIELDS.filter(field => !current[field]);
     if (blankFields.length === 0) return { enabled: false, reason: 'No blank fields to suggest', suggestions: [] };
 
+    const cleanSources = (Array.isArray(sources) ? sources : [])
+        .map(cleanSearchResult)
+        .filter(Boolean)
+        .slice(0, 8);
+    const sourceText = cleanSources.length
+        ? `Selected source results JSON: ${JSON.stringify(cleanSources)}`
+        : 'No selected source results were provided.';
+
     const prompt = `You help an internal admin complete a Resource Management form.
 Use only highly confident information. If uncertain, leave the field out.
-Do not invent private contact details. If web-enabled tools are available to your model, you may use public professional sources, but return only suggestions with source labels.
+Use the selected source results if provided. Do not invent private contact details.
 Return only valid JSON with this shape:
 {"suggestions":[{"field":"role","value":"RPA Developer","confidence":0.82,"source":"inferred from current skill"}]}
 Allowed fields: ${blankFields.join(', ')}
-Current resource JSON: ${JSON.stringify(current)}`;
+Current resource JSON: ${JSON.stringify(current)}
+${sourceText}`;
 
     let content = '';
     if (provider === 'openai') {
@@ -210,7 +284,9 @@ router.post('/ai-suggest',
     requireRole('admin', 'superadmin'),
     async (req, res) => {
         try {
-            const result = await runResourceSuggestionAi(req.tenantId, req.body || {});
+            const body = req.body || {};
+            const resource = body.resource && typeof body.resource === 'object' ? body.resource : body;
+            const result = await runResourceSuggestionAi(req.tenantId, resource, body.sources || []);
             res.json(result);
         } catch (err) {
             console.error('[resource ai suggest]', err.message);
@@ -221,6 +297,25 @@ router.post('/ai-suggest',
                     : err.message || 'AI suggestion failed';
             const status = err.status === 401 || err.status === 403 ? 400 : (err.status >= 500 ? 502 : 400);
             res.status(status).json({ enabled: false, reason: message, suggestions: [] });
+        }
+    }
+);
+
+router.post('/source-search',
+    requireRole('admin', 'superadmin'),
+    async (req, res) => {
+        try {
+            const result = await runResourceSourceSearch(req.tenantId, req.body || {});
+            res.json(result);
+        } catch (err) {
+            console.error('[resource source search]', err.message);
+            const message = err.status === 401 || err.status === 403
+                ? 'Search provider rejected the API key or credentials'
+                : err.name === 'AbortError'
+                    ? 'Source search timed out'
+                    : err.message || 'Source search failed';
+            const status = err.status === 401 || err.status === 403 ? 400 : (err.status >= 500 ? 502 : 400);
+            res.status(status).json({ enabled: false, reason: message, results: [] });
         }
     }
 );

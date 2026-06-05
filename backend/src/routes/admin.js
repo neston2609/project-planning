@@ -12,6 +12,8 @@ const DEFAULT_FOOTER_TEXT = 'Implemented and Maintain by BSM RPA Team. For Inter
 const DEFAULT_LOGIN_LOG_RETENTION_DAYS = 14;
 const AI_PROVIDERS = ['openai', 'anthropic', 'google', 'azure_openai', 'custom'];
 const AI_CONFIG_KEYS = ['ai_provider', 'ai_api_key', 'ai_endpoint', 'ai_model'];
+const WEB_SEARCH_PROVIDERS = ['disabled', 'google_cse', 'bing', 'serpapi', 'custom'];
+const WEB_SEARCH_CONFIG_KEYS = ['web_search_provider', 'web_search_api_key', 'web_search_endpoint', 'web_search_cx'];
 // All admin routes are tenant-scoped. The global TenantAdmin manages tenants
 // and team users via /api/tenants, not these per-tenant admin endpoints.
 router.use(requireAuth, requireTenant);
@@ -47,6 +49,11 @@ function validMenuKeysForBase(baseRole, menuPermissions = null) {
 function cleanAiProvider(value) {
     const provider = String(value || '').trim().toLowerCase();
     return AI_PROVIDERS.includes(provider) ? provider : 'openai';
+}
+
+function cleanWebSearchProvider(value) {
+    const provider = String(value || '').trim().toLowerCase();
+    return WEB_SEARCH_PROVIDERS.includes(provider) ? provider : 'disabled';
 }
 
 function maskSecret(value) {
@@ -559,6 +566,53 @@ router.post('/ai-config/test', async (req, res) => {
     } catch (err) {
         console.error('[ai-config/test]', err.message);
         res.status(aiErrorStatus(err)).json({ ok: false, error: aiErrorMessage(err, 'AI configuration test failed') });
+    }
+});
+
+// ---------- Web Search config (per tenant) ----------
+router.get('/web-search-config', async (req, res) => {
+    const cfg = await getTenantConfigMap(req.tenantId, WEB_SEARCH_CONFIG_KEYS);
+    res.json({
+        provider: cleanWebSearchProvider(cfg.web_search_provider || 'disabled'),
+        endpoint: cfg.web_search_endpoint || '',
+        cx: cfg.web_search_cx || '',
+        api_key: maskSecret(cfg.web_search_api_key)
+    });
+});
+
+router.put('/web-search-config', async (req, res) => {
+    const provider = cleanWebSearchProvider(req.body.provider);
+    const endpoint = normalizeEndpoint(req.body.endpoint);
+    const cx = String(req.body.cx || '').trim();
+    const incomingKey = String(req.body.api_key || '').trim();
+    const current = await getTenantConfigMap(req.tenantId, ['web_search_api_key']);
+    const apiKey = incomingKey === '********' ? (current.web_search_api_key || '') : incomingKey;
+
+    if (provider === 'google_cse' && (!apiKey || !cx)) {
+        return res.status(400).json({ error: 'Google Custom Search requires API key and Search Engine ID' });
+    }
+    if ((provider === 'bing' || provider === 'serpapi') && !apiKey) {
+        return res.status(400).json({ error: 'This search provider requires an API key' });
+    }
+    if (provider === 'custom' && !endpoint) {
+        return res.status(400).json({ error: 'Custom search endpoint is required' });
+    }
+
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+        await saveTenantConfig(client, req.tenantId, 'web_search_provider', provider);
+        await saveTenantConfig(client, req.tenantId, 'web_search_api_key', apiKey);
+        await saveTenantConfig(client, req.tenantId, 'web_search_endpoint', endpoint);
+        await saveTenantConfig(client, req.tenantId, 'web_search_cx', cx);
+        await client.query('COMMIT');
+        res.json({ provider, endpoint, cx, api_key: maskSecret(apiKey) });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('[web-search-config/save]', err);
+        res.status(500).json({ error: 'Save failed' });
+    } finally {
+        client.release();
     }
 });
 
