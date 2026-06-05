@@ -92,9 +92,12 @@ router.get('/', async (req, res) => {
         params.push(`${year}-01-01`, `${year}-12-31`);
         yearFilter = `
             AND (
-                (p.project_start_date IS NOT NULL OR p.project_end_date IS NOT NULL)
-                AND COALESCE(p.project_start_date, p.project_end_date) <= $3::date
-                AND COALESCE(p.project_end_date, p.project_start_date) >= $2::date
+                (p.project_start_date IS NULL AND p.project_end_date IS NULL)
+                OR (
+                    (p.project_start_date IS NOT NULL OR p.project_end_date IS NOT NULL)
+                    AND COALESCE(p.project_start_date, p.project_end_date) <= $3::date
+                    AND COALESCE(p.project_end_date, p.project_start_date) >= $2::date
+                )
             )`;
     }
 
