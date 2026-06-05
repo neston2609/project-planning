@@ -454,6 +454,7 @@ router.get('/app-config', async (req, res) => {
         login_log_retention_days: String(DEFAULT_LOGIN_LOG_RETENTION_DAYS),
         post_it_expiry_days: '30',
         post_it_board_size: '40',
+        pipeline_win_threshold_pct: '50',
         announcement_enabled: 'false',
         announcement_content: '',
         ...Object.fromEntries(rows.map(r => [r.key, r.value]))

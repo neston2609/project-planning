@@ -12,6 +12,7 @@ import {
 } from '@heroicons/react/24/outline';
 
 const moneyCols = [
+    'project_value',
     'software_subscription_revenue',
     'software_subscription_cost',
     'software_subscription_margin',
@@ -24,6 +25,24 @@ const moneyCols = [
     'service_ma_revenue',
     'implementation_revenue',
     'total_recognized'
+];
+
+const hideableColumnOptions = [
+    { key: 'software_subscription_revenue', label: 'Software Subscription Revenue' },
+    { key: 'software_subscription_cost', label: 'Software Subscription Cost' },
+    { key: 'software_subscription_margin', label: 'Software Subscription Margin' },
+    { key: 'software_subscription_recognize', label: 'Software Subscription Recognize' },
+    { key: 'software_perpetual_revenue', label: 'Software Perpetual Revenue' },
+    { key: 'software_perpetual_cost', label: 'Software Perpetual Cost' },
+    { key: 'software_perpetual_margin', label: 'Software Perpetual Margin' },
+    { key: 'software_ma_revenue', label: 'Software MA Revenue' },
+    { key: 'software_ma_cost', label: 'Software MA Cost' },
+    { key: 'software_ma_margin', label: 'Software MA Margin' },
+    { key: 'software_ma_recognize', label: 'Software MA Recognize' },
+    { key: 'service_ma_revenue', label: 'Service MA Revenue' },
+    { key: 'service_ma_recognize', label: 'Service MA Recognize' },
+    { key: 'implementation_revenue', label: 'Implementation / Outsource Revenue' },
+    { key: 'implementation_recognize', label: 'Implementation / Outsource Recognize' }
 ];
 
 function fileSize(bytes) {
@@ -54,6 +73,7 @@ export default function ProjectSummary() {
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [status, setStatus] = useState('all');
+    const [visibleColumns, setVisibleColumns] = useState(() => new Set(hideableColumnOptions.map(c => c.key)));
     const [attachmentModal, setAttachmentModal] = useState(null);
     const [preview, setPreview] = useState(null);
 
@@ -134,6 +154,25 @@ export default function ProjectSummary() {
     function summaryTenantQuery() {
         return platform ? `?tenant_id=${tenantId}` : '';
     }
+
+    function isColumnVisible(key) {
+        return visibleColumns.has(key);
+    }
+
+    function toggleColumn(key) {
+        setVisibleColumns(current => {
+            const next = new Set(current);
+            if (next.has(key)) next.delete(key);
+            else next.add(key);
+            return next;
+        });
+    }
+
+    function setAllColumns(visible) {
+        setVisibleColumns(new Set(visible ? hideableColumnOptions.map(c => c.key) : []));
+    }
+
+    const tableColSpan = 7 + visibleColumns.size;
 
     async function openAttachments(project) {
         setAttachmentModal({ project, files: [], loading: true });
@@ -236,6 +275,28 @@ export default function ProjectSummary() {
                 </select>
             </div>
 
+            <div className="card p-3">
+                <details>
+                    <summary className="cursor-pointer text-sm font-bold text-slate-700 select-none">
+                        Hide / Unhide Columns
+                    </summary>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <button type="button" className="btn-ghost !py-1.5 text-xs" onClick={() => setAllColumns(true)}>Show All</button>
+                        <button type="button" className="btn-ghost !py-1.5 text-xs" onClick={() => setAllColumns(false)}>Hide All</button>
+                    </div>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                        {hideableColumnOptions.map(col => (
+                            <label key={col.key} className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600">
+                                <input type="checkbox"
+                                       checked={isColumnVisible(col.key)}
+                                       onChange={() => toggleColumn(col.key)} />
+                                <span>{col.label}</span>
+                            </label>
+                        ))}
+                    </div>
+                </details>
+            </div>
+
             <div className="card overflow-x-auto">
                 <table className="table-clean min-w-[2200px]">
                     <thead>
@@ -244,31 +305,32 @@ export default function ProjectSummary() {
                             <th>Project Description</th>
                             <th>Customer</th>
                             <th>Status</th>
+                            <th className="text-right">Project Value</th>
                             <th>Start Date - End Date</th>
-                            <th className="text-right">Software Subscription Revenue</th>
-                            <th className="text-right">Software Subscription Cost</th>
-                            <th className="text-right">Software Subscription Margin</th>
-                            <th className="text-right">Software Subscription Recognize</th>
-                            <th className="text-right">Software Perpetual Revenue</th>
-                            <th className="text-right">Software Perpetual Cost</th>
-                            <th className="text-right">Software Perpetual Margin</th>
-                            <th className="text-right">Software MA Revenue</th>
-                            <th className="text-right">Software MA Cost</th>
-                            <th className="text-right">Software MA Margin</th>
-                            <th className="text-right">Software MA Recognize</th>
-                            <th className="text-right">Service MA Revenue</th>
-                            <th className="text-right">Service MA Recognize</th>
-                            <th className="text-right">Implementation / Outsource Revenue</th>
-                            <th className="text-right">Implementation / Outsource Recognize</th>
+                            {isColumnVisible('software_subscription_revenue') && <th className="text-right">Software Subscription Revenue</th>}
+                            {isColumnVisible('software_subscription_cost') && <th className="text-right">Software Subscription Cost</th>}
+                            {isColumnVisible('software_subscription_margin') && <th className="text-right">Software Subscription Margin</th>}
+                            {isColumnVisible('software_subscription_recognize') && <th className="text-right">Software Subscription Recognize</th>}
+                            {isColumnVisible('software_perpetual_revenue') && <th className="text-right">Software Perpetual Revenue</th>}
+                            {isColumnVisible('software_perpetual_cost') && <th className="text-right">Software Perpetual Cost</th>}
+                            {isColumnVisible('software_perpetual_margin') && <th className="text-right">Software Perpetual Margin</th>}
+                            {isColumnVisible('software_ma_revenue') && <th className="text-right">Software MA Revenue</th>}
+                            {isColumnVisible('software_ma_cost') && <th className="text-right">Software MA Cost</th>}
+                            {isColumnVisible('software_ma_margin') && <th className="text-right">Software MA Margin</th>}
+                            {isColumnVisible('software_ma_recognize') && <th className="text-right">Software MA Recognize</th>}
+                            {isColumnVisible('service_ma_revenue') && <th className="text-right">Service MA Revenue</th>}
+                            {isColumnVisible('service_ma_recognize') && <th className="text-right">Service MA Recognize</th>}
+                            {isColumnVisible('implementation_revenue') && <th className="text-right">Implementation / Outsource Revenue</th>}
+                            {isColumnVisible('implementation_recognize') && <th className="text-right">Implementation / Outsource Recognize</th>}
                             <th className="text-right">Total Recognized</th>
                         </tr>
                     </thead>
                     <tbody>
                         {loading && (
-                            <tr><td colSpan={21} className="text-center py-10 text-slate-400 animate-pulse">Loading...</td></tr>
+                            <tr><td colSpan={tableColSpan} className="text-center py-10 text-slate-400 animate-pulse">Loading...</td></tr>
                         )}
                         {!loading && rows.length === 0 && (
-                            <tr><td colSpan={21} className="text-center py-10 text-slate-400">No projects for this year.</td></tr>
+                            <tr><td colSpan={tableColSpan} className="text-center py-10 text-slate-400">No projects for this year.</td></tr>
                         )}
                         {rows.map(r => (
                             <tr key={r.project_id}>
@@ -288,45 +350,48 @@ export default function ProjectSummary() {
                                 <td className="max-w-[280px] truncate" title={r.project_description}>{r.project_description}</td>
                                 <td className="font-medium">{r.customer || '-'}</td>
                                 <td><StatusPill status={r.status} /></td>
+                                <Money v={r.project_value} strong />
                                 <td className="text-xs text-slate-500 whitespace-nowrap">
                                     {formatDate(r.start_date)} - {formatDate(r.end_date)}
                                 </td>
-                                <Money v={r.software_subscription_revenue} />
-                                <Money v={r.software_subscription_cost} muted />
-                                <Money v={r.software_subscription_margin} strong />
-                                <Recognize amount={r.software_subscription_recognize} value={r.software_subscription_recognize_pct} />
-                                <Money v={r.software_perpetual_revenue} />
-                                <Money v={r.software_perpetual_cost} muted />
-                                <Money v={r.software_perpetual_margin} strong />
-                                <Money v={r.software_ma_revenue} />
-                                <Money v={r.software_ma_cost} muted />
-                                <Money v={r.software_ma_margin} strong />
-                                <Recognize amount={r.software_ma_recognize} value={r.software_ma_recognize_pct} />
-                                <Money v={r.service_ma_revenue} />
-                                <Recognize amount={r.service_ma_recognize} value={r.service_ma_recognize_pct} />
-                                <Money v={r.implementation_revenue} />
-                                <Recognize amount={r.implementation_recognize} value={r.implementation_recognize_pct} />
+                                {isColumnVisible('software_subscription_revenue') && <Money v={r.software_subscription_revenue} />}
+                                {isColumnVisible('software_subscription_cost') && <Money v={r.software_subscription_cost} muted />}
+                                {isColumnVisible('software_subscription_margin') && <Money v={r.software_subscription_margin} strong />}
+                                {isColumnVisible('software_subscription_recognize') && <Recognize amount={r.software_subscription_recognize} value={r.software_subscription_recognize_pct} />}
+                                {isColumnVisible('software_perpetual_revenue') && <Money v={r.software_perpetual_revenue} />}
+                                {isColumnVisible('software_perpetual_cost') && <Money v={r.software_perpetual_cost} muted />}
+                                {isColumnVisible('software_perpetual_margin') && <Money v={r.software_perpetual_margin} strong />}
+                                {isColumnVisible('software_ma_revenue') && <Money v={r.software_ma_revenue} />}
+                                {isColumnVisible('software_ma_cost') && <Money v={r.software_ma_cost} muted />}
+                                {isColumnVisible('software_ma_margin') && <Money v={r.software_ma_margin} strong />}
+                                {isColumnVisible('software_ma_recognize') && <Recognize amount={r.software_ma_recognize} value={r.software_ma_recognize_pct} />}
+                                {isColumnVisible('service_ma_revenue') && <Money v={r.service_ma_revenue} />}
+                                {isColumnVisible('service_ma_recognize') && <Recognize amount={r.service_ma_recognize} value={r.service_ma_recognize_pct} />}
+                                {isColumnVisible('implementation_revenue') && <Money v={r.implementation_revenue} />}
+                                {isColumnVisible('implementation_recognize') && <Recognize amount={r.implementation_recognize} value={r.implementation_recognize_pct} />}
                                 <Money v={r.total_recognized} total />
                             </tr>
                         ))}
                         {!loading && rows.length > 0 && (
                             <tr className="bg-gradient-to-r from-indigo-50 to-pink-50 sticky bottom-0">
-                                <td colSpan={5} className="text-right font-bold">Totals</td>
-                                <Money v={filteredTotals.software_subscription_revenue} strong />
-                                <Money v={filteredTotals.software_subscription_cost} strong muted />
-                                <Money v={filteredTotals.software_subscription_margin} strong />
-                                <Recognize amount={filteredTotals.software_subscription_recognize} value={filteredTotals.software_subscription_recognize_pct} total />
-                                <Money v={filteredTotals.software_perpetual_revenue} strong />
-                                <Money v={filteredTotals.software_perpetual_cost} strong muted />
-                                <Money v={filteredTotals.software_perpetual_margin} strong />
-                                <Money v={filteredTotals.software_ma_revenue} strong />
-                                <Money v={filteredTotals.software_ma_cost} strong muted />
-                                <Money v={filteredTotals.software_ma_margin} strong />
-                                <Recognize amount={filteredTotals.software_ma_recognize} value={filteredTotals.software_ma_recognize_pct} total />
-                                <Money v={filteredTotals.service_ma_revenue} strong />
-                                <Recognize amount={filteredTotals.service_ma_recognize} value={filteredTotals.service_ma_recognize_pct} total />
-                                <Money v={filteredTotals.implementation_revenue} strong />
-                                <Recognize amount={filteredTotals.implementation_recognize} value={filteredTotals.implementation_recognize_pct} total />
+                                <td colSpan={4} className="text-right font-bold">Totals</td>
+                                <Money v={filteredTotals.project_value} strong />
+                                <td></td>
+                                {isColumnVisible('software_subscription_revenue') && <Money v={filteredTotals.software_subscription_revenue} strong />}
+                                {isColumnVisible('software_subscription_cost') && <Money v={filteredTotals.software_subscription_cost} strong muted />}
+                                {isColumnVisible('software_subscription_margin') && <Money v={filteredTotals.software_subscription_margin} strong />}
+                                {isColumnVisible('software_subscription_recognize') && <Recognize amount={filteredTotals.software_subscription_recognize} value={filteredTotals.software_subscription_recognize_pct} total />}
+                                {isColumnVisible('software_perpetual_revenue') && <Money v={filteredTotals.software_perpetual_revenue} strong />}
+                                {isColumnVisible('software_perpetual_cost') && <Money v={filteredTotals.software_perpetual_cost} strong muted />}
+                                {isColumnVisible('software_perpetual_margin') && <Money v={filteredTotals.software_perpetual_margin} strong />}
+                                {isColumnVisible('software_ma_revenue') && <Money v={filteredTotals.software_ma_revenue} strong />}
+                                {isColumnVisible('software_ma_cost') && <Money v={filteredTotals.software_ma_cost} strong muted />}
+                                {isColumnVisible('software_ma_margin') && <Money v={filteredTotals.software_ma_margin} strong />}
+                                {isColumnVisible('software_ma_recognize') && <Recognize amount={filteredTotals.software_ma_recognize} value={filteredTotals.software_ma_recognize_pct} total />}
+                                {isColumnVisible('service_ma_revenue') && <Money v={filteredTotals.service_ma_revenue} strong />}
+                                {isColumnVisible('service_ma_recognize') && <Recognize amount={filteredTotals.service_ma_recognize} value={filteredTotals.service_ma_recognize_pct} total />}
+                                {isColumnVisible('implementation_revenue') && <Money v={filteredTotals.implementation_revenue} strong />}
+                                {isColumnVisible('implementation_recognize') && <Recognize amount={filteredTotals.implementation_recognize} value={filteredTotals.implementation_recognize_pct} total />}
                                 <Money v={filteredTotals.total_recognized} total />
                             </tr>
                         )}

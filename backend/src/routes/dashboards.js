@@ -5,6 +5,7 @@ const {
     recognizeSubscription, recognizePerpetualMA, recognizeServiceMA,
     recognizeImplementation, recognizeOutsource
 } = require('../utils/revenue');
+const { getPipelineThresholdPct, revenueProjectWhere } = require('../utils/pipeline');
 
 const router = express.Router();
 // All dashboard endpoints require a logged-in user bound to a tenant.
@@ -51,6 +52,7 @@ function overlapsYear(start, end, year) {
 // ---------- Subscription Dashboard ----------
 router.get('/subscriptions', async (req, res) => {
     const year = pickYear(req);
+    const threshold = await getPipelineThresholdPct(req.tenantId);
     const { rows } = await db.query(`
         SELECT p.id AS project_id, p.project_code, p.description, p.status,
                p.customer_id,
@@ -59,9 +61,9 @@ router.get('/subscriptions', async (req, res) => {
           FROM project_subscriptions s
           JOIN projects p  ON p.id = s.project_id
           LEFT JOIN customers c ON c.id = p.customer_id
-         WHERE p.status <> 'Loss' AND p.tenant_id = $1
+         WHERE ${revenueProjectWhere('p', 2)} AND p.tenant_id = $1
          ORDER BY p.project_code
-    `, [req.tenantId]);
+    `, [req.tenantId, threshold]);
     const out = rows.map(r => {
         const calc = recognizeSubscription(r, year);
         return {
@@ -88,6 +90,7 @@ router.get('/subscriptions', async (req, res) => {
 // ---------- Perpetual / SW MA Dashboard ----------
 router.get('/perpetual-ma', async (req, res) => {
     const year = pickYear(req);
+    const threshold = await getPipelineThresholdPct(req.tenantId);
     const { rows } = await db.query(`
         SELECT p.id AS project_id, p.project_code, p.description, p.status,
                c.alias AS customer_alias,
@@ -95,9 +98,9 @@ router.get('/perpetual-ma', async (req, res) => {
           FROM project_perpetual_ma m
           JOIN projects p  ON p.id = m.project_id
           LEFT JOIN customers c ON c.id = p.customer_id
-         WHERE p.status <> 'Loss' AND p.tenant_id = $1
+         WHERE ${revenueProjectWhere('p', 2)} AND p.tenant_id = $1
          ORDER BY p.project_code, m.id
-    `, [req.tenantId]);
+    `, [req.tenantId, threshold]);
     const out = rows.map(r => {
         const calc = recognizePerpetualMA(r, year);
         return {
@@ -124,6 +127,7 @@ router.get('/perpetual-ma', async (req, res) => {
 // ---------- Service MA Dashboard ----------
 router.get('/service-ma', async (req, res) => {
     const year = pickYear(req);
+    const threshold = await getPipelineThresholdPct(req.tenantId);
     const { rows } = await db.query(`
         SELECT p.id AS project_id, p.project_code, p.status,
                p.description AS project_description,
@@ -132,9 +136,9 @@ router.get('/service-ma', async (req, res) => {
           FROM project_service_ma s
           JOIN projects p  ON p.id = s.project_id
           LEFT JOIN customers c ON c.id = p.customer_id
-         WHERE p.status <> 'Loss' AND p.tenant_id = $1
+         WHERE ${revenueProjectWhere('p', 2)} AND p.tenant_id = $1
          ORDER BY p.project_code, s.id
-    `, [req.tenantId]);
+    `, [req.tenantId, threshold]);
     const out = rows.map(r => {
         const calc = recognizeServiceMA(r, year);
         const subDesc = (r.description || '').trim();
@@ -158,6 +162,7 @@ router.get('/service-ma', async (req, res) => {
 // ---------- Implementation Dashboard ----------
 router.get('/implementation', async (req, res) => {
     const year = pickYear(req);
+    const threshold = await getPipelineThresholdPct(req.tenantId);
     const { rows } = await db.query(`
         SELECT p.id AS project_id, p.project_code, p.status, p.pipeline_target_date,
                p.project_start_date, p.project_end_date,
@@ -167,9 +172,9 @@ router.get('/implementation', async (req, res) => {
           FROM project_implementation i
           JOIN projects p  ON p.id = i.project_id
           LEFT JOIN customers c ON c.id = p.customer_id
-         WHERE p.status <> 'Loss' AND p.tenant_id = $1
+         WHERE ${revenueProjectWhere('p', 2)} AND p.tenant_id = $1
          ORDER BY p.project_code
-    `, [req.tenantId]);
+    `, [req.tenantId, threshold]);
     const out = rows.map(r => {
         const calc = recognizeImplementation(r, year);
         const subDesc = (r.description || '').trim();
@@ -195,6 +200,7 @@ router.get('/implementation', async (req, res) => {
 // ---------- Outsource Dashboard ----------
 router.get('/outsource', async (req, res) => {
     const year = pickYear(req);
+    const threshold = await getPipelineThresholdPct(req.tenantId);
     const { rows: outsRows } = await db.query(`
         SELECT p.id AS project_id, p.project_code, p.status,
                p.description AS project_description,
@@ -203,20 +209,20 @@ router.get('/outsource', async (req, res) => {
           FROM project_outsource o
           JOIN projects p  ON p.id = o.project_id
           LEFT JOIN customers c ON c.id = p.customer_id
-         WHERE p.status <> 'Loss' AND p.tenant_id = $1
+         WHERE ${revenueProjectWhere('p', 2)} AND p.tenant_id = $1
          ORDER BY p.project_code
-    `, [req.tenantId]);
+    `, [req.tenantId, threshold]);
 
     const monthly = await db.query(
         `SELECT pom.project_outsource_id,
                 COALESCE(SUM(pom.revenue),0)::numeric AS revenue,
                 COALESCE(SUM(pom.cost),0)::numeric    AS cost
-           FROM project_outsource_monthly pom
-           JOIN project_outsource o ON o.id = pom.project_outsource_id
-           JOIN projects p          ON p.id = o.project_id
-          WHERE pom.year = $1 AND p.tenant_id = $2
+          FROM project_outsource_monthly pom
+          JOIN project_outsource o ON o.id = pom.project_outsource_id
+          JOIN projects p          ON p.id = o.project_id
+          WHERE pom.year = $1 AND p.tenant_id = $2 AND ${revenueProjectWhere('p', 3)}
           GROUP BY pom.project_outsource_id`,
-        [year, req.tenantId]
+        [year, req.tenantId, threshold]
     );
     const monthlySum = new Map(monthly.rows.map(r => [r.project_outsource_id, r]));
 
@@ -251,12 +257,13 @@ router.get('/outsource', async (req, res) => {
 router.get('/summary', async (req, res) => {
     const year = pickYear(req);
     const tenantId = req.tenantId;
+    const threshold = await getPipelineThresholdPct(tenantId);
 
-    const subs = (await internal('subscriptions', year, tenantId)).rows;
-    const perp = (await internal('perpetual-ma',  year, tenantId)).rows;
-    const sv   = (await internal('service-ma',    year, tenantId)).rows;
-    const impl = (await internal('implementation',year, tenantId)).rows;
-    const outs = (await internal('outsource',     year, tenantId)).rows;
+    const subs = (await internal('subscriptions', year, tenantId, threshold)).rows;
+    const perp = (await internal('perpetual-ma',  year, tenantId, threshold)).rows;
+    const sv   = (await internal('service-ma',    year, tenantId, threshold)).rows;
+    const impl = (await internal('implementation',year, tenantId, threshold)).rows;
+    const outs = (await internal('outsource',     year, tenantId, threshold)).rows;
 
     const buckets = {
         pipeline_license_revenue: 0,
@@ -309,12 +316,12 @@ router.get('/summary', async (req, res) => {
 });
 
 // In-process data fetch for the summary roll-up. tenant-scoped.
-async function internal(kind, year, tenantId) {
+async function internal(kind, year, tenantId, threshold) {
     if (kind === 'subscriptions') {
         const { rows } = await db.query(`
             SELECT p.status, s.*  FROM project_subscriptions s
               JOIN projects p ON p.id = s.project_id
-             WHERE p.status <> 'Loss' AND p.tenant_id = $1`, [tenantId]);
+             WHERE ${revenueProjectWhere('p', 2)} AND p.tenant_id = $1`, [tenantId, threshold]);
         return { rows: rows.map(r => ({ ...recognizeSubscription(r, year), status: r.status }))
             .filter(hasRecognition) };
     }
@@ -322,7 +329,7 @@ async function internal(kind, year, tenantId) {
         const { rows } = await db.query(`
             SELECT p.status, m.*  FROM project_perpetual_ma m
               JOIN projects p ON p.id = m.project_id
-             WHERE p.status <> 'Loss' AND p.tenant_id = $1`, [tenantId]);
+             WHERE ${revenueProjectWhere('p', 2)} AND p.tenant_id = $1`, [tenantId, threshold]);
         return { rows: rows.map(r => ({ ...recognizePerpetualMA(r, year), status: r.status }))
             .filter(hasRecognition) };
     }
@@ -330,7 +337,7 @@ async function internal(kind, year, tenantId) {
         const { rows } = await db.query(`
             SELECT p.status, s.*  FROM project_service_ma s
               JOIN projects p ON p.id = s.project_id
-             WHERE p.status <> 'Loss' AND p.tenant_id = $1`, [tenantId]);
+             WHERE ${revenueProjectWhere('p', 2)} AND p.tenant_id = $1`, [tenantId, threshold]);
         return { rows: rows.map(r => ({ ...recognizeServiceMA(r, year), status: r.status }))
             .filter(hasRecognition) };
     }
@@ -338,7 +345,7 @@ async function internal(kind, year, tenantId) {
         const { rows } = await db.query(`
             SELECT p.status, p.project_start_date, p.project_end_date, i.*  FROM project_implementation i
               JOIN projects p ON p.id = i.project_id
-             WHERE p.status <> 'Loss' AND p.tenant_id = $1`, [tenantId]);
+             WHERE ${revenueProjectWhere('p', 2)} AND p.tenant_id = $1`, [tenantId, threshold]);
         return { rows: rows.map(r => ({ ...recognizeImplementation(r, year), status: r.status,
                 project_start_date: r.project_start_date, project_end_date: r.project_end_date }))
             .filter(r => hasRecognition(r) && overlapsYear(r.project_start_date, r.project_end_date, year)) };
@@ -347,7 +354,7 @@ async function internal(kind, year, tenantId) {
         const { rows: o } = await db.query(`
             SELECT p.status, o.*  FROM project_outsource o
               JOIN projects p ON p.id = o.project_id
-             WHERE p.status <> 'Loss' AND p.tenant_id = $1`, [tenantId]);
+             WHERE ${revenueProjectWhere('p', 2)} AND p.tenant_id = $1`, [tenantId, threshold]);
         const { rows: m } = await db.query(`
             SELECT pom.project_outsource_id,
                    COALESCE(SUM(pom.revenue),0)::numeric AS rev,
@@ -355,8 +362,8 @@ async function internal(kind, year, tenantId) {
               FROM project_outsource_monthly pom
               JOIN project_outsource o ON o.id = pom.project_outsource_id
               JOIN projects p          ON p.id = o.project_id
-             WHERE pom.year = $1 AND p.tenant_id = $2
-             GROUP BY pom.project_outsource_id`, [year, tenantId]);
+             WHERE pom.year = $1 AND p.tenant_id = $2 AND ${revenueProjectWhere('p', 3)}
+             GROUP BY pom.project_outsource_id`, [year, tenantId, threshold]);
         const map = new Map(m.map(x => [x.project_outsource_id, x]));
         return { rows: o.map(r => {
             const isMM = r.outsource_type === 'Man-Month';

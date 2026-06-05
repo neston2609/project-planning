@@ -414,12 +414,14 @@ CREATE TABLE IF NOT EXISTS projects (
     project_start_date   DATE,
     project_end_date     DATE,
     status               VARCHAR(16)  NOT NULL CHECK (status IN ('Win','Loss','Pipeline','Backlog')) DEFAULT 'Pipeline',
+    pipeline_win_pct     NUMERIC(5,2) NOT NULL DEFAULT 50,
     pipeline_target_date DATE,
     note                 TEXT         NOT NULL DEFAULT '',
     created_at           TIMESTAMP    NOT NULL DEFAULT NOW(),
     updated_at           TIMESTAMP    NOT NULL DEFAULT NOW()
 );
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS tenant_id INT;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS pipeline_win_pct NUMERIC(5,2) NOT NULL DEFAULT 50;
 CREATE INDEX IF NOT EXISTS idx_projects_status   ON projects(status);
 CREATE INDEX IF NOT EXISTS idx_projects_customer ON projects(customer_id);
 CREATE INDEX IF NOT EXISTS idx_projects_tenant   ON projects(tenant_id);

@@ -170,7 +170,7 @@ export default function ProjectManagement() {
                     <thead>
                         <tr>
                             <th>Code</th><th>Description</th><th>Customer</th><th>Status</th>
-                            <th>Start</th><th>End</th><th>Pipeline Target</th>
+                            <th>% to Win</th><th>Start</th><th>End</th><th>Pipeline Target</th>
                             <th></th>
                         </tr>
                     </thead>
@@ -181,6 +181,7 @@ export default function ProjectManagement() {
                                 <td className="max-w-[280px] truncate" title={p.description}>{p.description}</td>
                                 <td>{p.customer_alias || '-'}</td>
                                 <td><StatusPill status={p.status} /></td>
+                                <td>{p.status === 'Pipeline' ? `${Number(p.pipeline_win_pct ?? 50).toFixed(0)}%` : '-'}</td>
                                 <td>{formatDate(p.project_start_date)}</td>
                                 <td>{formatDate(p.project_end_date)}</td>
                                 <td>{formatDate(p.pipeline_target_date)}</td>
@@ -190,7 +191,7 @@ export default function ProjectManagement() {
                                 </td>
                             </tr>
                         ))}
-                        {filtered.length === 0 && <tr><td colSpan={8} className="text-center text-slate-400 py-6">No projects.</td></tr>}
+                        {filtered.length === 0 && <tr><td colSpan={9} className="text-center text-slate-400 py-6">No projects.</td></tr>}
                     </tbody>
                 </table>
             </div>
@@ -215,12 +216,20 @@ function normalizedDocumentTypes(types) {
     return (types || []).length > 0 ? types : [{ id: '', name: 'General' }];
 }
 
+function withPipelineDefaults(form, status) {
+    const next = { ...form, status };
+    if (status === 'Pipeline' && (next.pipeline_win_pct === '' || next.pipeline_win_pct == null)) {
+        next.pipeline_win_pct = 50;
+    }
+    return next;
+}
+
 function CreateProjectModal({ customers, documentTypes, onClose, onCreated }) {
     const fileRef = useRef(null);
     const [f, setF] = useState({
         project_code: '', description: '', customer_id: '',
         project_start_date: '', project_end_date: '',
-        status: 'Pipeline', pipeline_target_date: '', note: ''
+        status: 'Pipeline', pipeline_win_pct: 50, pipeline_target_date: '', note: ''
     });
     const [attachments, setAttachments] = useState([]);
     const [documentTypeId, setDocumentTypeId] = useState(() => defaultDocumentTypeId(documentTypes));
@@ -263,6 +272,7 @@ function CreateProjectModal({ customers, documentTypes, onClose, onCreated }) {
                 ...f, customer_id: f.customer_id ? Number(f.customer_id) : null,
                 project_start_date: f.project_start_date || null,
                 project_end_date:   f.project_end_date   || null,
+                pipeline_win_pct: Number(f.pipeline_win_pct || 50),
                 pipeline_target_date: f.pipeline_target_date || null
             });
             if (attachments.length > 0) {
@@ -305,9 +315,15 @@ function CreateProjectModal({ customers, documentTypes, onClose, onCreated }) {
                         {customers.map(c => <option key={c.id} value={c.id}>{c.alias} — {c.full_name}</option>)}
                     </select></div>
                 <div><label className="label">Status</label>
-                    <select className="input" value={f.status} onChange={e => setF({ ...f, status: e.target.value })}>
+                    <select className="input" value={f.status} onChange={e => setF(withPipelineDefaults(f, e.target.value))}>
                         <option>Pipeline</option><option>Win</option><option>Loss</option><option>Backlog</option>
                     </select></div>
+                {f.status === 'Pipeline' && (
+                    <div><label className="label">% to Win</label>
+                        <input type="number" min="0" max="100" step="1" className="input"
+                               value={f.pipeline_win_pct}
+                               onChange={e => setF({ ...f, pipeline_win_pct: e.target.value })} /></div>
+                )}
                 <div><label className="label">Start Date</label>
                     <input type="date" className="input" value={f.project_start_date} onChange={e => setF({ ...f, project_start_date: e.target.value })} /></div>
                 <div><label className="label">End Date</label>
@@ -397,6 +413,7 @@ function MasterForm({ project, customers, onSaved }) {
         project_start_date: formatDate(project.project_start_date),
         project_end_date: formatDate(project.project_end_date),
         status: project.status,
+        pipeline_win_pct: project.pipeline_win_pct ?? 50,
         pipeline_target_date: formatDate(project.pipeline_target_date),
         note: project.note || ''
     });
@@ -408,6 +425,7 @@ function MasterForm({ project, customers, onSaved }) {
                 ...f, customer_id: f.customer_id ? Number(f.customer_id) : null,
                 project_start_date: f.project_start_date || null,
                 project_end_date: f.project_end_date || null,
+                pipeline_win_pct: Number(f.pipeline_win_pct || 50),
                 pipeline_target_date: f.pipeline_target_date || null
             });
             toast.success('Project details saved');
@@ -434,9 +452,15 @@ function MasterForm({ project, customers, onSaved }) {
                         {customers.map(c => <option key={c.id} value={c.id}>{c.alias} — {c.full_name}</option>)}
                     </select></div>
                 <div><label className="label">Status</label>
-                    <select className="input" value={f.status} onChange={e => setF({ ...f, status: e.target.value })}>
+                    <select className="input" value={f.status} onChange={e => setF(withPipelineDefaults(f, e.target.value))}>
                         <option>Pipeline</option><option>Win</option><option>Loss</option><option>Backlog</option>
                     </select></div>
+                {f.status === 'Pipeline' && (
+                    <div><label className="label">% to Win</label>
+                        <input type="number" min="0" max="100" step="1" className="input"
+                               value={f.pipeline_win_pct}
+                               onChange={e => setF({ ...f, pipeline_win_pct: e.target.value })} /></div>
+                )}
                 <div><label className="label">Start Date</label>
                     <input type="date" className="input" value={f.project_start_date} onChange={e => setF({ ...f, project_start_date: e.target.value })} /></div>
                 <div><label className="label">End Date</label>

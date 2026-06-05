@@ -24,6 +24,7 @@ export default function AppConfigPage() {
     const [loginRetentionDays, setLoginRetentionDays] = useState('14');
     const [postItExpiryDays, setPostItExpiryDays] = useState('30');
     const [postItBoardSize, setPostItBoardSize] = useState('40');
+    const [pipelineWinThresholdPct, setPipelineWinThresholdPct] = useState('50');
     const [footerText, setFooterText] = useState('');
     const [announcementEnabled, setAnnouncementEnabled] = useState(false);
     const [announcementContent, setAnnouncementContent] = useState('');
@@ -57,6 +58,7 @@ export default function AppConfigPage() {
         setLoginRetentionDays(r.data.login_log_retention_days || '14');
         setPostItExpiryDays(r.data.post_it_expiry_days || '30');
         setPostItBoardSize(r.data.post_it_board_size || '40');
+        setPipelineWinThresholdPct(r.data.pipeline_win_threshold_pct || '50');
         setFooterText(r.data.footer_text || 'Implemented and Maintain by BSM RPA Team. For Internal use only');
         setAnnouncementEnabled(String(r.data.announcement_enabled || 'false') === 'true');
         setAnnouncementContent(r.data.announcement_content || '');
@@ -179,6 +181,17 @@ export default function AppConfigPage() {
         } catch (err) {
             toast.error(err.response?.data?.error || 'Save failed');
         }
+    }
+
+    async function savePipelineWinThreshold() {
+        const n = Number(pipelineWinThresholdPct);
+        if (!Number.isFinite(n) || n < 0 || n > 100) {
+            return toast.error('Enter a percentage from 0 to 100');
+        }
+        try {
+            await api.put('/admin/app-config/pipeline_win_threshold_pct', { value: String(n) });
+            toast.success('Pipeline threshold saved');
+        } catch { toast.error('Save failed'); }
     }
 
     async function loadAiModels() {
@@ -365,6 +378,18 @@ export default function AppConfigPage() {
                     </p>
                 </div>
                 <button className="btn-primary" onClick={savePostItBoardSize}>Save Post-It Board Size</button>
+            </div>
+
+            <div className="card p-4 max-w-md space-y-3">
+                <div>
+                    <label className="label">Pipeline % to Win Threshold</label>
+                    <input type="number" min="0" max="100" step="1" className="input" value={pipelineWinThresholdPct}
+                           onChange={e => setPipelineWinThresholdPct(e.target.value)} />
+                    <p className="text-xs text-slate-400 mt-1">
+                        Pipeline projects are counted in Revenue and MG only when % to Win is greater than this value. Default 50.
+                    </p>
+                </div>
+                <button className="btn-primary" onClick={savePipelineWinThreshold}>Save Pipeline Threshold</button>
             </div>
 
             <div className="card p-4 max-w-2xl space-y-3">

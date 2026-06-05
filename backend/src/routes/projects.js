@@ -10,6 +10,7 @@ const {
     deleteProjectAttachment,
     sendProjectAttachment
 } = require('../utils/projectAttachments');
+const { DEFAULT_PIPELINE_WIN_PCT, normalizePercent } = require('../utils/pipeline');
 
 const router = express.Router();
 
@@ -138,6 +139,7 @@ const projValidators = [
     body('project_start_date').optional({ nullable: true }).isISO8601(),
     body('project_end_date').optional({ nullable: true }).isISO8601(),
     body('status').optional().isIn(['Win','Loss','Pipeline','Backlog']),
+    body('pipeline_win_pct').optional({ nullable: true }).isFloat({ min: 0, max: 100 }),
     body('pipeline_target_date').optional({ nullable: true }).isISO8601(),
     body('note').optional().isString()
 ];
@@ -152,11 +154,12 @@ router.post('/', projValidators, async (req, res) => {
     try {
         const { rows } = await db.query(
             `INSERT INTO projects(tenant_id, project_code, description, customer_id, project_start_date,
-                                  project_end_date, status, pipeline_target_date, note)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+                                  project_end_date, status, pipeline_win_pct, pipeline_target_date, note)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
             [req.tenantId, b.project_code, b.description || '', b.customer_id || null,
              b.project_start_date || null, b.project_end_date || null,
-             b.status || 'Pipeline', b.pipeline_target_date || null, b.note || '']
+             b.status || 'Pipeline', normalizePercent(b.pipeline_win_pct, DEFAULT_PIPELINE_WIN_PCT),
+             b.pipeline_target_date || null, b.note || '']
         );
         res.status(201).json(rows[0]);
     } catch (err) {
@@ -178,11 +181,12 @@ router.put('/:id', param('id').isInt(), projValidators, async (req, res) => {
         const { rows } = await client.query(
             `UPDATE projects SET project_code=$1, description=$2, customer_id=$3,
                                  project_start_date=$4, project_end_date=$5,
-                                 status=$6, pipeline_target_date=$7, note=$8
-              WHERE id=$9 AND tenant_id=$10 RETURNING *`,
+                                 status=$6, pipeline_win_pct=$7, pipeline_target_date=$8, note=$9
+              WHERE id=$10 AND tenant_id=$11 RETURNING *`,
             [b.project_code, b.description || '', b.customer_id || null,
              b.project_start_date || null, b.project_end_date || null,
-             b.status || 'Pipeline', b.pipeline_target_date || null, b.note || '',
+             b.status || 'Pipeline', normalizePercent(b.pipeline_win_pct, DEFAULT_PIPELINE_WIN_PCT),
+             b.pipeline_target_date || null, b.note || '',
              req.params.id, req.tenantId]
         );
         if (!rows[0]) {

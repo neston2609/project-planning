@@ -9,6 +9,7 @@ const {
     recognizeSubscription, recognizePerpetualMA, recognizeServiceMA,
     recognizeImplementation, recognizeOutsource
 } = require('../utils/revenue');
+const { getPipelineThresholdsByTenant, projectCountsForRevenue } = require('../utils/pipeline');
 
 const router = express.Router();
 
@@ -51,29 +52,29 @@ router.get('/dashboard', async (req, res) => {
     }
 
     // Per-section pulls (no tenant filter — we group in JS).
-    const [subs, perp, sv, impl, outs, monthly, yearCfg] = await Promise.all([
+    const [subs, perp, sv, impl, outs, monthly, yearCfg, pipelineThresholds] = await Promise.all([
         db.query(`
-            SELECT p.tenant_id, p.status, s.*
+            SELECT p.tenant_id, p.status, p.pipeline_win_pct, s.*
               FROM project_subscriptions s
               JOIN projects p ON p.id = s.project_id
              WHERE p.status <> 'Loss'`),
         db.query(`
-            SELECT p.tenant_id, p.status, m.*
+            SELECT p.tenant_id, p.status, p.pipeline_win_pct, m.*
               FROM project_perpetual_ma m
               JOIN projects p ON p.id = m.project_id
              WHERE p.status <> 'Loss'`),
         db.query(`
-            SELECT p.tenant_id, p.status, s.*
+            SELECT p.tenant_id, p.status, p.pipeline_win_pct, s.*
               FROM project_service_ma s
               JOIN projects p ON p.id = s.project_id
              WHERE p.status <> 'Loss'`),
         db.query(`
-            SELECT p.tenant_id, p.status, i.*
+            SELECT p.tenant_id, p.status, p.pipeline_win_pct, i.*
               FROM project_implementation i
               JOIN projects p ON p.id = i.project_id
              WHERE p.status <> 'Loss'`),
         db.query(`
-            SELECT p.tenant_id, p.status, o.*
+            SELECT p.tenant_id, p.status, p.pipeline_win_pct, o.*
               FROM project_outsource o
               JOIN projects p ON p.id = o.project_id
              WHERE p.status <> 'Loss'`),
@@ -84,7 +85,8 @@ router.get('/dashboard', async (req, res) => {
               FROM project_outsource_monthly pom
              WHERE pom.year = $1
              GROUP BY pom.project_outsource_id`, [year]),
-        db.query('SELECT tenant_id, headcount, revenue_per_headcount FROM year_config WHERE year = $1', [year])
+        db.query('SELECT tenant_id, headcount, revenue_per_headcount FROM year_config WHERE year = $1', [year]),
+        getPipelineThresholdsByTenant()
     ]);
 
     const monthlyMap = new Map(monthly.rows.map(r => [r.project_outsource_id, r]));
@@ -113,23 +115,28 @@ router.get('/dashboard', async (req, res) => {
 
     // Subscriptions + Perpetual = license-side (recognize GM)
     for (const r of subs.rows) {
+        if (!projectCountsForRevenue(r, pipelineThresholds)) continue;
         const calc = recognizeSubscription(r, year);
         addBuckets(ensure(r.tenant_id), Number(calc.recognize_gm) || 0, 'license', r.status);
     }
     for (const r of perp.rows) {
+        if (!projectCountsForRevenue(r, pipelineThresholds)) continue;
         const calc = recognizePerpetualMA(r, year);
         addBuckets(ensure(r.tenant_id), Number(calc.recognize_gm) || 0, 'license', r.status);
     }
     // Service MA + Implementation + Outsource = service-side (recognize REVENUE)
     for (const r of sv.rows) {
+        if (!projectCountsForRevenue(r, pipelineThresholds)) continue;
         const calc = recognizeServiceMA(r, year);
         addBuckets(ensure(r.tenant_id), Number(calc.recognize_revenue) || 0, 'service', r.status);
     }
     for (const r of impl.rows) {
+        if (!projectCountsForRevenue(r, pipelineThresholds)) continue;
         const calc = recognizeImplementation(r, year);
         addBuckets(ensure(r.tenant_id), Number(calc.recognize_revenue) || 0, 'service', r.status);
     }
     for (const r of outs.rows) {
+        if (!projectCountsForRevenue(r, pipelineThresholds)) continue;
         const isMM = r.outsource_type === 'Man-Month';
         const sum  = monthlyMap.get(r.id);
         const revenue = isMM ? Number(sum?.rev || 0) : Number(r.revenue || 0);

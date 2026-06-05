@@ -58,6 +58,7 @@ export default function CopyProjectModal({ sourceProjectId, onClose, onCreated }
                 project_start_date: addOneYear(formatDate(proj.project_start_date)),
                 project_end_date:   addOneYear(formatDate(proj.project_end_date)),
                 status: 'Pipeline',
+                pipeline_win_pct: 50,
                 pipeline_target_date: addOneYear(formatDate(proj.pipeline_target_date)),
                 note: proj.note || ''
             });
@@ -130,6 +131,7 @@ export default function CopyProjectModal({ sourceProjectId, onClose, onCreated }
                 customer_id: main.customer_id ? Number(main.customer_id) : null,
                 project_start_date: main.project_start_date || null,
                 project_end_date:   main.project_end_date   || null,
+                pipeline_win_pct: Number(main.pipeline_win_pct || 50),
                 pipeline_target_date: main.pipeline_target_date || null
             };
             const created = await api.post('/projects', projPayload);
@@ -209,9 +211,24 @@ export default function CopyProjectModal({ sourceProjectId, onClose, onCreated }
                                 </select></div>
                             <div><label className="label">Status</label>
                                 <select className="input" value={main.status}
-                                        onChange={e => setMain({ ...main, status: e.target.value })}>
+                                        onChange={e => {
+                                            const status = e.target.value;
+                                            setMain({
+                                                ...main,
+                                                status,
+                                                pipeline_win_pct: status === 'Pipeline' && (main.pipeline_win_pct === '' || main.pipeline_win_pct == null)
+                                                    ? 50
+                                                    : main.pipeline_win_pct
+                                            });
+                                        }}>
                                     <option>Pipeline</option><option>Win</option><option>Loss</option><option>Backlog</option>
                                 </select></div>
+                            {main.status === 'Pipeline' && (
+                                <div><label className="label">% to Win</label>
+                                    <input type="number" min="0" max="100" step="1" className="input"
+                                           value={main.pipeline_win_pct}
+                                           onChange={e => setMain({ ...main, pipeline_win_pct: e.target.value })} /></div>
+                            )}
                             <div><label className="label">Start Date</label>
                                 <input type="date" className="input" value={main.project_start_date}
                                        onChange={e => setMain({ ...main, project_start_date: e.target.value })} /></div>

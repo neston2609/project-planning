@@ -24,6 +24,7 @@ async function seedTenantConfig(client, tenantId) {
         ['kb_attachment_limit_mb', '5'],
         ['post_it_expiry_days', '30'],
         ['post_it_board_size', '40'],
+        ['pipeline_win_threshold_pct', '50'],
         ['ai_provider', 'openai'],
         ['ai_api_key', ''],
         ['ai_endpoint', ''],

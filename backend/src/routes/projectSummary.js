@@ -10,6 +10,7 @@ const {
     recognizeSubscription, recognizePerpetualMA, recognizeServiceMA,
     recognizeImplementation, recognizeOutsource
 } = require('../utils/revenue');
+const { getPipelineThresholdPct, revenueProjectWhere } = require('../utils/pipeline');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -59,6 +60,7 @@ function emptyRow(project) {
         end_date: project.project_end_date,
         attachment_count: Number(project.attachment_count || 0),
         in_selected_year: false,
+        project_value: 0,
 
         software_subscription_revenue: 0,
         software_subscription_cost: 0,
@@ -90,6 +92,7 @@ function emptyRow(project) {
 }
 
 const totalKeys = [
+    'project_value',
     'software_subscription_revenue',
     'software_subscription_cost',
     'software_subscription_margin',
@@ -164,6 +167,7 @@ router.get('/', async (req, res) => {
 
     const tenant = await db.query('SELECT id, name FROM tenants WHERE id=$1', [tenantId]);
     if (!tenant.rowCount) return res.status(404).json({ error: 'Tenant not found' });
+    const threshold = await getPipelineThresholdPct(tenantId);
 
     const { rows: projects } = await db.query(`
         SELECT p.*, c.alias AS customer_alias, COALESCE(att.n, 0)::int AS attachment_count
@@ -173,43 +177,43 @@ router.get('/', async (req, res) => {
             SELECT project_id, COUNT(*) AS n
               FROM project_attachments
              WHERE tenant_id=$1
-             GROUP BY project_id
+            GROUP BY project_id
           ) att ON att.project_id = p.id
-         WHERE p.tenant_id=$1 AND p.status <> 'Loss'
+         WHERE p.tenant_id=$1 AND ${revenueProjectWhere('p', 2)}
          ORDER BY p.project_code
-    `, [tenantId]);
+    `, [tenantId, threshold]);
 
     const byProject = new Map(projects.map(p => [p.id, emptyRow(p)]));
     for (const row of byProject.values()) {
         row.in_selected_year = overlapsYear(row.start_date, row.end_date, year);
     }
 
-    const [subs, perp, service, impl, outs, monthly] = await Promise.all([
+    const [subs, perp, service, impl, outs, monthly, allMonthly] = await Promise.all([
         db.query(`
             SELECT p.id AS project_id, s.*
               FROM project_subscriptions s
               JOIN projects p ON p.id = s.project_id
-             WHERE p.tenant_id=$1 AND p.status <> 'Loss'`, [tenantId]),
+             WHERE p.tenant_id=$1 AND ${revenueProjectWhere('p', 2)}`, [tenantId, threshold]),
         db.query(`
             SELECT p.id AS project_id, m.*
               FROM project_perpetual_ma m
               JOIN projects p ON p.id = m.project_id
-             WHERE p.tenant_id=$1 AND p.status <> 'Loss'`, [tenantId]),
+             WHERE p.tenant_id=$1 AND ${revenueProjectWhere('p', 2)}`, [tenantId, threshold]),
         db.query(`
             SELECT p.id AS project_id, s.*
               FROM project_service_ma s
               JOIN projects p ON p.id = s.project_id
-             WHERE p.tenant_id=$1 AND p.status <> 'Loss'`, [tenantId]),
+             WHERE p.tenant_id=$1 AND ${revenueProjectWhere('p', 2)}`, [tenantId, threshold]),
         db.query(`
             SELECT p.id AS project_id, i.*
               FROM project_implementation i
               JOIN projects p ON p.id = i.project_id
-             WHERE p.tenant_id=$1 AND p.status <> 'Loss'`, [tenantId]),
+             WHERE p.tenant_id=$1 AND ${revenueProjectWhere('p', 2)}`, [tenantId, threshold]),
         db.query(`
             SELECT p.id AS project_id, o.*
               FROM project_outsource o
               JOIN projects p ON p.id = o.project_id
-             WHERE p.tenant_id=$1 AND p.status <> 'Loss'`, [tenantId]),
+             WHERE p.tenant_id=$1 AND ${revenueProjectWhere('p', 2)}`, [tenantId, threshold]),
         db.query(`
             SELECT pom.project_outsource_id,
                    COALESCE(SUM(pom.revenue),0)::numeric AS revenue,
@@ -217,14 +221,24 @@ router.get('/', async (req, res) => {
               FROM project_outsource_monthly pom
               JOIN project_outsource o ON o.id = pom.project_outsource_id
               JOIN projects p ON p.id = o.project_id
-             WHERE p.tenant_id=$1 AND pom.year=$2
-             GROUP BY pom.project_outsource_id`, [tenantId, year])
+             WHERE p.tenant_id=$1 AND pom.year=$2 AND ${revenueProjectWhere('p', 3)}
+             GROUP BY pom.project_outsource_id`, [tenantId, year, threshold])
+        ,
+        db.query(`
+            SELECT pom.project_outsource_id,
+                   COALESCE(SUM(pom.revenue),0)::numeric AS revenue
+              FROM project_outsource_monthly pom
+              JOIN project_outsource o ON o.id = pom.project_outsource_id
+              JOIN projects p ON p.id = o.project_id
+             WHERE p.tenant_id=$1 AND ${revenueProjectWhere('p', 2)}
+             GROUP BY pom.project_outsource_id`, [tenantId, threshold])
     ]);
 
     for (const r of subs.rows) {
         const row = byProject.get(r.project_id);
         if (!row) continue;
         const calc = recognizeSubscription(r, year);
+        row.project_value += Number(r.license_revenue || 0);
         row.software_subscription_revenue += Number(r.license_revenue || 0);
         row.software_subscription_cost += Number(r.license_cost || 0);
         row.software_subscription_margin += Number(calc.gross_margin || 0);
@@ -240,6 +254,7 @@ router.get('/', async (req, res) => {
         const revenue = Number(r.revenue || 0);
         const cost = Number(r.cost || 0);
         const gm = Number(calc.gross_margin || 0);
+        row.project_value += revenue;
         if (r.item_type === 'License') {
             row.software_perpetual_revenue += Number(calc.recognize_revenue || 0);
             row.software_perpetual_cost += Number(calc.recognize_cost || 0);
@@ -258,6 +273,7 @@ router.get('/', async (req, res) => {
         const row = byProject.get(r.project_id);
         if (!row) continue;
         const calc = recognizeServiceMA(r, year);
+        row.project_value += Number(r.revenue || 0);
         row.service_ma_revenue += Number(r.revenue || 0);
         row.service_ma_recognize += Number(calc.recognize_revenue || 0);
         row.total_recognized += Number(calc.recognize_revenue || 0);
@@ -268,6 +284,7 @@ router.get('/', async (req, res) => {
         const row = byProject.get(r.project_id);
         if (!row) continue;
         const calc = recognizeImplementation(r, year);
+        row.project_value += Number(r.revenue || 0);
         if (row.in_selected_year) {
             row.implementation_revenue += Number(r.revenue || 0);
             row.implementation_recognize += Number(calc.recognize_revenue || 0);
@@ -277,13 +294,16 @@ router.get('/', async (req, res) => {
     }
 
     const monthlyMap = new Map(monthly.rows.map(r => [r.project_outsource_id, r]));
+    const allMonthlyMap = new Map(allMonthly.rows.map(r => [r.project_outsource_id, r]));
     for (const r of outs.rows) {
         const row = byProject.get(r.project_id);
         if (!row) continue;
         const isMM = r.outsource_type === 'Man-Month';
         const sum = monthlyMap.get(r.id);
+        const totalSum = allMonthlyMap.get(r.id);
         const revenue = isMM ? Number(sum?.revenue || 0) : Number(r.revenue || 0);
         const cost = isMM ? Number(sum?.cost || 0) : Number(r.cost || 0);
+        row.project_value += isMM ? Number(totalSum?.revenue || 0) : Number(r.revenue || 0);
         const calc = recognizeOutsource({ ...r, revenue, cost }, year);
         row.implementation_revenue += revenue;
         row.implementation_recognize += Number(calc.recognize_revenue || 0);
