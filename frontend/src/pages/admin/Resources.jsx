@@ -17,10 +17,29 @@ export default function Resources() {
     async function load() { setList((await api.get('/resources')).data); }
     useEffect(() => { load(); }, []);
 
+    function resourcePayload(f) {
+        return {
+            emp_id: f.emp_id || null,
+            first_name: f.first_name || '',
+            last_name: f.last_name || '',
+            nick_name: f.nick_name || '',
+            role: f.role || '',
+            email: f.email || '',
+            mobile_phone: f.mobile_phone || '',
+            instagram: f.instagram || '',
+            line_id: f.line_id || '',
+            facebook: f.facebook || '',
+            erp_username: f.erp_username || '',
+            skill: f.skill || '',
+            picture_data: f.picture_data || null
+        };
+    }
+
     async function save(f) {
         try {
-            if (f.id) await api.put(`/resources/${f.id}`, f);
-            else      await api.post('/resources', f);
+            const payload = resourcePayload(f);
+            if (f.id) await api.put(`/resources/${f.id}`, payload);
+            else      await api.post('/resources', payload);
             toast.success('Saved'); setEdit(null); load();
         } catch (err) { toast.error(err.response?.data?.error || 'Save failed'); }
     }
