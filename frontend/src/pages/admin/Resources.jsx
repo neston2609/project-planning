@@ -25,7 +25,7 @@ export default function Resources() {
 
     function resourcePayload(f) {
         return {
-            emp_id: f.emp_id || null,
+            emp_id: f.emp_id || '',
             first_name: f.first_name || '',
             last_name: f.last_name || '',
             nick_name: f.nick_name || '',

@@ -614,7 +614,7 @@ const resourceValidators = [
     body('first_name').optional().isString(),
     body('last_name').optional().isString(),
     body('nick_name').optional().isString(),
-    body('emp_id').optional().isString(),
+    body('emp_id').optional({ nullable: true }).isString(),
     body('role').optional().isString(),
     body('email').optional().isString(),
     body('mobile_phone').optional().isString(),
