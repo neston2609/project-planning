@@ -370,7 +370,7 @@ function CreateProjectModal({ customers, documentTypes, onClose, onCreated }) {
 }
 
 // ---------- Project Editor: master form on top + 5 revenue tabs below ----------
-function ProjectEditor({ project, customers, documentTypes, onClose, onSaved, year }) {
+export function ProjectEditor({ project, customers, documentTypes, onClose, onSaved, year }) {
     const tabs = ['Subscription','Perpetual / SW MA','Service MA','Implementation','Outsource'];
     const [active, setActive] = useState('Subscription');
     return (

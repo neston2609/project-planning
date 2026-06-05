@@ -5,9 +5,11 @@ import toast from 'react-hot-toast';
 import Modal from '../../components/Modal';
 import StatusPill from '../../components/StatusPill';
 import { baht, formatDate } from '../../format';
+import { useYear } from '../../YearContext';
+import { ProjectEditor } from './ProjectManagement';
 import {
     ArrowUpTrayIcon, DocumentMagnifyingGlassIcon, PaperClipIcon,
-    PlusIcon, SparklesIcon
+    PencilSquareIcon, PlusIcon, SparklesIcon
 } from '@heroicons/react/24/outline';
 
 function addMonths(date, months) {
@@ -164,10 +166,12 @@ function defaultForm() {
 }
 
 export default function PipelineManagement() {
+    const { year } = useYear();
     const [projects, setProjects] = useState([]);
     const [customers, setCustomers] = useState([]);
     const [documentTypes, setDocumentTypes] = useState([]);
     const [creating, setCreating] = useState(false);
+    const [editing, setEditing] = useState(null);
     const [loading, setLoading] = useState(true);
 
     async function load() {
@@ -190,6 +194,15 @@ export default function PipelineManagement() {
 
     useEffect(() => { load(); }, []);
 
+    async function openProject(id) {
+        try {
+            const r = await api.get(`/projects/${id}`);
+            setEditing(r.data);
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Could not open project');
+        }
+    }
+
     return (
         <div className="space-y-4">
             <div className="flex items-center gap-3">
@@ -207,11 +220,11 @@ export default function PipelineManagement() {
                     <thead>
                         <tr>
                             <th>Project Code</th><th>Description</th><th>Customer</th><th>Status</th>
-                            <th>% to Win</th><th>Start</th><th>End</th>
+                            <th>% to Win</th><th>Start</th><th>End</th><th></th>
                         </tr>
                     </thead>
                     <tbody>
-                        {loading && <tr><td colSpan={7} className="text-center text-slate-400 py-6">Loading...</td></tr>}
+                        {loading && <tr><td colSpan={8} className="text-center text-slate-400 py-6">Loading...</td></tr>}
                         {!loading && projects.map(p => (
                             <tr key={p.id}>
                                 <td className="font-mono text-xs">{p.project_code}</td>
@@ -221,10 +234,15 @@ export default function PipelineManagement() {
                                 <td>{Number(p.pipeline_win_pct ?? 50).toFixed(0)}%</td>
                                 <td>{formatDate(p.project_start_date)}</td>
                                 <td>{formatDate(p.project_end_date)}</td>
+                                <td className="text-right">
+                                    <button className="btn-ghost" title="Edit project" onClick={() => openProject(p.id)}>
+                                        <PencilSquareIcon className="w-4 h-4" />
+                                    </button>
+                                </td>
                             </tr>
                         ))}
                         {!loading && projects.length === 0 && (
-                            <tr><td colSpan={7} className="text-center text-slate-400 py-6">No pipeline projects.</td></tr>
+                            <tr><td colSpan={8} className="text-center text-slate-400 py-6">No pipeline projects.</td></tr>
                         )}
                     </tbody>
                 </table>
@@ -236,6 +254,20 @@ export default function PipelineManagement() {
                     documentTypes={documentTypes}
                     onClose={() => setCreating(false)}
                     onCreated={() => { setCreating(false); load(); }}
+                />
+            )}
+            {editing && (
+                <ProjectEditor
+                    project={editing}
+                    customers={customers}
+                    documentTypes={documentTypes}
+                    onClose={() => setEditing(null)}
+                    onSaved={async () => {
+                        await load();
+                        const r = await api.get(`/projects/${editing.id}`);
+                        setEditing(r.data);
+                    }}
+                    year={year}
                 />
             )}
         </div>
