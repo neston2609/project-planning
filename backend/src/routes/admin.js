@@ -101,6 +101,17 @@ function namesFromModels(data, provider) {
     return [];
 }
 
+function aiErrorStatus(err) {
+    if (err.status === 401 || err.status === 403) return 400;
+    if (err.status >= 500) return 502;
+    return err.status || 400;
+}
+
+function aiErrorMessage(err, fallback) {
+    if (err.status === 401 || err.status === 403) return 'AI provider rejected the API key or credentials';
+    return err.message || fallback;
+}
+
 async function loadAiModels({ provider, apiKey, endpoint }) {
     const cleanProvider = cleanAiProvider(provider);
     const cleanEndpoint = normalizeEndpoint(endpoint);
@@ -478,7 +489,7 @@ router.put('/ai-config', async (req, res) => {
         return res.status(400).json({ error: 'Custom endpoint is required' });
     }
 
-    const client = await db.connect();
+    const client = await db.getClient();
     try {
         await client.query('BEGIN');
         await saveTenantConfig(client, req.tenantId, 'ai_provider', provider);
@@ -513,7 +524,7 @@ router.post('/ai-config/models', async (req, res) => {
         res.json({ provider, models });
     } catch (err) {
         console.error('[ai-config/models]', err.message);
-        res.status(err.status || 400).json({ error: err.message || 'Could not load models' });
+        res.status(aiErrorStatus(err)).json({ error: aiErrorMessage(err, 'Could not load models') });
     }
 });
 
@@ -547,7 +558,7 @@ router.post('/ai-config/test', async (req, res) => {
         });
     } catch (err) {
         console.error('[ai-config/test]', err.message);
-        res.status(err.status || 400).json({ ok: false, error: err.message || 'AI configuration test failed' });
+        res.status(aiErrorStatus(err)).json({ ok: false, error: aiErrorMessage(err, 'AI configuration test failed') });
     }
 });
 
