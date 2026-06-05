@@ -10,6 +10,13 @@ const router = express.Router();
 // All resource routes are tenant-scoped.
 router.use(requireAuth, requireTenant);
 
+const AI_CONFIG_KEYS = ['ai_provider', 'ai_api_key', 'ai_endpoint', 'ai_model'];
+const AI_PROVIDERS = ['openai', 'anthropic', 'google', 'azure_openai', 'custom'];
+const AI_SUGGEST_FIELDS = [
+    'first_name', 'last_name', 'nick_name', 'role', 'email', 'mobile_phone',
+    'instagram', 'line_id', 'facebook', 'erp_username', 'skill'
+];
+
 const RESOURCE_SELECT = `
     SELECT r.*,
            u.username AS mapped_username,
@@ -54,6 +61,141 @@ function canManageResources(user) {
     return user && (user.role === 'admin' || user.role === 'superadmin');
 }
 
+function cleanAiProvider(value) {
+    const provider = String(value || '').trim().toLowerCase();
+    return AI_PROVIDERS.includes(provider) ? provider : 'openai';
+}
+
+function normalizeEndpoint(value) {
+    return String(value || '').trim().replace(/\/+$/, '');
+}
+
+function cleanSuggestionValue(value, max = 1000) {
+    return String(value || '').trim().slice(0, max);
+}
+
+async function getAiConfig(tenantId) {
+    const { rows } = await db.query(
+        'SELECT key, value FROM tenant_config WHERE tenant_id=$1 AND key = ANY($2)',
+        [tenantId, AI_CONFIG_KEYS]
+    );
+    return Object.fromEntries(rows.map(r => [r.key, r.value]));
+}
+
+async function fetchJson(url, options = {}) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), Number(options.timeout_ms || 10000));
+    const { timeout_ms, ...fetchOptions } = options;
+    let response;
+    try {
+        response = await fetch(url, { ...fetchOptions, signal: controller.signal });
+    } finally {
+        clearTimeout(timeout);
+    }
+    const text = await response.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+    if (!response.ok) {
+        const err = new Error(data?.error?.message || data?.error || data?.message || response.statusText || 'AI request failed');
+        err.status = response.status;
+        throw err;
+    }
+    return data;
+}
+
+function parseJsonObjectText(value) {
+    const text = String(value || '').trim();
+    const match = text.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    try {
+        const parsed = JSON.parse(match[0]);
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+    } catch {
+        return null;
+    }
+}
+
+async function runResourceSuggestionAi(tenantId, resource) {
+    const cfg = await getAiConfig(tenantId);
+    const provider = cleanAiProvider(cfg.ai_provider || 'openai');
+    const apiKey = cfg.ai_api_key || '';
+    const endpoint = normalizeEndpoint(cfg.ai_endpoint);
+    const model = String(cfg.ai_model || '').trim();
+    if (!apiKey || !model) {
+        return { enabled: false, reason: 'AI configuration is incomplete', suggestions: [] };
+    }
+
+    const current = {};
+    for (const field of AI_SUGGEST_FIELDS) current[field] = cleanSuggestionValue(resource?.[field] || '');
+    const blankFields = AI_SUGGEST_FIELDS.filter(field => !current[field]);
+    if (blankFields.length === 0) return { enabled: false, reason: 'No blank fields to suggest', suggestions: [] };
+
+    const prompt = `You help an internal admin complete a Resource Management form.
+Use only highly confident information. If uncertain, leave the field out.
+Do not invent private contact details. If web-enabled tools are available to your model, you may use public professional sources, but return only suggestions with source labels.
+Return only valid JSON with this shape:
+{"suggestions":[{"field":"role","value":"RPA Developer","confidence":0.82,"source":"inferred from current skill"}]}
+Allowed fields: ${blankFields.join(', ')}
+Current resource JSON: ${JSON.stringify(current)}`;
+
+    let content = '';
+    if (provider === 'openai') {
+        const data = await fetchJson('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.1 }),
+            timeout_ms: 12000
+        });
+        content = data?.choices?.[0]?.message?.content || '';
+    } else if (provider === 'anthropic') {
+        const data = await fetchJson('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model, max_tokens: 700, messages: [{ role: 'user', content: prompt }] }),
+            timeout_ms: 12000
+        });
+        content = (data?.content || []).map(part => part.text || '').join('\n');
+    } else if (provider === 'google') {
+        const data = await fetchJson(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+            timeout_ms: 12000
+        });
+        content = data?.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('\n') || '';
+    } else if (provider === 'azure_openai') {
+        if (!endpoint) return { enabled: false, reason: 'Azure endpoint is missing', suggestions: [] };
+        const data = await fetchJson(`${endpoint}/openai/deployments/${encodeURIComponent(model)}/chat/completions?api-version=2024-10-21`, {
+            method: 'POST',
+            headers: { 'api-key': apiKey, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ messages: [{ role: 'user', content: prompt }], temperature: 0.1 }),
+            timeout_ms: 12000
+        });
+        content = data?.choices?.[0]?.message?.content || '';
+    } else {
+        if (!endpoint) return { enabled: false, reason: 'Custom endpoint is missing', suggestions: [] };
+        const data = await fetchJson(`${endpoint}/chat/completions`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.1 }),
+            timeout_ms: 12000
+        });
+        content = data?.choices?.[0]?.message?.content || '';
+    }
+
+    const parsed = parseJsonObjectText(content);
+    const suggestions = (Array.isArray(parsed?.suggestions) ? parsed.suggestions : [])
+        .map(item => ({
+            field: cleanSuggestionValue(item.field, 80),
+            value: cleanSuggestionValue(item.value, item.field === 'skill' ? 1000 : 255),
+            confidence: Number(item.confidence || 0),
+            source: cleanSuggestionValue(item.source || 'AI suggestion', 255)
+        }))
+        .filter(item => blankFields.includes(item.field) && item.value)
+        .slice(0, 12);
+    return { enabled: true, suggestions };
+}
+
 router.get('/', async (req, res) => {
     const { rows } = await db.query(
         `${RESOURCE_SELECT}
@@ -63,6 +205,25 @@ router.get('/', async (req, res) => {
     );
     res.json(rows);
 });
+
+router.post('/ai-suggest',
+    requireRole('admin', 'superadmin'),
+    async (req, res) => {
+        try {
+            const result = await runResourceSuggestionAi(req.tenantId, req.body || {});
+            res.json(result);
+        } catch (err) {
+            console.error('[resource ai suggest]', err.message);
+            const message = err.status === 401 || err.status === 403
+                ? 'AI provider rejected the API key or credentials'
+                : err.name === 'AbortError'
+                    ? 'AI suggestion timed out'
+                    : err.message || 'AI suggestion failed';
+            const status = err.status === 401 || err.status === 403 ? 400 : (err.status >= 500 ? 502 : 400);
+            res.status(status).json({ enabled: false, reason: message, suggestions: [] });
+        }
+    }
+);
 
 // NOTE: '/assignments/*' routes are declared before '/:id' so the literal
 // path wins over the :id param.

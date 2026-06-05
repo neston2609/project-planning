@@ -21,6 +21,7 @@ async function seedTenantConfig(client, tenantId) {
         ['license_expiring_days', '30'],
         ['login_log_retention_days', '14'],
         ['kb_version_limit', '20'],
+        ['kb_attachment_limit_mb', '5'],
         ['post_it_expiry_days', '30'],
         ['post_it_board_size', '40'],
         ['ai_provider', 'openai'],

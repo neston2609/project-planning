@@ -2,9 +2,15 @@ const express = require('express');
 const { body, param, query, validationResult } = require('express-validator');
 const pdfParse = require('pdf-parse');
 const XLSX = require('xlsx');
-const mammoth = require('mammoth');
 const db = require('../db');
 const { requireAuth, requireRole, requireTenant } = require('../middleware/auth');
+
+let mammoth = null;
+try {
+    mammoth = require('mammoth');
+} catch (err) {
+    console.warn('[kb attachment extract] mammoth is not installed; Word .docx text extraction is disabled');
+}
 
 const router = express.Router();
 router.use(requireAuth, requireTenant);
@@ -69,6 +75,7 @@ async function extractAttachmentText(file = {}) {
             if (fileName.endsWith('.doc') && !fileName.endsWith('.docx')) {
                 return '';
             }
+            if (!mammoth) return '';
             const parsed = await mammoth.extractRawText({ buffer });
             return cleanExtractedText(parsed.value);
         }

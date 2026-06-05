@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import Modal from '../../components/Modal';
 import {
     PencilSquareIcon, TrashIcon, PlusIcon, UserCircleIcon, ArrowUpTrayIcon,
-    UserPlusIcon, LinkIcon, XMarkIcon
+    UserPlusIcon, LinkIcon, XMarkIcon, SparklesIcon
 } from '@heroicons/react/24/outline';
 
 export default function Resources() {
@@ -275,6 +275,9 @@ function ResourceUserModal({ initial, users, roles, onClose, onSave, onUnlink })
 
 function ResourceForm({ initial, onClose, onSave }) {
     const [f, setF] = useState({ ...initial });
+    const [suggesting, setSuggesting] = useState(false);
+    const [suggestions, setSuggestions] = useState([]);
+    const [selectedSuggestions, setSelectedSuggestions] = useState(() => new Set());
     const fileRef = useRef(null);
 
     function pickPicture() { fileRef.current?.click(); }
@@ -299,11 +302,90 @@ function ResourceForm({ initial, onClose, onSave }) {
         setF(s => ({ ...s, picture_data: null }));
     }
 
+    async function askAiSuggest() {
+        setSuggesting(true);
+        try {
+            const res = await api.post('/resources/ai-suggest', f);
+            const next = res.data.suggestions || [];
+            setSuggestions(next);
+            setSelectedSuggestions(new Set(next.map(item => item.field)));
+            if (next.length === 0) {
+                toast(res.data.reason || 'AI has no suggestions for blank fields');
+            } else {
+                toast.success(`AI suggested ${next.length} field(s)`);
+            }
+        } catch (err) {
+            toast.error(err.response?.data?.reason || err.response?.data?.error || 'AI suggestion failed');
+        } finally {
+            setSuggesting(false);
+        }
+    }
+
+    function toggleSuggestion(field) {
+        setSelectedSuggestions(prev => {
+            const next = new Set(prev);
+            if (next.has(field)) next.delete(field); else next.add(field);
+            return next;
+        });
+    }
+
+    function applySuggestions() {
+        const chosen = suggestions.filter(item => selectedSuggestions.has(item.field));
+        if (chosen.length === 0) return toast.error('Please select at least one suggestion');
+        if (!confirm(`Apply ${chosen.length} AI suggestion(s) to this resource?`)) return;
+        setF(prev => {
+            const next = { ...prev };
+            for (const item of chosen) {
+                if (!String(next[item.field] || '').trim()) next[item.field] = item.value;
+            }
+            return next;
+        });
+        toast.success('AI suggestions applied');
+    }
+
     return (
         <Modal open onClose={onClose}
                title={f.id ? `Edit Resource — ${f.first_name} ${f.last_name}` : 'New Resource'}
-               footer={<><button className="btn-ghost" onClick={onClose}>Cancel</button><button className="btn-primary" onClick={() => onSave(f)}>Save</button></>}>
+               footer={<>
+                   <button className="btn-ghost mr-auto" onClick={askAiSuggest} disabled={suggesting}>
+                       <SparklesIcon className="w-4 h-4 text-indigo-500" /> {suggesting ? 'AI Suggesting...' : 'AI Suggest'}
+                   </button>
+                   <button className="btn-ghost" onClick={onClose}>Cancel</button>
+                   <button className="btn-primary" onClick={() => onSave(f)}>Save</button>
+               </>}>
             <div className="grid grid-cols-2 gap-3">
+                {suggestions.length > 0 && (
+                    <div className="col-span-2 rounded-lg border border-indigo-200 bg-indigo-50/70 p-3 space-y-3">
+                        <div className="flex items-center gap-2">
+                            <SparklesIcon className="w-5 h-5 text-indigo-600" />
+                            <div>
+                                <div className="font-semibold text-indigo-900">AI Suggestions</div>
+                                <div className="text-xs text-indigo-700">Review and apply only the fields you trust.</div>
+                            </div>
+                            <button type="button" className="btn-primary ml-auto" onClick={applySuggestions}>
+                                Apply Selected
+                            </button>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            {suggestions.map(item => (
+                                <label key={item.field}
+                                       className="flex items-start gap-2 rounded-md border border-indigo-100 bg-white p-2 text-sm">
+                                    <input type="checkbox"
+                                           className="mt-1"
+                                           checked={selectedSuggestions.has(item.field)}
+                                           onChange={() => toggleSuggestion(item.field)} />
+                                    <span className="min-w-0">
+                                        <span className="block font-semibold text-slate-800">{item.field.replaceAll('_', ' ')}</span>
+                                        <span className="block break-words text-slate-700">{item.value}</span>
+                                        <span className="block text-xs text-slate-400">
+                                            {item.source || 'AI suggestion'}{item.confidence ? ` - ${Math.round(item.confidence * 100)}%` : ''}
+                                        </span>
+                                    </span>
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+                )}
                 {/* ---------- Picture uploader ---------- */}
                 <div className="col-span-2">
                     <label className="label">Photo</label>
