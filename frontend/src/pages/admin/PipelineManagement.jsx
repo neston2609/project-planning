@@ -94,6 +94,7 @@ async function parseBudgetFile(file, customers) {
         project_description: description || project || '',
         customer_id: matchedCustomer?.id || '',
         customer_hint: client || '',
+        should_create_customer: Boolean(client && !matchedCustomer),
         subscription_cost: 0,
         subscription_revenue: 0,
         implementation_cost: 0,
@@ -144,6 +145,8 @@ function defaultForm() {
         project_code: '',
         description: '',
         customer_id: '',
+        customer_hint: '',
+        should_create_customer: false,
         project_start_date: ymd(start),
         project_end_date: ymd(end),
         status: 'Pipeline',
@@ -266,6 +269,8 @@ function PipelineModal({ customers, documentTypes, onClose, onCreated }) {
                 project_code: code.data.project_code || current.project_code,
                 description: analysis.project_description || current.description,
                 customer_id: analysis.customer_id || '',
+                customer_hint: analysis.customer_hint || '',
+                should_create_customer: analysis.should_create_customer,
                 subscription_cost: analysis.subscription_cost,
                 subscription_revenue: analysis.subscription_revenue,
                 implementation_cost: analysis.implementation_cost,
@@ -274,11 +279,11 @@ function PipelineModal({ customers, documentTypes, onClose, onCreated }) {
                 service_ma_revenue: analysis.service_ma_revenue,
                 note: [
                     current.note,
-                    analysis.customer_hint && !analysis.customer_id ? `Customer hint from budget file: ${analysis.customer_hint}` : '',
+                    analysis.should_create_customer ? `Customer will be created from budget file: ${analysis.customer_hint}` : '',
                     analysis.sheet_name ? `Budget analysis sheet: ${analysis.sheet_name}` : ''
                 ].filter(Boolean).join('\n'),
-                analysis_note: analysis.customer_hint && !analysis.customer_id
-                    ? `Found customer text "${analysis.customer_hint}", but it did not match an existing Customer.`
+                analysis_note: analysis.should_create_customer
+                    ? `Found customer text "${analysis.customer_hint}". It will be created as a new Customer when saving.`
                     : 'Budget file analyzed. Please review before saving.'
             }));
             toast.success('Budget file analyzed');
@@ -293,10 +298,34 @@ function PipelineModal({ customers, documentTypes, onClose, onCreated }) {
         if (!f.project_code.trim()) return toast.error('Project Code is required');
         setSaving(true);
         try {
+            let customerId = f.customer_id ? Number(f.customer_id) : null;
+            const customerName = String(f.customer_hint || '').trim();
+            if (!customerId && customerName) {
+                try {
+                    const createdCustomer = await api.post('/customers', {
+                        alias: customerName.slice(0, 64),
+                        full_name: customerName,
+                        contact_name: '',
+                        contact_email: '',
+                        contact_phone: '',
+                        account_manager: '',
+                        color_hex: '#3b82f6',
+                        logo_data: null
+                    });
+                    customerId = createdCustomer.data.id;
+                    toast.success(`Customer "${createdCustomer.data.alias}" created`);
+                } catch (err) {
+                    if (err.response?.status !== 409) throw err;
+                    const refreshed = await api.get('/customers');
+                    const matched = customerMatch(customerName, refreshed.data || []);
+                    if (!matched) throw err;
+                    customerId = matched.id;
+                }
+            }
             const created = await api.post('/projects', {
                 project_code: f.project_code.trim(),
                 description: f.description || '',
-                customer_id: f.customer_id ? Number(f.customer_id) : null,
+                customer_id: customerId,
                 project_start_date: f.project_start_date || null,
                 project_end_date: f.project_end_date || null,
                 status: 'Pipeline',
@@ -382,7 +411,7 @@ function PipelineModal({ customers, documentTypes, onClose, onCreated }) {
                         <input className="input" value={f.description} onChange={e => setF({ ...f, description: e.target.value })} /></div>
                     <div><label className="label">Customer</label>
                         <select className="input" value={f.customer_id} onChange={e => setF({ ...f, customer_id: e.target.value })}>
-                            <option value="">-</option>
+                            <option value="">{f.customer_hint ? `Create new: ${f.customer_hint}` : '-'}</option>
                             {customers.map(c => <option key={c.id} value={c.id}>{c.alias} - {c.full_name}</option>)}
                         </select></div>
                     <div><label className="label">Status</label>
