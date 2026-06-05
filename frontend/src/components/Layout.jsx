@@ -73,6 +73,20 @@ function stripHtml(html) {
     return div.textContent || div.innerText || '';
 }
 
+function hashString(value) {
+    let hash = 0;
+    const text = String(value || '');
+    for (let i = 0; i < text.length; i += 1) {
+        hash = ((hash << 5) - hash) + text.charCodeAt(i);
+        hash |= 0;
+    }
+    return String(hash);
+}
+
+function hasAnnouncementContent(html) {
+    return Boolean(stripHtml(html).trim() || /<img[\s>]/i.test(String(html || '')));
+}
+
 function NavItem({ to, label, icon: Icon }) {
     return (
         <NavLink to={to} end={to === '/'}
@@ -90,6 +104,8 @@ export default function Layout() {
     const location = useLocation();
     const [open, setOpen] = useState(false);
     const [footerText, setFooterText] = useState(DEFAULT_FOOTER_TEXT);
+    const [announcementContent, setAnnouncementContent] = useState('');
+    const [announcementOpen, setAnnouncementOpen] = useState(false);
     const [expiringPostIts, setExpiringPostIts] = useState([]);
     const [postItAlertOpen, setPostItAlertOpen] = useState(false);
 
@@ -107,12 +123,28 @@ export default function Layout() {
     useEffect(() => {
         if (platform) {
             setFooterText(DEFAULT_FOOTER_TEXT);
+            setAnnouncementContent('');
+            setAnnouncementOpen(false);
             return;
         }
         api.get('/admin/app-config')
-            .then(r => setFooterText(r.data?.footer_text || DEFAULT_FOOTER_TEXT))
+            .then(r => {
+                const config = r.data || {};
+                setFooterText(config.footer_text || DEFAULT_FOOTER_TEXT);
+                const enabled = String(config.announcement_enabled || 'false') === 'true';
+                const content = config.announcement_content || '';
+                setAnnouncementContent(content);
+                if (enabled && hasAnnouncementContent(content)) {
+                    const loginNonce = sessionStorage.getItem(`login_nonce_${user.id}`) || 'session';
+                    const sessionKey = `announcement_seen_${user.id}_${user.tenant_id}_${loginNonce}_${hashString(content)}`;
+                    if (sessionStorage.getItem(sessionKey) !== '1') {
+                        setAnnouncementOpen(true);
+                        sessionStorage.setItem(sessionKey, '1');
+                    }
+                }
+            })
             .catch(() => setFooterText(DEFAULT_FOOTER_TEXT));
-    }, [platform, user?.tenant_id]);
+    }, [platform, user?.id, user?.tenant_id]);
 
     useEffect(() => {
         if (platform || !user?.tenant_id || !hasMenuAccess(user, 'dashboard.post_it_board')) return;
@@ -348,6 +380,14 @@ export default function Layout() {
                         <div className="text-sm text-slate-500">All expiring Post-It notes have been extended.</div>
                     )}
                 </div>
+            </Modal>
+            <Modal open={announcementOpen}
+                   onClose={() => setAnnouncementOpen(false)}
+                   title="Announcement"
+                   size="xl"
+                   footer={<button className="btn-primary" onClick={() => setAnnouncementOpen(false)}>OK</button>}>
+                <div className="kb-article-content max-w-none rounded-lg border border-slate-200 bg-white p-4 text-sm"
+                     dangerouslySetInnerHTML={{ __html: announcementContent }} />
             </Modal>
         </div>
     );

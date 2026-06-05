@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import api from '../api';
 import toast from 'react-hot-toast';
 import Modal from '../components/Modal';
@@ -30,13 +31,19 @@ function stripHtml(html) {
 
 export default function KnowledgeBase() {
     const { user } = useAuth();
+    const loc = useLocation();
+    const nav = useNavigate();
     const [articles, setArticles] = useState([]);
     const [config, setConfig] = useState({ categories: [], products: [], version_limit: 20 });
     const [search, setSearch] = useState('');
+    const [aiSearch, setAiSearch] = useState(false);
+    const [aiMeta, setAiMeta] = useState(null);
+    const [searching, setSearching] = useState(false);
     const [categoryFilter, setCategoryFilter] = useState(() => new Set());
     const [productFilter, setProductFilter] = useState(() => new Set());
     const [selected, setSelected] = useState(null);
     const [edit, setEdit] = useState(null);
+    const openedLinkArticleRef = useRef(null);
     const canDelete = isAdmin(user);
 
     function toggleSetFilter(setter, value) {
@@ -52,16 +59,49 @@ export default function KnowledgeBase() {
         setProductFilter(new Set());
     }
 
-    async function load() {
-        const [cfg, list] = await Promise.all([
-            api.get('/knowledge-base/config'),
-            api.get('/knowledge-base/articles')
-        ]);
-        setConfig(cfg.data);
-        setArticles(list.data || []);
+    async function load(queryText = search, includeConfig = true) {
+        setSearching(true);
+        try {
+            const params = new URLSearchParams();
+            const q = String(queryText || '').trim();
+            if (q) params.set('search', q);
+            if (q && aiSearch) params.set('ai', 'true');
+            const listUrl = `/knowledge-base/articles${params.toString() ? `?${params}` : ''}`;
+            if (includeConfig) {
+                const [cfg, list] = await Promise.all([
+                    api.get('/knowledge-base/config'),
+                    api.get(listUrl)
+                ]);
+                setConfig(cfg.data);
+                const payload = list.data;
+                setArticles(Array.isArray(payload) ? payload : (payload.articles || []));
+                setAiMeta(Array.isArray(payload) ? null : payload.ai || null);
+            } else {
+                const list = await api.get(listUrl);
+                const payload = list.data;
+                setArticles(Array.isArray(payload) ? payload : (payload.articles || []));
+                setAiMeta(Array.isArray(payload) ? null : payload.ai || null);
+            }
+        } finally {
+            setSearching(false);
+        }
     }
 
-    useEffect(() => { load().catch(() => toast.error('Could not load knowledge base')); }, []);
+    useEffect(() => { load('', true).catch(() => toast.error('Could not load knowledge base')); }, []);
+
+    useEffect(() => {
+        const articleId = new URLSearchParams(loc.search).get('article');
+        if (!articleId || openedLinkArticleRef.current === articleId) return;
+        openedLinkArticleRef.current = articleId;
+        openArticle({ id: articleId });
+    }, [loc.search]);
+
+    useEffect(() => {
+        const t = window.setTimeout(() => {
+            load(search, false).catch(() => toast.error('Could not search knowledge base'));
+        }, 350);
+        return () => window.clearTimeout(t);
+    }, [search, aiSearch]);
 
     async function openArticle(article) {
         try {
@@ -78,7 +118,7 @@ export default function KnowledgeBase() {
             else await api.post('/knowledge-base/articles', payload);
             toast.success('Article saved');
             setEdit(null);
-            await load();
+            await load(search, false);
             if (selected?.id === payload.id) openArticle(payload);
         } catch (err) {
             toast.error(err.response?.data?.error || 'Save failed');
@@ -91,9 +131,31 @@ export default function KnowledgeBase() {
             await api.delete(`/knowledge-base/articles/${article.id}`);
             toast.success('Article deleted');
             setSelected(null);
-            load();
+            load(search, false);
         } catch (err) {
             toast.error(err.response?.data?.error || 'Delete failed');
+        }
+    }
+
+    function closeSelected() {
+        setSelected(null);
+        const params = new URLSearchParams(loc.search);
+        if (params.has('article')) {
+            params.delete('article');
+            nav({
+                pathname: loc.pathname,
+                search: params.toString() ? `?${params.toString()}` : ''
+            }, { replace: true });
+        }
+    }
+
+    async function shareArticle(article) {
+        const url = `${window.location.origin}/knowledge-base?article=${article.id}`;
+        try {
+            await navigator.clipboard.writeText(url);
+            toast.success('Article link copied');
+        } catch {
+            window.prompt('Copy article link', url);
         }
     }
 
@@ -129,16 +191,8 @@ export default function KnowledgeBase() {
         if (productFilter.size > 0) {
             out = out.filter(a => productFilter.has(a.product_id ? String(a.product_id) : '__none__'));
         }
-        const q = search.trim().toLowerCase();
-        if (!q) return out;
-        return out.filter(a =>
-            (a.title || '').toLowerCase().includes(q) ||
-            stripHtml(a.content).toLowerCase().includes(q) ||
-            (a.category_name || '').toLowerCase().includes(q) ||
-            (a.product_name || '').toLowerCase().includes(q) ||
-            (a.tags || []).some(tag => String(tag).toLowerCase().includes(q))
-        );
-    }, [articles, search, categoryFilter, productFilter]);
+        return out;
+    }, [articles, categoryFilter, productFilter]);
 
     return (
         <div className="space-y-4">
@@ -157,16 +211,31 @@ export default function KnowledgeBase() {
             <div className="card p-3 flex items-center gap-2">
                 <MagnifyingGlassIcon className="w-5 h-5 text-slate-400" />
                 <input className="input !border-0 !bg-transparent !p-0 focus:!ring-0 flex-1"
-                       placeholder="Search title / content / category / product / tags..."
+                       placeholder="Search title / content / category / product / tags / attachments..."
                        value={search} onChange={e => setSearch(e.target.value)} />
+                <label className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 whitespace-nowrap">
+                    <input type="checkbox" checked={aiSearch} onChange={e => setAiSearch(e.target.checked)} />
+                    AI Search
+                </label>
                 {(categoryFilter.size > 0 || productFilter.size > 0) && (
                     <button type="button" onClick={clearFilters}
                             className="text-xs text-slate-500 hover:text-indigo-600 underline whitespace-nowrap">
                         Clear filters ({categoryFilter.size + productFilter.size})
                     </button>
                 )}
-                <span className="text-xs text-slate-500">{filtered.length} article(s)</span>
+                <span className="text-xs text-slate-500">{searching ? 'Searching...' : `${filtered.length} article(s)`}</span>
             </div>
+            {search.trim() && aiSearch && aiMeta && (
+                <div className="card p-3 text-xs text-slate-500">
+                    {aiMeta.enabled ? (
+                        <div>
+                            AI expanded search with: <span className="font-semibold text-indigo-600">{(aiMeta.terms || []).join(', ') || '-'}</span>
+                        </div>
+                    ) : (
+                        <div>AI search fallback: {aiMeta.reason || 'AI configuration is not ready'}</div>
+                    )}
+                </div>
+            )}
 
             {articles.length > 0 && (
                 <div className="card p-3 space-y-3">
@@ -190,12 +259,13 @@ export default function KnowledgeBase() {
             <ArticleList articles={filtered} onOpen={openArticle} />
 
             <Modal open={!!selected}
-                   onClose={() => setSelected(null)}
+                   onClose={closeSelected}
                    title={selected?.title || 'Article Detail'}
                    size="xl">
                 {selected && (
                     <ArticleDetail article={selected}
                                    canDelete={canDelete}
+                                   onShare={() => shareArticle(selected)}
                                    onEdit={() => setEdit(selected)}
                                    onDelete={() => deleteArticle(selected)}
                                    onOpen={openArticle} />
@@ -229,6 +299,7 @@ export default function KnowledgeBase() {
                     {selected ? (
                         <ArticleDetail article={selected}
                                        canDelete={canDelete}
+                                       onShare={() => shareArticle(selected)}
                                        onEdit={() => setEdit(selected)}
                                        onDelete={() => deleteArticle(selected)}
                                        onOpen={openArticle} />
@@ -358,7 +429,7 @@ function TagRow({ tags }) {
     );
 }
 
-function ArticleDetail({ article, canDelete, onEdit, onDelete, onOpen }) {
+function ArticleDetail({ article, canDelete, onShare, onEdit, onDelete, onOpen }) {
     return (
         <div className="space-y-4">
             <div className="flex items-start gap-3">
@@ -371,6 +442,7 @@ function ArticleDetail({ article, canDelete, onEdit, onDelete, onOpen }) {
                         Author: {article.author_name || article.author_username || '-'} · Last updated by {article.last_updated_by_name || article.last_updated_by_username || '-'} · {new Date(article.updated_at).toLocaleString()}
                     </div>
                 </div>
+                <button className="btn-ghost" onClick={onShare}><LinkIcon className="w-4 h-4" /> Share</button>
                 <button className="btn-ghost" onClick={onEdit}><PencilSquareIcon className="w-4 h-4" /> Edit</button>
                 {canDelete && <button className="btn-ghost" onClick={onDelete}><TrashIcon className="w-4 h-4 text-red-500" /> Delete</button>}
             </div>

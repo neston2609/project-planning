@@ -390,9 +390,12 @@ CREATE TABLE IF NOT EXISTS kb_attachments (
     mime_type   VARCHAR(255) NOT NULL DEFAULT '',
     file_size   INT NOT NULL DEFAULT 0,
     data_url    TEXT NOT NULL,
+    extracted_text TEXT,
     created_at  TIMESTAMP NOT NULL DEFAULT NOW()
 );
+ALTER TABLE kb_attachments ADD COLUMN IF NOT EXISTS extracted_text TEXT;
 CREATE INDEX IF NOT EXISTS idx_kb_attachments_article ON kb_attachments(article_id);
+CREATE INDEX IF NOT EXISTS idx_kb_attachments_tenant ON kb_attachments(tenant_id);
 
 CREATE TABLE IF NOT EXISTS kb_article_related (
     article_id          INT NOT NULL REFERENCES kb_articles(id) ON DELETE CASCADE,

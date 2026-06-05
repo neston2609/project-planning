@@ -1,5 +1,7 @@
 const express = require('express');
 const { body, param, query, validationResult } = require('express-validator');
+const pdfParse = require('pdf-parse');
+const XLSX = require('xlsx');
 const db = require('../db');
 const { requireAuth, requireRole, requireTenant } = require('../middleware/auth');
 
@@ -9,6 +11,7 @@ router.use(requireAuth, requireTenant);
 const DEFAULT_CATEGORIES = ['Knowledge', 'Troubleshooting'];
 const DEFAULT_PRODUCTS = ['UiPath', 'Kryon'];
 const DEFAULT_VERSION_LIMIT = 20;
+const AI_CONFIG_KEYS = ['ai_provider', 'ai_api_key', 'ai_endpoint', 'ai_model'];
 
 function cleanString(value, max = 255) {
     return String(value || '').trim().slice(0, max);
@@ -17,6 +20,179 @@ function cleanString(value, max = 255) {
 function cleanStringArray(value, maxItems = 50, maxLen = 500) {
     if (!Array.isArray(value)) return [];
     return [...new Set(value.map(v => cleanString(v, maxLen)).filter(Boolean))].slice(0, maxItems);
+}
+
+function stripHtml(value) {
+    return String(value || '')
+        .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, ' ')
+        .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, ' ')
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function dataUrlToBuffer(dataUrl) {
+    const m = String(dataUrl || '').match(/^data:([^;,]+)?(?:;charset=[^;,]+)?(;base64)?,(.*)$/i);
+    if (!m) return { mime: '', buffer: Buffer.alloc(0), text: '' };
+    const mime = String(m[1] || '').toLowerCase();
+    const raw = m[3] || '';
+    if (m[2]) return { mime, buffer: Buffer.from(raw, 'base64'), text: '' };
+    const text = decodeURIComponent(raw);
+    return { mime, buffer: Buffer.from(text, 'utf8'), text };
+}
+
+function cleanExtractedText(value, max = 120000) {
+    return String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+async function extractAttachmentText(file = {}) {
+    const fileName = String(file.file_name || file.name || '').toLowerCase();
+    const mimeType = String(file.mime_type || file.type || '').toLowerCase();
+    const { mime, buffer, text } = dataUrlToBuffer(file.data_url);
+    const type = mimeType || mime;
+    if (!buffer.length && !text) return '';
+
+    try {
+        if (type.includes('pdf') || fileName.endsWith('.pdf')) {
+            const parsed = await pdfParse(buffer);
+            return cleanExtractedText(parsed.text);
+        }
+        if (
+            type.includes('spreadsheet') ||
+            type.includes('excel') ||
+            fileName.endsWith('.xlsx') ||
+            fileName.endsWith('.xls') ||
+            fileName.endsWith('.csv')
+        ) {
+            const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true });
+            const parts = [];
+            for (const sheetName of wb.SheetNames) {
+                const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, raw: false });
+                parts.push(sheetName);
+                for (const row of rows) parts.push(row.filter(Boolean).join(' '));
+            }
+            return cleanExtractedText(parts.join(' '));
+        }
+        if (type.startsWith('text/') || type.includes('json') || type.includes('xml') || /\.(txt|md|log|json|xml|csv)$/i.test(fileName)) {
+            return cleanExtractedText(text || buffer.toString('utf8'));
+        }
+        if (type.startsWith('image/')) {
+            const Tesseract = require('tesseract.js');
+            const result = await Tesseract.recognize(buffer, 'eng');
+            return cleanExtractedText(result?.data?.text);
+        }
+    } catch (err) {
+        console.error('[kb attachment extract]', fileName || type || 'file', err.message);
+    }
+    return '';
+}
+
+async function getTenantConfigMap(tenantId, keys, client = db) {
+    const { rows } = await client.query(
+        'SELECT key, value FROM tenant_config WHERE tenant_id=$1 AND key = ANY($2)',
+        [tenantId, keys]
+    );
+    return Object.fromEntries(rows.map(r => [r.key, r.value]));
+}
+
+function cleanAiProvider(value) {
+    const provider = String(value || '').trim().toLowerCase();
+    return ['openai', 'anthropic', 'google', 'azure_openai', 'custom'].includes(provider) ? provider : 'openai';
+}
+
+function normalizeEndpoint(value) {
+    return String(value || '').trim().replace(/\/+$/, '');
+}
+
+async function fetchJson(url, options = {}) {
+    const controller = new AbortController();
+    const { timeout_ms, ...fetchOptions } = options;
+    const timeout = setTimeout(() => controller.abort(), Number(timeout_ms || 8000));
+    let response;
+    try {
+        response = await fetch(url, { ...fetchOptions, signal: controller.signal });
+    } finally {
+        clearTimeout(timeout);
+    }
+    const responseText = await response.text();
+    let data = null;
+    try { data = responseText ? JSON.parse(responseText) : null; } catch { data = { raw: responseText }; }
+    if (!response.ok) {
+        const message = data?.error?.message || data?.error || data?.message || response.statusText || 'AI request failed';
+        throw new Error(message);
+    }
+    return data;
+}
+
+function parseJsonArrayText(value) {
+    const text = String(value || '').trim();
+    const match = text.match(/\[[\s\S]*\]/);
+    if (!match) return [];
+    try {
+        const parsed = JSON.parse(match[0]);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
+}
+
+async function expandSearchTermsWithAi(tenantId, queryText) {
+    try {
+        const cfg = await getTenantConfigMap(tenantId, AI_CONFIG_KEYS);
+        const provider = cleanAiProvider(cfg.ai_provider || 'openai');
+        const apiKey = cfg.ai_api_key || '';
+        const endpoint = normalizeEndpoint(cfg.ai_endpoint);
+        const model = String(cfg.ai_model || '').trim();
+        if (!apiKey || !model || !queryText) return { enabled: false, terms: [], reason: 'AI configuration is incomplete' };
+
+        const prompt = `Return only a JSON array of 5 to 12 short search keywords or phrases related to this knowledge base query. Include synonyms, product terms, error wording, and likely troubleshooting phrases. Query: ${queryText}`;
+        let content = '';
+        if (provider === 'openai') {
+            const data = await fetchJson('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.1 })
+            });
+            content = data?.choices?.[0]?.message?.content || '';
+        } else if (provider === 'anthropic') {
+            const data = await fetchJson('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model, max_tokens: 400, messages: [{ role: 'user', content: prompt }] })
+            });
+            content = (data?.content || []).map(part => part.text || '').join('\n');
+        } else if (provider === 'google') {
+            const data = await fetchJson(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+            });
+            content = data?.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('\n') || '';
+        } else if (provider === 'azure_openai') {
+            if (!endpoint) return { enabled: false, terms: [], reason: 'Azure endpoint is missing' };
+            const data = await fetchJson(`${endpoint}/openai/deployments/${encodeURIComponent(model)}/chat/completions?api-version=2024-10-21`, {
+                method: 'POST',
+                headers: { 'api-key': apiKey, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ messages: [{ role: 'user', content: prompt }], temperature: 0.1 })
+            });
+            content = data?.choices?.[0]?.message?.content || '';
+        } else {
+            if (!endpoint) return { enabled: false, terms: [], reason: 'Custom endpoint is missing' };
+            const data = await fetchJson(`${endpoint}/chat/completions`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.1 })
+            });
+            content = data?.choices?.[0]?.message?.content || '';
+        }
+        const terms = cleanStringArray(parseJsonArrayText(content), 12, 80)
+            .filter(term => term.toLowerCase() !== queryText.toLowerCase());
+        return { enabled: true, terms };
+    } catch (err) {
+        console.error('[kb ai search]', err.message);
+        return { enabled: false, terms: [], reason: err.name === 'AbortError' ? 'AI search timed out' : (err.message || 'AI search failed') };
+    }
 }
 
 function isAdminRole(user) {
@@ -142,10 +318,34 @@ async function insertAttachments(articleId, tenantId, attachments, client = db) 
         const dataUrl = String(f.data_url || '');
         if (!fileName || !dataUrl.startsWith('data:')) continue;
         if (dataUrl.length > 10 * 1024 * 1024) continue;
+        const extractedText = await extractAttachmentText({
+            file_name: fileName,
+            mime_type: f.mime_type || f.type,
+            data_url: dataUrl
+        });
         await client.query(
-            `INSERT INTO kb_attachments(tenant_id, article_id, file_name, mime_type, file_size, data_url)
-             VALUES ($1,$2,$3,$4,$5,$6)`,
-            [tenantId, articleId, fileName, cleanString(f.mime_type || f.type, 255), Number(f.file_size || f.size || 0), dataUrl]
+            `INSERT INTO kb_attachments(tenant_id, article_id, file_name, mime_type, file_size, data_url, extracted_text)
+             VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+            [tenantId, articleId, fileName, cleanString(f.mime_type || f.type, 255), Number(f.file_size || f.size || 0), dataUrl, extractedText]
+        );
+    }
+}
+
+async function hydrateMissingAttachmentText(tenantId, client = db) {
+    const { rows } = await client.query(
+        `SELECT id, file_name, mime_type, data_url
+           FROM kb_attachments
+          WHERE tenant_id=$1
+            AND extracted_text IS NULL
+          ORDER BY id
+          LIMIT 25`,
+        [tenantId]
+    );
+    for (const row of rows) {
+        const extractedText = await extractAttachmentText(row);
+        await client.query(
+            'UPDATE kb_attachments SET extracted_text=$1 WHERE id=$2 AND tenant_id=$3',
+            [extractedText, row.id, tenantId]
         );
     }
 }
@@ -280,24 +480,66 @@ router.get('/articles',
     async (req, res) => {
         await ensureDefaults(req.tenantId);
         const q = cleanString(req.query.search, 255);
+        const useAi = String(req.query.ai || '').toLowerCase() === 'true';
+        let ai = { enabled: false, terms: [] };
+        let searchTerms = q ? [q] : [];
+        if (q) {
+            try {
+                await hydrateMissingAttachmentText(req.tenantId);
+            } catch (err) {
+                console.error('[kb attachment hydrate]', err.message);
+            }
+            if (useAi) {
+                ai = await expandSearchTermsWithAi(req.tenantId, q);
+                searchTerms = [...new Set([q, ...(ai.terms || [])].map(term => cleanString(term, 80)).filter(Boolean))].slice(0, 12);
+            }
+        }
         const params = [req.tenantId];
         let where = 'WHERE a.tenant_id=$1';
-        if (q) {
-            params.push(`%${q.toLowerCase()}%`);
-            where += ` AND (
-                LOWER(a.title) LIKE $${params.length}
-                OR LOWER(COALESCE(a.content,'')) LIKE $${params.length}
-                OR LOWER(COALESCE(c.name,'')) LIKE $${params.length}
-                OR LOWER(COALESCE(p.name,'')) LIKE $${params.length}
-                OR EXISTS (SELECT 1 FROM unnest(a.tags) tag WHERE LOWER(tag) LIKE $${params.length})
-            )`;
+        const scoreParts = [];
+        if (searchTerms.length > 0) {
+            const orParts = [];
+            for (const term of searchTerms) {
+                params.push(`%${term.toLowerCase()}%`);
+                const idx = params.length;
+                const part = `(
+                    LOWER(a.title) LIKE $${idx}
+                    OR LOWER(COALESCE(a.content,'')) LIKE $${idx}
+                    OR LOWER(COALESCE(c.name,'')) LIKE $${idx}
+                    OR LOWER(COALESCE(p.name,'')) LIKE $${idx}
+                    OR EXISTS (SELECT 1 FROM unnest(a.tags) tag WHERE LOWER(tag) LIKE $${idx})
+                    OR EXISTS (SELECT 1 FROM unnest(a.reference_urls) ref WHERE LOWER(ref) LIKE $${idx})
+                    OR EXISTS (
+                        SELECT 1 FROM kb_attachments sx
+                         WHERE sx.article_id=a.id
+                           AND sx.tenant_id=a.tenant_id
+                           AND (
+                                LOWER(COALESCE(sx.file_name,'')) LIKE $${idx}
+                                OR LOWER(COALESCE(sx.extracted_text,'')) LIKE $${idx}
+                           )
+                    )
+                )`;
+                orParts.push(part);
+                scoreParts.push(`CASE WHEN ${part} THEN ${idx === 2 ? 6 : 2} ELSE 0 END`);
+            }
+            where += ` AND (${orParts.join(' OR ')})`;
         }
         const { rows } = await db.query(
             `${articleSelect}
               ${where}
-              ORDER BY a.updated_at DESC, a.title`,
+              ORDER BY ${scoreParts.length ? `(${scoreParts.join(' + ')}) DESC,` : ''} a.updated_at DESC, a.title`,
             params
         );
+        if (useAi) {
+            return res.json({
+                articles: rows,
+                ai: {
+                    enabled: ai.enabled,
+                    terms: ai.terms || [],
+                    reason: ai.reason || null
+                }
+            });
+        }
         res.json(rows);
     }
 );

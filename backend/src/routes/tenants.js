@@ -27,6 +27,8 @@ async function seedTenantConfig(client, tenantId) {
         ['ai_api_key', ''],
         ['ai_endpoint', ''],
         ['ai_model', ''],
+        ['announcement_enabled', 'false'],
+        ['announcement_content', ''],
         ['footer_text',           'Implemented and Maintain by BSM RPA Team. For Internal use only']
     ];
     for (const [key, value] of defaults) {

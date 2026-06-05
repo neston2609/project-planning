@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 
@@ -17,12 +17,17 @@ export default function AppConfigPage() {
     const [postItExpiryDays, setPostItExpiryDays] = useState('30');
     const [postItBoardSize, setPostItBoardSize] = useState('40');
     const [footerText, setFooterText] = useState('');
+    const [announcementEnabled, setAnnouncementEnabled] = useState(false);
+    const [announcementContent, setAnnouncementContent] = useState('');
     const [aiProvider, setAiProvider] = useState('openai');
     const [aiApiKey, setAiApiKey] = useState('');
     const [aiEndpoint, setAiEndpoint] = useState('');
     const [aiModel, setAiModel] = useState('');
     const [aiModels, setAiModels] = useState([]);
     const [loadingModels, setLoadingModels] = useState(false);
+    const [testingAi, setTestingAi] = useState(false);
+    const announcementEditorRef = useRef(null);
+    const announcementImageRef = useRef(null);
 
     async function load() {
         const [r, ai] = await Promise.all([
@@ -35,6 +40,9 @@ export default function AppConfigPage() {
         setPostItExpiryDays(r.data.post_it_expiry_days || '30');
         setPostItBoardSize(r.data.post_it_board_size || '40');
         setFooterText(r.data.footer_text || 'Implemented and Maintain by BSM RPA Team. For Internal use only');
+        setAnnouncementEnabled(String(r.data.announcement_enabled || 'false') === 'true');
+        setAnnouncementContent(r.data.announcement_content || '');
+        if (announcementEditorRef.current) announcementEditorRef.current.innerHTML = r.data.announcement_content || '';
         setAiProvider(ai.data.provider || 'openai');
         setAiApiKey(ai.data.api_key || '');
         setAiEndpoint(ai.data.endpoint || '');
@@ -65,6 +73,38 @@ export default function AppConfigPage() {
             await api.put('/admin/app-config/footer_text', { value: footerText });
             toast.success('Footer saved');
         } catch { toast.error('Save failed'); }
+    }
+
+    function execAnnouncement(command, value = null) {
+        announcementEditorRef.current?.focus();
+        document.execCommand(command, false, value);
+        setAnnouncementContent(announcementEditorRef.current?.innerHTML || '');
+    }
+
+    function insertAnnouncementImage(e) {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        if (!file) return;
+        if (file.size > 2 * 1024 * 1024) {
+            return toast.error('Image must be 2 MB or smaller');
+        }
+        const reader = new FileReader();
+        reader.onload = () => execAnnouncement('insertImage', reader.result);
+        reader.readAsDataURL(file);
+    }
+
+    async function saveAnnouncement() {
+        const content = announcementEditorRef.current?.innerHTML || announcementContent || '';
+        try {
+            await Promise.all([
+                api.put('/admin/app-config/announcement_enabled', { value: announcementEnabled ? 'true' : 'false' }),
+                api.put('/admin/app-config/announcement_content', { value: content })
+            ]);
+            setAnnouncementContent(content);
+            toast.success('Announcement saved');
+        } catch {
+            toast.error('Save failed');
+        }
     }
 
     async function saveLoginRetention() {
@@ -137,6 +177,29 @@ export default function AppConfigPage() {
         }
     }
 
+    async function testAiConfig() {
+        if ((aiProvider === 'azure_openai' || aiProvider === 'custom') && !aiEndpoint.trim()) {
+            return toast.error('Endpoint is required for this provider');
+        }
+        setTestingAi(true);
+        try {
+            const r = await api.post('/admin/ai-config/test', {
+                provider: aiProvider,
+                api_key: aiApiKey,
+                endpoint: aiEndpoint,
+                model: aiModel
+            });
+            const count = Number(r.data.model_count || 0);
+            toast.success(aiModel
+                ? `AI test passed. Model found. (${count} model(s) available)`
+                : `AI test passed. ${count} model(s) available`);
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'AI configuration test failed');
+        } finally {
+            setTestingAi(false);
+        }
+    }
+
     function changeAiProvider(value) {
         setAiProvider(value);
         setAiModels([]);
@@ -206,6 +269,38 @@ export default function AppConfigPage() {
             </div>
 
             <div className="card p-4 max-w-2xl space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                    <div>
+                        <label className="label">Announcement</label>
+                        <p className="text-xs text-slate-400 mt-1">
+                            Enabled announcements pop up for users when they enter the system.
+                        </p>
+                    </div>
+                    <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600">
+                        <input type="checkbox"
+                               checked={announcementEnabled}
+                               onChange={e => setAnnouncementEnabled(e.target.checked)} />
+                        Enabled
+                    </label>
+                </div>
+                <div className="rounded-lg border border-slate-200 overflow-hidden">
+                    <div className="flex flex-wrap gap-1 border-b border-slate-200 bg-slate-50 p-2">
+                        <button type="button" className="btn-ghost !py-1" onClick={() => execAnnouncement('bold')}>B</button>
+                        <button type="button" className="btn-ghost !py-1 italic" onClick={() => execAnnouncement('italic')}>I</button>
+                        <button type="button" className="btn-ghost !py-1 underline" onClick={() => execAnnouncement('underline')}>U</button>
+                        <button type="button" className="btn-ghost !py-1" onClick={() => execAnnouncement('insertUnorderedList')}>List</button>
+                        <button type="button" className="btn-ghost !py-1" onClick={() => announcementImageRef.current?.click()}>Image</button>
+                        <input ref={announcementImageRef} type="file" accept="image/*" className="hidden" onChange={insertAnnouncementImage} />
+                    </div>
+                    <div ref={announcementEditorRef}
+                         contentEditable
+                         className="kb-article-content min-h-[220px] bg-white p-4 text-sm outline-none"
+                         onInput={() => setAnnouncementContent(announcementEditorRef.current?.innerHTML || '')} />
+                </div>
+                <button className="btn-primary" onClick={saveAnnouncement}>Save Announcement</button>
+            </div>
+
+            <div className="card p-4 max-w-2xl space-y-3">
                 <div>
                     <label className="label">AI Model Configuration</label>
                     <p className="text-xs text-slate-400 mt-1">
@@ -254,6 +349,9 @@ export default function AppConfigPage() {
                 <div className="flex flex-wrap gap-2">
                     <button className="btn-ghost" onClick={loadAiModels} disabled={loadingModels}>
                         {loadingModels ? 'Loading Models...' : 'Load Supported Models'}
+                    </button>
+                    <button className="btn-ghost" onClick={testAiConfig} disabled={testingAi || loadingModels}>
+                        {testingAi ? 'Testing...' : 'Test Configuration'}
                     </button>
                     <button className="btn-primary" onClick={saveAiConfig}>Save AI Configuration</button>
                 </div>

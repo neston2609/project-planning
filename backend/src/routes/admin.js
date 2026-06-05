@@ -436,6 +436,8 @@ router.get('/app-config', async (req, res) => {
         login_log_retention_days: String(DEFAULT_LOGIN_LOG_RETENTION_DAYS),
         post_it_expiry_days: '30',
         post_it_board_size: '40',
+        announcement_enabled: 'false',
+        announcement_content: '',
         ...Object.fromEntries(rows.map(r => [r.key, r.value]))
     });
 });
@@ -512,6 +514,40 @@ router.post('/ai-config/models', async (req, res) => {
     } catch (err) {
         console.error('[ai-config/models]', err.message);
         res.status(err.status || 400).json({ error: err.message || 'Could not load models' });
+    }
+});
+
+router.post('/ai-config/test', async (req, res) => {
+    const cfg = await getTenantConfigMap(req.tenantId, AI_CONFIG_KEYS);
+    const provider = cleanAiProvider(req.body.provider || cfg.ai_provider || 'openai');
+    const endpoint = normalizeEndpoint(req.body.endpoint ?? cfg.ai_endpoint);
+    const model = String(req.body.model ?? cfg.ai_model ?? '').trim();
+    const incomingKey = String(req.body.api_key || '').trim();
+    const apiKey = incomingKey && incomingKey !== '********' ? incomingKey : (cfg.ai_api_key || '');
+
+    try {
+        const models = await loadAiModels({ provider, apiKey, endpoint });
+        const modelFound = !model || models.includes(model);
+        if (!modelFound) {
+            return res.status(400).json({
+                ok: false,
+                provider,
+                model,
+                model_found: false,
+                model_count: models.length,
+                error: 'Connection works, but the selected model was not found'
+            });
+        }
+        res.json({
+            ok: true,
+            provider,
+            model,
+            model_found: Boolean(model),
+            model_count: models.length
+        });
+    } catch (err) {
+        console.error('[ai-config/test]', err.message);
+        res.status(err.status || 400).json({ ok: false, error: err.message || 'AI configuration test failed' });
     }
 });
 

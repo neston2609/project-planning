@@ -53,6 +53,7 @@ export function AuthProvider({ children }) {
         });
         localStorage.setItem('rpa_token', r.data.token);
         const nextUser = { ...r.data.user, theme_mode: normalizeThemeMode(r.data.user?.theme_mode) };
+        sessionStorage.setItem(`login_nonce_${nextUser.id}`, String(Date.now()));
         storeUser(nextUser);
         setUser(nextUser);
         applyThemeMode(nextUser.theme_mode);
@@ -60,6 +61,7 @@ export function AuthProvider({ children }) {
     };
 
     const logout = () => {
+        if (user?.id) sessionStorage.removeItem(`login_nonce_${user.id}`);
         localStorage.removeItem('rpa_token');
         storeUser(null);
         setUser(null);

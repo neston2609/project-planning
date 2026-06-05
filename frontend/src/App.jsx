@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Layout from './components/Layout';
 
 import Login            from './pages/Login';
@@ -44,37 +44,43 @@ import {
 
 function RequireAuth({ children }) {
     const { user } = useAuth();
-    if (!isAuthenticated(user)) return <Navigate to="/login" replace />;
+    const loc = useLocation();
+    if (!isAuthenticated(user)) return <Navigate to="/login" replace state={{ from: `${loc.pathname}${loc.search}` }} />;
     return children;
 }
 function RequireAdmin({ children }) {
     const { user } = useAuth();
-    if (!isAuthenticated(user)) return <Navigate to="/login" replace />;
+    const loc = useLocation();
+    if (!isAuthenticated(user)) return <Navigate to="/login" replace state={{ from: `${loc.pathname}${loc.search}` }} />;
     if (!isAdmin(user))         return <Navigate to="/" replace />;
     return children;
 }
 function RequireSuper({ children }) {
     const { user } = useAuth();
-    if (!isAuthenticated(user)) return <Navigate to="/login" replace />;
+    const loc = useLocation();
+    if (!isAuthenticated(user)) return <Navigate to="/login" replace state={{ from: `${loc.pathname}${loc.search}` }} />;
     if (!isSuperadmin(user))    return <Navigate to="/" replace />;
     return children;
 }
 function RequireMenu({ menuKey, children }) {
     const { user } = useAuth();
-    if (!isAuthenticated(user)) return <Navigate to="/login" replace />;
+    const loc = useLocation();
+    if (!isAuthenticated(user)) return <Navigate to="/login" replace state={{ from: `${loc.pathname}${loc.search}` }} />;
     if (!hasMenuAccess(user, menuKey)) return <Navigate to="/" replace />;
     return children;
 }
 function RequireTenantAdmin({ children }) {
     const { user } = useAuth();
-    if (!isAuthenticated(user)) return <Navigate to="/login" replace />;
+    const loc = useLocation();
+    if (!isAuthenticated(user)) return <Navigate to="/login" replace state={{ from: `${loc.pathname}${loc.search}` }} />;
     if (!isTenantAdmin(user))   return <Navigate to="/" replace />;
     return children;
 }
 /** TenantAdmin OR TenantUser (read-only platform). */
 function RequirePlatform({ children }) {
     const { user } = useAuth();
-    if (!isAuthenticated(user))  return <Navigate to="/login" replace />;
+    const loc = useLocation();
+    if (!isAuthenticated(user))  return <Navigate to="/login" replace state={{ from: `${loc.pathname}${loc.search}` }} />;
     if (!isPlatformRole(user))   return <Navigate to="/" replace />;
     return children;
 }
