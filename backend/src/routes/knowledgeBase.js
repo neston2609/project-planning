@@ -2,6 +2,7 @@ const express = require('express');
 const { body, param, query, validationResult } = require('express-validator');
 const pdfParse = require('pdf-parse');
 const XLSX = require('xlsx');
+const mammoth = require('mammoth');
 const db = require('../db');
 const { requireAuth, requireRole, requireTenant } = require('../middleware/auth');
 
@@ -11,6 +12,7 @@ router.use(requireAuth, requireTenant);
 const DEFAULT_CATEGORIES = ['Knowledge', 'Troubleshooting'];
 const DEFAULT_PRODUCTS = ['UiPath', 'Kryon'];
 const DEFAULT_VERSION_LIMIT = 20;
+const DEFAULT_ATTACHMENT_LIMIT_MB = 5;
 const AI_CONFIG_KEYS = ['ai_provider', 'ai_api_key', 'ai_endpoint', 'ai_model'];
 
 function cleanString(value, max = 255) {
@@ -57,6 +59,18 @@ async function extractAttachmentText(file = {}) {
         if (type.includes('pdf') || fileName.endsWith('.pdf')) {
             const parsed = await pdfParse(buffer);
             return cleanExtractedText(parsed.text);
+        }
+        if (
+            type.includes('wordprocessingml') ||
+            type.includes('msword') ||
+            fileName.endsWith('.docx') ||
+            fileName.endsWith('.doc')
+        ) {
+            if (fileName.endsWith('.doc') && !fileName.endsWith('.docx')) {
+                return '';
+            }
+            const parsed = await mammoth.extractRawText({ buffer });
+            return cleanExtractedText(parsed.value);
         }
         if (
             type.includes('spreadsheet') ||
@@ -246,6 +260,12 @@ async function ensureDefaults(tenantId, client = db) {
          ON CONFLICT (tenant_id, key) DO NOTHING`,
         [tenantId, String(DEFAULT_VERSION_LIMIT)]
     );
+    await client.query(
+        `INSERT INTO tenant_config(tenant_id, key, value)
+         VALUES ($1,'kb_attachment_limit_mb',$2)
+         ON CONFLICT (tenant_id, key) DO NOTHING`,
+        [tenantId, String(DEFAULT_ATTACHMENT_LIMIT_MB)]
+    );
 }
 
 async function versionLimit(tenantId, client = db) {
@@ -255,6 +275,32 @@ async function versionLimit(tenantId, client = db) {
     );
     const n = Number(rows[0]?.value || DEFAULT_VERSION_LIMIT);
     return Number.isInteger(n) && n >= 0 ? n : DEFAULT_VERSION_LIMIT;
+}
+
+async function attachmentLimitMb(tenantId, client = db) {
+    const { rows } = await client.query(
+        "SELECT value FROM tenant_config WHERE tenant_id=$1 AND key='kb_attachment_limit_mb'",
+        [tenantId]
+    );
+    const n = Number(rows[0]?.value || DEFAULT_ATTACHMENT_LIMIT_MB);
+    return Number.isFinite(n) && n > 0 ? n : DEFAULT_ATTACHMENT_LIMIT_MB;
+}
+
+async function validateAttachmentLimits(tenantId, attachments, client = db) {
+    const limitMb = await attachmentLimitMb(tenantId, client);
+    const limitBytes = limitMb * 1024 * 1024;
+    for (const f of Array.isArray(attachments) ? attachments : []) {
+        const fileName = cleanString(f.file_name || f.name, 255) || 'Attachment';
+        const dataUrl = String(f.data_url || '');
+        if (!dataUrl.startsWith('data:')) continue;
+        const declaredSize = Number(f.file_size || f.size || 0);
+        const actualSize = dataUrlToBuffer(dataUrl).buffer.length;
+        const size = declaredSize > 0 ? Math.max(declaredSize, actualSize) : actualSize;
+        if (size > limitBytes) {
+            return `${fileName} is larger than ${limitMb} MB`;
+        }
+    }
+    return null;
 }
 
 async function assertLookup(table, id, tenantId, client = db) {
@@ -317,7 +363,6 @@ async function insertAttachments(articleId, tenantId, attachments, client = db) 
         const fileName = cleanString(f.file_name || f.name, 255);
         const dataUrl = String(f.data_url || '');
         if (!fileName || !dataUrl.startsWith('data:')) continue;
-        if (dataUrl.length > 10 * 1024 * 1024) continue;
         const extractedText = await extractAttachmentText({
             file_name: fileName,
             mime_type: f.mime_type || f.type,
@@ -388,15 +433,17 @@ const articleSelect = `
 
 router.get('/config', async (req, res) => {
     await ensureDefaults(req.tenantId);
-    const [categories, products, limitRows] = await Promise.all([
+    const [categories, products, limitRows, attachmentLimitRows] = await Promise.all([
         db.query('SELECT id, name, is_system FROM kb_categories WHERE tenant_id=$1 ORDER BY name', [req.tenantId]),
         db.query('SELECT id, name, is_system FROM kb_products WHERE tenant_id=$1 ORDER BY name', [req.tenantId]),
-        db.query("SELECT value FROM tenant_config WHERE tenant_id=$1 AND key='kb_version_limit'", [req.tenantId])
+        db.query("SELECT value FROM tenant_config WHERE tenant_id=$1 AND key='kb_version_limit'", [req.tenantId]),
+        db.query("SELECT value FROM tenant_config WHERE tenant_id=$1 AND key='kb_attachment_limit_mb'", [req.tenantId])
     ]);
     res.json({
         categories: categories.rows,
         products: products.rows,
-        version_limit: Number(limitRows.rows[0]?.value || DEFAULT_VERSION_LIMIT)
+        version_limit: Number(limitRows.rows[0]?.value || DEFAULT_VERSION_LIMIT),
+        attachment_limit_mb: Number(attachmentLimitRows.rows[0]?.value || DEFAULT_ATTACHMENT_LIMIT_MB)
     });
 });
 
@@ -414,6 +461,24 @@ router.put('/config/version-limit',
             [req.tenantId, String(Number(req.body.value))]
         );
         res.json({ version_limit: Number(rows[0].value) });
+    }
+);
+
+router.put('/config/attachment-limit',
+    requireRole('admin', 'superadmin'),
+    body('value').isFloat({ min: 1, max: 10 }),
+    async (req, res) => {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+        const value = Math.round(Number(req.body.value) * 10) / 10;
+        const { rows } = await db.query(
+            `INSERT INTO tenant_config(tenant_id, key, value)
+             VALUES ($1,'kb_attachment_limit_mb',$2)
+             ON CONFLICT (tenant_id, key) DO UPDATE SET value=EXCLUDED.value, updated_at=NOW()
+             RETURNING value`,
+            [req.tenantId, String(value)]
+        );
+        res.json({ attachment_limit_mb: Number(rows[0].value) });
     }
 );
 
@@ -585,6 +650,8 @@ router.post('/articles',
     async (req, res) => {
         const errs = validationResult(req);
         if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+        const attachmentError = await validateAttachmentLimits(req.tenantId, req.body.attachments);
+        if (attachmentError) return res.status(400).json({ error: attachmentError });
         const client = await db.getClient();
         try {
             await client.query('BEGIN');
@@ -626,6 +693,8 @@ router.put('/articles/:id',
     async (req, res) => {
         const errs = validationResult(req);
         if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+        const attachmentError = await validateAttachmentLimits(req.tenantId, req.body.attachments);
+        if (attachmentError) return res.status(400).json({ error: attachmentError });
         const client = await db.getClient();
         try {
             await client.query('BEGIN');

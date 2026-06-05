@@ -7,8 +7,7 @@ import { useAuth } from '../auth';
 import {
     UserCircleIcon, MagnifyingGlassIcon, FunnelIcon,
     EnvelopeIcon, IdentificationIcon, BriefcaseIcon,
-    PencilSquareIcon, ArrowUpTrayIcon, TrashIcon, PhoneIcon,
-    AtSymbolIcon, ChatBubbleLeftRightIcon, LinkIcon
+    PencilSquareIcon, ArrowUpTrayIcon, TrashIcon, PhoneIcon
 } from '@heroicons/react/24/outline';
 
 export default function ResourceInformation() {
@@ -223,6 +222,39 @@ function externalUrl(type, value) {
     return `https://facebook.com/${v.replace(/^@/, '')}`;
 }
 
+function InstagramIcon() {
+    return (
+        <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-gradient-to-br from-yellow-400 via-pink-600 to-purple-700 text-white shadow-sm">
+            <svg viewBox="0 0 24 24" aria-hidden="true" className="h-3.5 w-3.5 fill-none stroke-current stroke-[2.4]">
+                <rect x="5.5" y="5.5" width="13" height="13" rx="4" />
+                <circle cx="12" cy="12" r="3.1" />
+                <circle cx="16.2" cy="7.8" r="0.8" className="fill-current stroke-none" />
+            </svg>
+        </span>
+    );
+}
+
+function LineIcon() {
+    return (
+        <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-[#06c755] text-white shadow-sm">
+            <svg viewBox="0 0 32 32" aria-hidden="true" className="h-4 w-4 fill-current">
+                <path d="M16 5C9.9 5 5 9 5 14c0 4.5 4 8.2 9.3 8.9.4.1.6.3.6.7v1.9c0 .6.7.9 1.1.5l2.6-2.3c.2-.2.5-.3.8-.3C24.1 22.6 27 18.9 27 14c0-5-4.9-9-11-9z" />
+                <text x="16" y="16.7" textAnchor="middle" className="fill-[#06c755] text-[5.6px] font-black">LINE</text>
+            </svg>
+        </span>
+    );
+}
+
+function FacebookIcon() {
+    return (
+        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#1877f2] text-white shadow-sm">
+            <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 fill-current">
+                <path d="M14 8.2h2.1V5.1c-.4-.1-1.6-.1-2.9-.1-2.9 0-4.9 1.8-4.9 5v2.8H5v3.5h3.3V24h4V16.3h3.1l.5-3.5h-3.6v-2.4c0-1 .3-2.2 1.7-2.2z" />
+            </svg>
+        </span>
+    );
+}
+
 function ResourceCard({ r, userId, onEdit }) {
     const initials = ((r.first_name?.[0] || '') + (r.last_name?.[0] || '')).toUpperCase() || '?';
     const canEdit = Number(r.user_id) === Number(userId);
@@ -296,19 +328,19 @@ function ResourceCard({ r, userId, onEdit }) {
                         {r.instagram && (
                             <a className="btn-ghost !p-2" href={externalUrl('instagram', r.instagram)}
                                target="_blank" rel="noreferrer" title="Instagram">
-                                <AtSymbolIcon className="w-4 h-4 text-pink-600" />
+                                <InstagramIcon />
                             </a>
                         )}
                         {r.line_id && (
                             <a className="btn-ghost !p-2" href={externalUrl('line', r.line_id)}
                                target="_blank" rel="noreferrer" title="Line ID">
-                                <ChatBubbleLeftRightIcon className="w-4 h-4 text-emerald-600" />
+                                <LineIcon />
                             </a>
                         )}
                         {r.facebook && (
                             <a className="btn-ghost !p-2" href={externalUrl('facebook', r.facebook)}
                                target="_blank" rel="noreferrer" title="Facebook">
-                                <LinkIcon className="w-4 h-4 text-blue-600" />
+                                <FacebookIcon />
                             </a>
                         )}
                     </div>

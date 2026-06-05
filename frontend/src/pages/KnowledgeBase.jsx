@@ -34,7 +34,7 @@ export default function KnowledgeBase() {
     const loc = useLocation();
     const nav = useNavigate();
     const [articles, setArticles] = useState([]);
-    const [config, setConfig] = useState({ categories: [], products: [], version_limit: 20 });
+    const [config, setConfig] = useState({ categories: [], products: [], version_limit: 20, attachment_limit_mb: 5 });
     const [search, setSearch] = useState('');
     const [aiSearch, setAiSearch] = useState(false);
     const [aiMeta, setAiMeta] = useState(null);
@@ -535,6 +535,8 @@ function ArticleForm({ initial, config, articles, onClose, onSave }) {
     const attachRef = useRef(null);
     const [selectedImage, setSelectedImage] = useState(null);
     const [imageBox, setImageBox] = useState(null);
+    const attachmentLimitMb = Number(config.attachment_limit_mb || 5);
+    const attachmentLimitBytes = attachmentLimitMb * 1024 * 1024;
 
     useEffect(() => {
         if (editorRef.current) editorRef.current.innerHTML = initial.content || '';
@@ -642,8 +644,8 @@ function ArticleForm({ initial, config, articles, onClose, onSave }) {
         e.target.value = '';
         const next = [];
         for (const file of files) {
-            if (file.size > 5 * 1024 * 1024) {
-                toast.error(`${file.name} is larger than 5 MB`);
+            if (file.size > attachmentLimitBytes) {
+                toast.error(`${file.name} is larger than ${attachmentLimitMb} MB`);
                 continue;
             }
             next.push({
@@ -771,6 +773,7 @@ function ArticleForm({ initial, config, articles, onClose, onSave }) {
                             </span>
                         ))}
                     </div>
+                    <p className="text-xs text-slate-400 mt-1">Maximum {attachmentLimitMb} MB per file.</p>
                 </div>
 
                 <div>

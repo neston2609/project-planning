@@ -7,6 +7,7 @@ export default function KBConfigure() {
     const [categories, setCategories] = useState([]);
     const [products, setProducts] = useState([]);
     const [versionLimit, setVersionLimit] = useState(20);
+    const [attachmentLimit, setAttachmentLimit] = useState(5);
     const [categoryName, setCategoryName] = useState('');
     const [productName, setProductName] = useState('');
 
@@ -15,6 +16,7 @@ export default function KBConfigure() {
         setCategories(res.data.categories || []);
         setProducts(res.data.products || []);
         setVersionLimit(res.data.version_limit ?? 20);
+        setAttachmentLimit(res.data.attachment_limit_mb ?? 5);
     }
 
     useEffect(() => { load(); }, []);
@@ -26,6 +28,18 @@ export default function KBConfigure() {
             const res = await api.put('/knowledge-base/config/version-limit', { value: n });
             setVersionLimit(res.data.version_limit);
             toast.success('KB version limit saved');
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Save failed');
+        }
+    }
+
+    async function saveAttachmentLimit() {
+        const n = Number(attachmentLimit);
+        if (!Number.isFinite(n) || n < 1 || n > 10) return toast.error('Attachment limit must be between 1 and 10 MB');
+        try {
+            const res = await api.put('/knowledge-base/config/attachment-limit', { value: n });
+            setAttachmentLimit(res.data.attachment_limit_mb);
+            toast.success('KB attachment limit saved');
         } catch (err) {
             toast.error(err.response?.data?.error || 'Save failed');
         }
@@ -75,15 +89,28 @@ export default function KBConfigure() {
                 </h1>
             </div>
 
-            <div className="card p-4 max-w-md space-y-3">
-                <div>
-                    <label className="label">Versions to Keep</label>
-                    <input className="input" type="number" min="0" max="500"
-                           value={versionLimit}
-                           onChange={e => setVersionLimit(e.target.value)} />
-                    <p className="text-xs text-slate-400 mt-1">Default 20. Set 0 to disable history retention.</p>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="card p-4 space-y-3">
+                    <div>
+                        <label className="label">Versions to Keep</label>
+                        <input className="input" type="number" min="0" max="500"
+                               value={versionLimit}
+                               onChange={e => setVersionLimit(e.target.value)} />
+                        <p className="text-xs text-slate-400 mt-1">Default 20. Set 0 to disable history retention.</p>
+                    </div>
+                    <button className="btn-primary" onClick={saveLimit}>Save Version Limit</button>
                 </div>
-                <button className="btn-primary" onClick={saveLimit}>Save Version Limit</button>
+
+                <div className="card p-4 space-y-3">
+                    <div>
+                        <label className="label">Attachment File Limit (MB)</label>
+                        <input className="input" type="number" min="1" max="10" step="0.5"
+                               value={attachmentLimit}
+                               onChange={e => setAttachmentLimit(e.target.value)} />
+                        <p className="text-xs text-slate-400 mt-1">Default 5 MB per file. Maximum 10 MB per file.</p>
+                    </div>
+                    <button className="btn-primary" onClick={saveAttachmentLimit}>Save Attachment Limit</button>
+                </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
