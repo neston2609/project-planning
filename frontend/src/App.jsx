@@ -21,6 +21,7 @@ import KnowledgeBase      from './pages/KnowledgeBase';
 import PostItBoard        from './pages/PostItBoard';
 
 import ProjectManagement from './pages/admin/ProjectManagement';
+import PipelineManagement from './pages/admin/PipelineManagement';
 import Customers        from './pages/admin/Customers';
 import Resources        from './pages/admin/Resources';
 import YearConfigPage   from './pages/admin/YearConfig';
@@ -106,6 +107,7 @@ function HomeRedirect() {
             ['knowledge.base', '/knowledge-base'],
             ['resource.planning', '/resource-planning'],
             ['admin.projects', '/admin/projects'],
+            ['admin.pipeline', '/admin/pipeline'],
             ['superadmin.users', '/admin/users']
         ];
         const found = fallbacks.find(([key]) => hasMenuAccess(user, key));
@@ -138,6 +140,7 @@ export default function App() {
                 <Route path="change-password"      element={<ChangePassword />} />
 
                 <Route path="admin/projects"   element={<RequireAdmin><RequireMenu menuKey="admin.projects"><ProjectManagement /></RequireMenu></RequireAdmin>} />
+                <Route path="admin/pipeline"   element={<RequireAdmin><RequireMenu menuKey="admin.pipeline"><PipelineManagement /></RequireMenu></RequireAdmin>} />
                 <Route path="admin/customers"  element={<RequireAdmin><RequireMenu menuKey="admin.customers"><Customers /></RequireMenu></RequireAdmin>} />
                 <Route path="admin/resources"  element={<RequireAdmin><RequireMenu menuKey="admin.resources"><Resources /></RequireMenu></RequireAdmin>} />
                 <Route path="admin/year"       element={<RequireAdmin><RequireMenu menuKey="admin.year"><YearConfigPage /></RequireMenu></RequireAdmin>} />

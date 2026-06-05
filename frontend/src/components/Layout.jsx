@@ -37,6 +37,7 @@ const mainNav = [
 
 const adminNav = [
     { key: 'admin.projects',  to: '/admin/projects',  label: 'Project Management', icon: DocumentTextIcon },
+    { key: 'admin.pipeline',  to: '/admin/pipeline',  label: 'Pipeline Management', icon: ClipboardDocumentListIcon },
     { key: 'admin.customers', to: '/admin/customers', label: 'Customers',          icon: BuildingOffice2Icon },
     { key: 'admin.resources', to: '/admin/resources', label: 'Resources',          icon: IdentificationIcon },
     { key: 'admin.licenses',  to: '/admin/licenses',  label: 'License Management', icon: KeyIcon },

@@ -15,6 +15,7 @@ const MENU_REGISTRY = [
     { key: 'license.dashboard', label: 'License Dashboard', group: 'Dashboards', min_role: 'user' },
 
     { key: 'admin.projects', label: 'Project Management', group: 'Administration', min_role: 'admin' },
+    { key: 'admin.pipeline', label: 'Pipeline Management', group: 'Administration', min_role: 'admin' },
     { key: 'admin.customers', label: 'Customers', group: 'Administration', min_role: 'admin' },
     { key: 'admin.resources', label: 'Resources', group: 'Administration', min_role: 'admin' },
     { key: 'admin.licenses', label: 'License Management', group: 'Administration', min_role: 'admin' },
