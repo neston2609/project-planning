@@ -2,6 +2,7 @@ export const DEFAULT_MENU_KEYS = {
     user: [
         'dashboard.summary',
         'dashboard.project_summary',
+        'dashboard.pipeline',
         'dashboard.subscription',
         'dashboard.perpetual_ma',
         'dashboard.implementation',
@@ -18,6 +19,7 @@ export const DEFAULT_MENU_KEYS = {
     admin: [
         'dashboard.summary',
         'dashboard.project_summary',
+        'dashboard.pipeline',
         'dashboard.subscription',
         'dashboard.perpetual_ma',
         'dashboard.implementation',
@@ -32,6 +34,7 @@ export const DEFAULT_MENU_KEYS = {
         'license.dashboard',
         'admin.projects',
         'admin.pipeline',
+        'admin.pipeline_ai_prompt',
         'admin.customers',
         'admin.resources',
         'admin.licenses',
@@ -43,6 +46,7 @@ export const DEFAULT_MENU_KEYS = {
     superadmin: [
         'dashboard.summary',
         'dashboard.project_summary',
+        'dashboard.pipeline',
         'dashboard.subscription',
         'dashboard.perpetual_ma',
         'dashboard.implementation',
@@ -57,6 +61,7 @@ export const DEFAULT_MENU_KEYS = {
         'license.dashboard',
         'admin.projects',
         'admin.pipeline',
+        'admin.pipeline_ai_prompt',
         'admin.customers',
         'admin.resources',
         'admin.licenses',

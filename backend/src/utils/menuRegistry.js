@@ -1,6 +1,7 @@
 const MENU_REGISTRY = [
     { key: 'dashboard.summary', label: 'Summary', group: 'Dashboards', min_role: 'user' },
     { key: 'dashboard.project_summary', label: 'Project Summary', group: 'Dashboards', min_role: 'user' },
+    { key: 'dashboard.pipeline', label: 'Pipeline Dashboard', group: 'Dashboards', min_role: 'user' },
     { key: 'dashboard.subscription', label: 'Subscription', group: 'Dashboards', min_role: 'user' },
     { key: 'dashboard.perpetual_ma', label: 'Perpetual / SW MA', group: 'Dashboards', min_role: 'user' },
     { key: 'dashboard.implementation', label: 'Implementation', group: 'Dashboards', min_role: 'user' },
@@ -16,6 +17,7 @@ const MENU_REGISTRY = [
 
     { key: 'admin.projects', label: 'Project Management', group: 'Administration', min_role: 'admin' },
     { key: 'admin.pipeline', label: 'Pipeline Management', group: 'Administration', min_role: 'admin' },
+    { key: 'admin.pipeline_ai_prompt', label: 'Pipeline AI Prompt', group: 'Administration', min_role: 'admin' },
     { key: 'admin.customers', label: 'Customers', group: 'Administration', min_role: 'admin' },
     { key: 'admin.resources', label: 'Resources', group: 'Administration', min_role: 'admin' },
     { key: 'admin.licenses', label: 'License Management', group: 'Administration', min_role: 'admin' },

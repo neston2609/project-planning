@@ -14,6 +14,14 @@ const AI_PROVIDERS = ['openai', 'anthropic', 'google', 'azure_openai', 'custom']
 const AI_CONFIG_KEYS = ['ai_provider', 'ai_api_key', 'ai_endpoint', 'ai_model'];
 const WEB_SEARCH_PROVIDERS = ['disabled', 'google_cse', 'bing', 'serpapi', 'custom'];
 const WEB_SEARCH_CONFIG_KEYS = ['web_search_provider', 'web_search_api_key', 'web_search_endpoint', 'web_search_cx'];
+const PIPELINE_AI_PROMPTS = [
+    ['subscription_cost', 'Subscription License Cost', 'Find the Subscription License Cost from the Excel budget. Prefer rows after COST BREAKDOWN. Return only the numeric amount, without currency or commas.', 10],
+    ['subscription_revenue', 'Subscription License Revenue', 'Find the Subscription License Revenue from the Excel budget. It may be called selling price, sell, revenue, or recommended sell. Prefer rows after COST BREAKDOWN. Return only the numeric amount, without currency or commas.', 20],
+    ['implementation_cost', 'Implementation License Cost', 'Find the Implementation or Professional Service Cost from the Excel budget. Prefer rows after COST BREAKDOWN. Return only the numeric amount, without currency or commas.', 30],
+    ['implementation_revenue', 'Implementation License Revenue', 'Find the Implementation or Professional Service Revenue from the Excel budget. It may be called selling price, sell, revenue, or recommended sell. Prefer rows after COST BREAKDOWN. Return only the numeric amount, without currency or commas.', 40],
+    ['service_ma_cost', 'Service MA Cost', 'Find the Service MA, Support, Maintenance, or MA Cost from the Excel budget. Prefer rows after COST BREAKDOWN. Return only the numeric amount, without currency or commas. If not found, return 0.', 50],
+    ['service_ma_revenue', 'Service MA Revenue', 'Find the Service MA, Support, Maintenance, or MA Revenue from the Excel budget. It may be called selling price, sell, revenue, or recommended sell. Prefer rows after COST BREAKDOWN. Return only the numeric amount, without currency or commas. If not found, return 0.', 60]
+];
 // All admin routes are tenant-scoped. The global TenantAdmin manages tenants
 // and team users via /api/tenants, not these per-tenant admin endpoints.
 router.use(requireAuth, requireTenant);
@@ -78,6 +86,19 @@ async function saveTenantConfig(client, tenantId, key, value) {
          ON CONFLICT (tenant_id, key) DO UPDATE SET value=EXCLUDED.value, updated_at=NOW()`,
         [tenantId, key, String(value ?? '')]
     );
+}
+
+async function ensureDefaultPipelineAiPrompts(tenantId, client = db) {
+    for (const [fieldKey, label, prompt, sortOrder] of PIPELINE_AI_PROMPTS) {
+        await client.query(
+            `INSERT INTO pipeline_ai_prompts(tenant_id, field_key, label, prompt, enabled, sort_order)
+             VALUES ($1,$2,$3,$4,FALSE,$5)
+             ON CONFLICT (tenant_id, field_key) DO UPDATE
+                SET label=EXCLUDED.label,
+                    sort_order=EXCLUDED.sort_order`,
+            [tenantId, fieldKey, label, prompt, sortOrder]
+        );
+    }
 }
 
 async function fetchJson(url, options = {}) {
@@ -469,6 +490,54 @@ router.put('/app-config/:key', param('key').isString(), async (req, res) => {
         [req.tenantId, req.params.key, String(req.body.value ?? '')]
     );
     res.json(rows[0]);
+});
+
+// ---------- Pipeline AI prompts (per tenant) ----------
+router.get('/pipeline-ai-prompts', requireRole('admin', 'superadmin'), async (req, res) => {
+    await ensureDefaultPipelineAiPrompts(req.tenantId);
+    const { rows } = await db.query(
+        `SELECT field_key, label, prompt, enabled, sort_order, updated_at
+           FROM pipeline_ai_prompts
+          WHERE tenant_id=$1
+          ORDER BY sort_order, label`,
+        [req.tenantId]
+    );
+    res.json(rows);
+});
+
+router.put('/pipeline-ai-prompts', requireRole('admin', 'superadmin'), async (req, res) => {
+    const prompts = Array.isArray(req.body.prompts) ? req.body.prompts : [];
+    const allowed = new Set(PIPELINE_AI_PROMPTS.map(([fieldKey]) => fieldKey));
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+        await ensureDefaultPipelineAiPrompts(req.tenantId, client);
+        for (const item of prompts) {
+            const fieldKey = String(item.field_key || '').trim();
+            if (!allowed.has(fieldKey)) continue;
+            await client.query(
+                `UPDATE pipeline_ai_prompts
+                    SET prompt=$1, enabled=$2, updated_at=NOW()
+                  WHERE tenant_id=$3 AND field_key=$4`,
+                [String(item.prompt || '').trim(), Boolean(item.enabled), req.tenantId, fieldKey]
+            );
+        }
+        await client.query('COMMIT');
+        const { rows } = await db.query(
+            `SELECT field_key, label, prompt, enabled, sort_order, updated_at
+               FROM pipeline_ai_prompts
+              WHERE tenant_id=$1
+              ORDER BY sort_order, label`,
+            [req.tenantId]
+        );
+        res.json(rows);
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('[pipeline-ai-prompts/save]', err);
+        res.status(500).json({ error: 'Save failed' });
+    } finally {
+        client.release();
+    }
 });
 
 async function ensureDefaultProjectAttachmentType(tenantId, client = db) {

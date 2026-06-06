@@ -16,12 +16,14 @@ import ResourceInformation from './pages/ResourceInformation';
 import CustomerInformation from './pages/CustomerInformation';
 import LicenseDashboard  from './pages/LicenseDashboard';
 import ProjectSummary     from './pages/ProjectSummary';
+import PipelineDashboard  from './pages/PipelineDashboard';
 import OfficeBooking      from './pages/OfficeBooking';
 import KnowledgeBase      from './pages/KnowledgeBase';
 import PostItBoard        from './pages/PostItBoard';
 
 import ProjectManagement from './pages/admin/ProjectManagement';
 import PipelineManagement from './pages/admin/PipelineManagement';
+import PipelineAIPrompt  from './pages/admin/PipelineAIPrompt';
 import Customers        from './pages/admin/Customers';
 import Resources        from './pages/admin/Resources';
 import YearConfigPage   from './pages/admin/YearConfig';
@@ -97,6 +99,7 @@ function HomeRedirect() {
     if (!hasMenuAccess(user, 'dashboard.summary')) {
         const fallbacks = [
             ['dashboard.project_summary', '/project-summary'],
+            ['dashboard.pipeline', '/pipeline-dashboard'],
             ['dashboard.subscription', '/subscription'],
             ['dashboard.perpetual_ma', '/perpetual-ma'],
             ['dashboard.implementation', '/implementation'],
@@ -125,6 +128,7 @@ export default function App() {
             <Route element={<RequireAuth><Layout /></RequireAuth>}>
                 <Route index element={<HomeRedirect />} />
                 <Route path="project-summary"   element={<RequireMenu menuKey="dashboard.project_summary"><ProjectSummary /></RequireMenu>} />
+                <Route path="pipeline-dashboard" element={<RequireMenu menuKey="dashboard.pipeline"><PipelineDashboard /></RequireMenu>} />
                 <Route path="subscription"      element={<RequireMenu menuKey="dashboard.subscription"><SubscriptionDash /></RequireMenu>} />
                 <Route path="perpetual-ma"      element={<RequireMenu menuKey="dashboard.perpetual_ma"><PerpetualDash /></RequireMenu>} />
                 <Route path="implementation"    element={<RequireMenu menuKey="dashboard.implementation"><ImplementationDash /></RequireMenu>} />
@@ -141,6 +145,7 @@ export default function App() {
 
                 <Route path="admin/projects"   element={<RequireAdmin><RequireMenu menuKey="admin.projects"><ProjectManagement /></RequireMenu></RequireAdmin>} />
                 <Route path="admin/pipeline"   element={<RequireAdmin><RequireMenu menuKey="admin.pipeline"><PipelineManagement /></RequireMenu></RequireAdmin>} />
+                <Route path="admin/pipeline-ai-prompt" element={<RequireAdmin><RequireMenu menuKey="admin.pipeline_ai_prompt"><PipelineAIPrompt /></RequireMenu></RequireAdmin>} />
                 <Route path="admin/customers"  element={<RequireAdmin><RequireMenu menuKey="admin.customers"><Customers /></RequireMenu></RequireAdmin>} />
                 <Route path="admin/resources"  element={<RequireAdmin><RequireMenu menuKey="admin.resources"><Resources /></RequireMenu></RequireAdmin>} />
                 <Route path="admin/year"       element={<RequireAdmin><RequireMenu menuKey="admin.year"><YearConfigPage /></RequireMenu></RequireAdmin>} />

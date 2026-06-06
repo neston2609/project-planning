@@ -1,8 +1,10 @@
 const express = require('express');
 const { randomInt } = require('crypto');
+const XLSX = require('xlsx');
 const { body, param, validationResult } = require('express-validator');
 const db = require('../db');
-const { requireAuth, requireTenant } = require('../middleware/auth');
+const { requireAuth, requireRole, requireTenant } = require('../middleware/auth');
+const { cleanAiProvider, normalizeEndpoint, runAiPrompt } = require('../utils/ai');
 const {
     listProjectAttachments,
     saveProjectAttachmentStream,
@@ -13,6 +15,15 @@ const {
 const { DEFAULT_PIPELINE_WIN_PCT, normalizePercent } = require('../utils/pipeline');
 
 const router = express.Router();
+const AI_CONFIG_KEYS = ['ai_provider', 'ai_api_key', 'ai_endpoint', 'ai_model'];
+const PIPELINE_AI_FIELD_KEYS = [
+    'subscription_cost',
+    'subscription_revenue',
+    'implementation_cost',
+    'implementation_revenue',
+    'service_ma_cost',
+    'service_ma_revenue'
+];
 
 // Every project route is tenant-scoped.
 router.use(requireAuth, requireTenant);
@@ -21,6 +32,80 @@ router.use(requireAuth, requireTenant);
 function pickYear(req) {
     const y = Number(req.query.year);
     return Number.isInteger(y) && y > 1900 ? y : null;
+}
+
+function dataUrlToBuffer(dataUrl) {
+    const m = String(dataUrl || '').match(/^data:[^,]*,(.*)$/i);
+    const raw = m ? m[1] : String(dataUrl || '');
+    return Buffer.from(raw, 'base64');
+}
+
+function compactCell(value) {
+    return String(value ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function extractCostBreakdownText(rows) {
+    const start = rows.findIndex(row => row.map(compactCell).join(' ').toLowerCase().includes('cost breakdown'));
+    const source = start >= 0 ? rows.slice(start + 1) : rows;
+    const out = [];
+    let seenContent = false;
+    for (const row of source) {
+        const cells = row.map(compactCell);
+        const line = cells.filter(Boolean).join('\t');
+        const lower = line.toLowerCase();
+        if (!line) {
+            if (seenContent) break;
+            continue;
+        }
+        seenContent = true;
+        if (lower.startsWith('* note') || lower.includes('\tnote\t')) break;
+        out.push(line);
+    }
+    return out.join('\n');
+}
+
+function extractBudgetWorkbookText(buffer) {
+    const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true });
+    const parts = [];
+    for (const sheetName of wb.SheetNames) {
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, raw: false, defval: '' });
+        const costText = extractCostBreakdownText(rows);
+        if (costText) parts.push(`Sheet: ${sheetName}\n${costText}`);
+    }
+    if (parts.length) return parts.join('\n\n').slice(0, 120000);
+    for (const sheetName of wb.SheetNames) {
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, raw: false, defval: '' });
+        parts.push(`Sheet: ${sheetName}`);
+        for (const row of rows) {
+            const line = row.map(compactCell).filter(Boolean).join('\t');
+            if (line) parts.push(line);
+        }
+    }
+    return parts.join('\n').slice(0, 120000);
+}
+
+function parseAiAmount(value) {
+    const text = String(value || '').trim();
+    let parsed = null;
+    try {
+        const json = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] || text);
+        if (json && typeof json === 'object') {
+            parsed = json.value ?? json.amount ?? json.result;
+        }
+    } catch {}
+    const source = parsed == null ? text : String(parsed);
+    const matches = source.match(/-?\d[\d,]*(?:\.\d+)?/g) || [];
+    if (!matches.length) return null;
+    const n = Number(matches[0].replace(/,/g, ''));
+    return Number.isFinite(n) ? n : null;
+}
+
+async function tenantConfigMap(tenantId, keys) {
+    const { rows } = await db.query(
+        'SELECT key, value FROM tenant_config WHERE tenant_id=$1 AND key = ANY($2)',
+        [tenantId, keys]
+    );
+    return Object.fromEntries(rows.map(r => [r.key, r.value]));
 }
 
 async function loadProject(id, tenantId) {
@@ -125,11 +210,133 @@ router.get('/dummy-code', async (req, res) => {
     res.status(409).json({ error: 'Could not generate a unique dummy project code' });
 });
 
+router.post('/analyze-budget-ai', requireRole('admin', 'superadmin'), async (req, res) => {
+    try {
+        const fileBase64 = String(req.body.file_base64 || '').trim();
+        if (!fileBase64) return res.status(400).json({ error: 'Excel file is required' });
+
+        const [cfg, promptRows] = await Promise.all([
+            tenantConfigMap(req.tenantId, AI_CONFIG_KEYS),
+            db.query(
+                `SELECT field_key, label, prompt, enabled
+                   FROM pipeline_ai_prompts
+                  WHERE tenant_id=$1 AND field_key = ANY($2)
+                  ORDER BY sort_order, label`,
+                [req.tenantId, PIPELINE_AI_FIELD_KEYS]
+            )
+        ]);
+        const enabledPrompts = promptRows.rows.filter(row => row.enabled && String(row.prompt || '').trim());
+        if (!enabledPrompts.length) {
+            return res.json({ enabled: false, values: {}, details: [], reason: 'Pipeline AI prompts are disabled' });
+        }
+
+        const provider = cleanAiProvider(cfg.ai_provider || 'openai');
+        const apiKey = cfg.ai_api_key || '';
+        const endpoint = normalizeEndpoint(cfg.ai_endpoint);
+        const model = String(cfg.ai_model || '').trim();
+        if (!apiKey || !model) {
+            return res.json({ enabled: false, values: {}, details: [], reason: 'AI configuration is incomplete' });
+        }
+
+        const excelText = extractBudgetWorkbookText(dataUrlToBuffer(fileBase64));
+        if (!excelText) return res.status(400).json({ error: 'Could not read Excel file content' });
+
+        const values = {};
+        const details = [];
+        for (const row of enabledPrompts) {
+            const prompt = `${row.prompt}
+
+Field: ${row.label}
+
+Excel budget text:
+${excelText}
+
+Return only one numeric amount for this field. If the field cannot be found, return 0.`;
+            const content = await runAiPrompt({
+                provider,
+                apiKey,
+                endpoint,
+                model,
+                prompt,
+                temperature: 0,
+                maxTokens: 120,
+                timeoutMs: 25000
+            });
+            const amount = parseAiAmount(content);
+            if (amount != null) values[row.field_key] = amount;
+            details.push({
+                field_key: row.field_key,
+                label: row.label,
+                value: amount,
+                raw: String(content || '').slice(0, 500)
+            });
+        }
+        res.json({ enabled: true, values, details });
+    } catch (err) {
+        console.error('[pipeline budget ai]', err.message);
+        const message = err.status === 401 || err.status === 403
+            ? 'AI provider rejected the API key or credentials'
+            : err.name === 'AbortError'
+                ? 'Pipeline AI analysis timed out'
+                : err.message || 'Pipeline AI analysis failed';
+        const status = err.status === 401 || err.status === 403 ? 400 : (err.status >= 500 ? 502 : 400);
+        res.status(status).json({ enabled: false, values: {}, details: [], error: message });
+    }
+});
+
+router.get('/pipeline-notes/all', async (req, res) => {
+    const { rows } = await db.query(
+        `SELECT pn.id, pn.project_code, pn.note, pn.created_at,
+                u.username AS created_by_username,
+                u.full_name AS created_by_full_name
+           FROM pipeline_notes pn
+           LEFT JOIN users u ON u.id = pn.created_by AND u.tenant_id = pn.tenant_id
+          WHERE pn.tenant_id=$1
+          ORDER BY pn.project_code, pn.created_at DESC`,
+        [req.tenantId]
+    );
+    res.json(rows);
+});
+
 router.get('/:id', param('id').isInt(), async (req, res) => {
     const proj = await loadProject(req.params.id, req.tenantId);
     if (!proj) return res.status(404).json({ error: 'Not found' });
     res.json(proj);
 });
+
+router.get('/:id/pipeline-notes', param('id').isInt(), async (req, res) => {
+    const projectCode = await projectCodeInTenant(req.params.id, req.tenantId);
+    if (!projectCode) return res.status(404).json({ error: 'Not found' });
+    const { rows } = await db.query(
+        `SELECT pn.id, pn.project_code, pn.note, pn.created_at,
+                u.username AS created_by_username,
+                u.full_name AS created_by_full_name
+           FROM pipeline_notes pn
+           LEFT JOIN users u ON u.id = pn.created_by AND u.tenant_id = pn.tenant_id
+          WHERE pn.tenant_id=$1 AND pn.project_code=$2
+          ORDER BY pn.created_at DESC`,
+        [req.tenantId, projectCode]
+    );
+    res.json(rows);
+});
+
+router.post('/:id/pipeline-notes',
+    param('id').isInt(),
+    body('note').isString().trim().isLength({ min: 1, max: 5000 }),
+    async (req, res) => {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+        const projectCode = await projectCodeInTenant(req.params.id, req.tenantId);
+        if (!projectCode) return res.status(404).json({ error: 'Not found' });
+        const { rows } = await db.query(
+            `INSERT INTO pipeline_notes(tenant_id, project_code, note, created_by)
+             VALUES ($1,$2,$3,$4)
+             RETURNING *`,
+            [req.tenantId, projectCode, req.body.note.trim(), req.user.uid || null]
+        );
+        res.status(201).json(rows[0]);
+    }
+);
 
 // ---------- create / update master record ----------
 const projValidators = [
@@ -178,6 +385,15 @@ router.put('/:id', param('id').isInt(), projValidators, async (req, res) => {
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
+        const before = await client.query(
+            'SELECT project_code FROM projects WHERE id=$1 AND tenant_id=$2 FOR UPDATE',
+            [req.params.id, req.tenantId]
+        );
+        if (!before.rows[0]) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Not found' });
+        }
+        const oldProjectCode = before.rows[0].project_code;
         const { rows } = await client.query(
             `UPDATE projects SET project_code=$1, description=$2, customer_id=$3,
                                  project_start_date=$4, project_end_date=$5,
@@ -199,6 +415,12 @@ router.put('/:id', param('id').isInt(), projValidators, async (req, res) => {
         await client.query('UPDATE project_service_ma SET erp_code=$1 WHERE project_id=$2', [projectCode, req.params.id]);
         await client.query('UPDATE project_implementation SET erp_code=$1 WHERE project_id=$2', [projectCode, req.params.id]);
         await client.query('UPDATE project_outsource SET erp_code=$1 WHERE project_id=$2', [projectCode, req.params.id]);
+        if (oldProjectCode !== projectCode) {
+            await client.query(
+                'UPDATE pipeline_notes SET project_code=$1 WHERE tenant_id=$2 AND project_code=$3',
+                [projectCode, req.tenantId, oldProjectCode]
+            );
+        }
         await client.query('COMMIT');
         res.json(rows[0]);
     } catch (err) {

@@ -14,13 +14,14 @@ import {
     BuildingOfficeIcon, PresentationChartLineIcon, ShieldCheckIcon,
     UsersIcon, IdentificationIcon, CalendarDaysIcon, Cog6ToothIcon,
     EnvelopeIcon, DocumentTextIcon, UserCircleIcon, UserIcon, ClipboardDocumentListIcon,
-    MoonIcon, SunIcon, BookOpenIcon, ChatBubbleLeftRightIcon, ClockIcon
+    MoonIcon, SunIcon, BookOpenIcon, ChatBubbleLeftRightIcon, ClockIcon, SparklesIcon
 } from '@heroicons/react/24/outline';
 import Modal from './Modal';
 
 const mainNav = [
     { key: 'dashboard.summary',        to: '/',                  label: 'Summary',           icon: ChartPieIcon },
     { key: 'dashboard.project_summary',to: '/project-summary',   label: 'Project Summary',   icon: ClipboardDocumentListIcon },
+    { key: 'dashboard.pipeline',       to: '/pipeline-dashboard', label: 'Pipeline Dashboard', icon: ChartPieIcon },
     { key: 'dashboard.subscription',   to: '/subscription',      label: 'Subscription',      icon: RectangleStackIcon },
     { key: 'dashboard.perpetual_ma',   to: '/perpetual-ma',      label: 'Perpetual / SW MA', icon: CubeIcon },
     { key: 'dashboard.implementation', to: '/implementation',    label: 'Implementation',    icon: WrenchScrewdriverIcon },
@@ -38,6 +39,7 @@ const mainNav = [
 const adminNav = [
     { key: 'admin.projects',  to: '/admin/projects',  label: 'Project Management', icon: DocumentTextIcon },
     { key: 'admin.pipeline',  to: '/admin/pipeline',  label: 'Pipeline Management', icon: ClipboardDocumentListIcon },
+    { key: 'admin.pipeline_ai_prompt', to: '/admin/pipeline-ai-prompt', label: 'Pipeline AI Prompt', icon: SparklesIcon },
     { key: 'admin.customers', to: '/admin/customers', label: 'Customers',          icon: BuildingOffice2Icon },
     { key: 'admin.resources', to: '/admin/resources', label: 'Resources',          icon: IdentificationIcon },
     { key: 'admin.licenses',  to: '/admin/licenses',  label: 'License Management', icon: KeyIcon },

@@ -426,6 +426,30 @@ CREATE INDEX IF NOT EXISTS idx_projects_status   ON projects(status);
 CREATE INDEX IF NOT EXISTS idx_projects_customer ON projects(customer_id);
 CREATE INDEX IF NOT EXISTS idx_projects_tenant   ON projects(tenant_id);
 
+CREATE TABLE IF NOT EXISTS pipeline_notes (
+    id           SERIAL PRIMARY KEY,
+    tenant_id    INT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    project_code VARCHAR(64) NOT NULL,
+    note         TEXT NOT NULL DEFAULT '',
+    created_by   INT REFERENCES users(id) ON DELETE SET NULL,
+    created_at   TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_pipeline_notes_tenant_project
+    ON pipeline_notes(tenant_id, project_code, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS pipeline_ai_prompts (
+    tenant_id   INT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    field_key   VARCHAR(64) NOT NULL,
+    label       VARCHAR(128) NOT NULL,
+    prompt      TEXT NOT NULL DEFAULT '',
+    enabled     BOOLEAN NOT NULL DEFAULT FALSE,
+    sort_order  INT NOT NULL DEFAULT 0,
+    updated_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (tenant_id, field_key)
+);
+CREATE INDEX IF NOT EXISTS idx_pipeline_ai_prompts_tenant
+    ON pipeline_ai_prompts(tenant_id, sort_order);
+
 CREATE TABLE IF NOT EXISTS project_attachment_types (
     id          SERIAL PRIMARY KEY,
     tenant_id   INT NOT NULL,

@@ -9,8 +9,10 @@ import { useYear } from '../../YearContext';
 import { ProjectEditor } from './ProjectManagement';
 import {
     ArrowUpTrayIcon, DocumentMagnifyingGlassIcon, PaperClipIcon,
-    PencilSquareIcon, PlusIcon, SparklesIcon
+    PencilSquareIcon, PlusIcon, ChatBubbleLeftEllipsisIcon, SparklesIcon
 } from '@heroicons/react/24/outline';
+
+const CREATE_NEW_CUSTOMER = '__create_new_customer__';
 
 function addMonths(date, months) {
     const d = new Date(date.getFullYear(), date.getMonth() + months, date.getDate());
@@ -24,6 +26,13 @@ function ymd(date) {
         String(date.getMonth() + 1).padStart(2, '0'),
         String(date.getDate()).padStart(2, '0')
     ].join('-');
+}
+
+function dateTime(value) {
+    if (!value) return '-';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '-';
+    return d.toLocaleString();
 }
 
 function money(value) {
@@ -43,6 +52,31 @@ function pairFromRow(row) {
     if (cost || revenue) return { cost, revenue };
     const nums = row.map(money).filter(n => n >= 1000);
     return { cost: nums[0] || 0, revenue: nums[1] || 0 };
+}
+
+function costBreakdownRows(rows) {
+    const idx = rows.findIndex(row => rowText(row).toLowerCase().includes('cost breakdown'));
+    if (idx < 0) return rows;
+    const out = [];
+    for (let i = idx + 1; i < rows.length; i += 1) {
+        const text = rowText(rows[i]).toLowerCase();
+        if (!text) {
+            if (out.length > 0) break;
+            continue;
+        }
+        if (text.startsWith('* note') || text.includes('note ')) break;
+        out.push(rows[i]);
+    }
+    return out.length ? out : rows.slice(idx + 1);
+}
+
+function budgetTypeFromText(text) {
+    const lower = text.toLowerCase();
+    if (lower.includes('total cost')) return null;
+    if (lower.includes('implementation') || lower.includes('professional service')) return 'implementation';
+    if (lower.includes('support') || lower.includes('service ma') || lower.includes('maintenance') || lower.includes(' ma ')) return 'service_ma';
+    if (lower.includes('subscription') || lower.includes('license') || lower.includes('ocr') || lower.includes('ai license') || lower.includes('uipath')) return 'subscription';
+    return null;
 }
 
 function findValueAfterLabel(rows, label) {
@@ -70,6 +104,34 @@ function customerMatch(text, customers) {
         }
     }
     return best?.customer || null;
+}
+
+function fileToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+function applyAiBudgetValues(analysis, values = {}) {
+    const next = { ...analysis };
+    const map = {
+        subscription_cost: 'subscription_cost',
+        subscription_revenue: 'subscription_revenue',
+        implementation_cost: 'implementation_cost',
+        implementation_revenue: 'implementation_revenue',
+        service_ma_cost: 'service_ma_cost',
+        service_ma_revenue: 'service_ma_revenue'
+    };
+    for (const [source, target] of Object.entries(map)) {
+        if (Object.prototype.hasOwnProperty.call(values, source)) {
+            const n = Number(values[source]);
+            if (Number.isFinite(n)) next[target] = n;
+        }
+    }
+    return next;
 }
 
 async function parseBudgetFile(file, customers) {
@@ -105,18 +167,20 @@ async function parseBudgetFile(file, customers) {
         service_ma_revenue: 0
     };
 
-    for (const row of rows) {
+    const analysisRows = costBreakdownRows(rows);
+    for (const row of analysisRows) {
         const text = rowText(row).toLowerCase();
-        if (!text.startsWith('total')) continue;
-        if (text.includes('subscription') && !out.subscription_revenue) {
+        if (!text.includes('total')) continue;
+        const type = budgetTypeFromText(text);
+        if (type === 'subscription' && !out.subscription_revenue) {
             const pair = pairFromRow(row);
             out.subscription_cost = pair.cost;
             out.subscription_revenue = pair.revenue;
-        } else if (text.includes('professional service') && text.includes('implementation') && !out.implementation_revenue) {
+        } else if (type === 'implementation' && !out.implementation_revenue) {
             const pair = pairFromRow(row);
             out.implementation_cost = pair.cost;
             out.implementation_revenue = pair.revenue;
-        } else if (text.includes('support services') && !out.service_ma_revenue) {
+        } else if (type === 'service_ma' && !out.service_ma_revenue) {
             const pair = pairFromRow(row);
             out.service_ma_cost = pair.cost;
             out.service_ma_revenue = pair.revenue;
@@ -147,6 +211,7 @@ function defaultForm() {
         project_code: '',
         description: '',
         customer_id: '',
+        selected_customer: '',
         customer_hint: '',
         should_create_customer: false,
         project_start_date: ymd(start),
@@ -154,7 +219,6 @@ function defaultForm() {
         status: 'Pipeline',
         pipeline_win_pct: 50,
         pipeline_target_date: '',
-        note: '',
         subscription_cost: 0,
         subscription_revenue: 0,
         implementation_cost: 0,
@@ -170,8 +234,10 @@ export default function PipelineManagement() {
     const [projects, setProjects] = useState([]);
     const [customers, setCustomers] = useState([]);
     const [documentTypes, setDocumentTypes] = useState([]);
+    const [notes, setNotes] = useState([]);
     const [creating, setCreating] = useState(false);
     const [editing, setEditing] = useState(null);
+    const [noteProject, setNoteProject] = useState(null);
     const [loading, setLoading] = useState(true);
 
     async function load() {
@@ -185,6 +251,8 @@ export default function PipelineManagement() {
             setProjects((p.data || []).filter(row => row.status === 'Pipeline'));
             setCustomers(c.data || []);
             setDocumentTypes(d.data || []);
+            const n = await api.get('/projects/pipeline-notes/all');
+            setNotes(n.data || []);
         } catch (err) {
             toast.error(err.response?.data?.error || 'Could not load pipelines');
         } finally {
@@ -193,6 +261,15 @@ export default function PipelineManagement() {
     }
 
     useEffect(() => { load(); }, []);
+
+    const notesByProject = useMemo(() => {
+        const m = new Map();
+        for (const note of notes) {
+            if (!m.has(note.project_code)) m.set(note.project_code, []);
+            m.get(note.project_code).push(note);
+        }
+        return m;
+    }, [notes]);
 
     async function openProject(id) {
         try {
@@ -220,11 +297,11 @@ export default function PipelineManagement() {
                     <thead>
                         <tr>
                             <th>Project Code</th><th>Description</th><th>Customer</th><th>Status</th>
-                            <th>% to Win</th><th>Start</th><th>End</th><th></th>
+                            <th>% to Win</th><th>Start</th><th>End</th><th>Latest Note</th><th></th>
                         </tr>
                     </thead>
                     <tbody>
-                        {loading && <tr><td colSpan={8} className="text-center text-slate-400 py-6">Loading...</td></tr>}
+                        {loading && <tr><td colSpan={9} className="text-center text-slate-400 py-6">Loading...</td></tr>}
                         {!loading && projects.map(p => (
                             <tr key={p.id}>
                                 <td className="font-mono text-xs">{p.project_code}</td>
@@ -234,7 +311,18 @@ export default function PipelineManagement() {
                                 <td>{Number(p.pipeline_win_pct ?? 50).toFixed(0)}%</td>
                                 <td>{formatDate(p.project_start_date)}</td>
                                 <td>{formatDate(p.project_end_date)}</td>
+                                <td className="max-w-[320px]">
+                                    {notesByProject.get(p.project_code)?.[0] ? (
+                                        <div className="text-xs text-slate-600">
+                                            <div className="font-semibold text-slate-500">{dateTime(notesByProject.get(p.project_code)[0].created_at)}</div>
+                                            <div className="truncate" title={notesByProject.get(p.project_code)[0].note}>{notesByProject.get(p.project_code)[0].note}</div>
+                                        </div>
+                                    ) : '-'}
+                                </td>
                                 <td className="text-right">
+                                    <button className="btn-ghost" title="Add note" onClick={() => setNoteProject(p)}>
+                                        <ChatBubbleLeftEllipsisIcon className="w-4 h-4 text-indigo-600" />
+                                    </button>
                                     <button className="btn-ghost" title="Edit project" onClick={() => openProject(p.id)}>
                                         <PencilSquareIcon className="w-4 h-4" />
                                     </button>
@@ -242,7 +330,7 @@ export default function PipelineManagement() {
                             </tr>
                         ))}
                         {!loading && projects.length === 0 && (
-                            <tr><td colSpan={8} className="text-center text-slate-400 py-6">No pipeline projects.</td></tr>
+                            <tr><td colSpan={9} className="text-center text-slate-400 py-6">No pipeline projects.</td></tr>
                         )}
                     </tbody>
                 </table>
@@ -254,6 +342,17 @@ export default function PipelineManagement() {
                     documentTypes={documentTypes}
                     onClose={() => setCreating(false)}
                     onCreated={() => { setCreating(false); load(); }}
+                />
+            )}
+            {noteProject && (
+                <PipelineNoteModal
+                    project={noteProject}
+                    notes={notesByProject.get(noteProject.project_code) || []}
+                    onClose={() => setNoteProject(null)}
+                    onSaved={async () => {
+                        const n = await api.get('/projects/pipeline-notes/all');
+                        setNotes(n.data || []);
+                    }}
                 />
             )}
             {editing && (
@@ -292,15 +391,33 @@ function PipelineModal({ customers, documentTypes, onClose, onCreated }) {
         setFile(selected);
         setAnalyzing(true);
         try {
-            const [code, analysis] = await Promise.all([
+            const [code, fallbackAnalysis] = await Promise.all([
                 api.get('/projects/dummy-code'),
                 parseBudgetFile(selected, customers)
             ]);
+            let analysis = fallbackAnalysis;
+            let aiNote = '';
+            try {
+                const dataUrl = await fileToDataUrl(selected);
+                const ai = await api.post('/projects/analyze-budget-ai', { file_base64: dataUrl }, { timeout: 120000 });
+                if (ai.data?.enabled) {
+                    analysis = applyAiBudgetValues(fallbackAnalysis, ai.data.values || {});
+                    const usedCount = Object.keys(ai.data.values || {}).length;
+                    aiNote = usedCount
+                        ? `AI Prompt extracted ${usedCount} budget value(s).`
+                        : 'AI Prompt ran but did not return budget values.';
+                } else {
+                    aiNote = ai.data?.reason ? `AI Prompt disabled: ${ai.data.reason}.` : 'AI Prompt disabled.';
+                }
+            } catch (err) {
+                aiNote = `AI Prompt failed; used Excel parser fallback. ${err.response?.data?.error || err.message || ''}`.trim();
+            }
             setF(current => ({
                 ...current,
                 project_code: code.data.project_code || current.project_code,
                 description: analysis.project_description || current.description,
                 customer_id: analysis.customer_id || '',
+                selected_customer: analysis.customer_id || (analysis.should_create_customer ? CREATE_NEW_CUSTOMER : ''),
                 customer_hint: analysis.customer_hint || '',
                 should_create_customer: analysis.should_create_customer,
                 subscription_cost: analysis.subscription_cost,
@@ -309,14 +426,9 @@ function PipelineModal({ customers, documentTypes, onClose, onCreated }) {
                 implementation_revenue: analysis.implementation_revenue,
                 service_ma_cost: analysis.service_ma_cost,
                 service_ma_revenue: analysis.service_ma_revenue,
-                note: [
-                    current.note,
-                    analysis.should_create_customer ? `Customer will be created from budget file: ${analysis.customer_hint}` : '',
-                    analysis.sheet_name ? `Budget analysis sheet: ${analysis.sheet_name}` : ''
-                ].filter(Boolean).join('\n'),
                 analysis_note: analysis.should_create_customer
-                    ? `Found customer text "${analysis.customer_hint}". It will be created as a new Customer when saving.`
-                    : 'Budget file analyzed. Please review before saving.'
+                    ? `${aiNote} Found customer text "${analysis.customer_hint}". It will be created as a new Customer when saving.`
+                    : `${aiNote} Budget file analyzed. Please review before saving.`.trim()
             }));
             toast.success('Budget file analyzed');
         } catch (err) {
@@ -330,9 +442,11 @@ function PipelineModal({ customers, documentTypes, onClose, onCreated }) {
         if (!f.project_code.trim()) return toast.error('Project Code is required');
         setSaving(true);
         try {
-            let customerId = f.customer_id ? Number(f.customer_id) : null;
+            let customerId = f.selected_customer && f.selected_customer !== CREATE_NEW_CUSTOMER
+                ? Number(f.selected_customer)
+                : (f.customer_id ? Number(f.customer_id) : null);
             const customerName = String(f.customer_hint || '').trim();
-            if (!customerId && customerName) {
+            if (!customerId && f.selected_customer === CREATE_NEW_CUSTOMER && customerName) {
                 try {
                     const createdCustomer = await api.post('/customers', {
                         alias: customerName.slice(0, 64),
@@ -363,7 +477,7 @@ function PipelineModal({ customers, documentTypes, onClose, onCreated }) {
                 status: 'Pipeline',
                 pipeline_win_pct: Number(f.pipeline_win_pct || 50),
                 pipeline_target_date: f.pipeline_target_date || null,
-                note: f.note || ''
+                note: ''
             });
             const id = created.data.id;
             if (Number(f.subscription_revenue || 0) || Number(f.subscription_cost || 0)) {
@@ -442,8 +556,15 @@ function PipelineModal({ customers, documentTypes, onClose, onCreated }) {
                     <div className="col-span-2"><label className="label">Project Description</label>
                         <input className="input" value={f.description} onChange={e => setF({ ...f, description: e.target.value })} /></div>
                     <div><label className="label">Customer</label>
-                        <select className="input" value={f.customer_id} onChange={e => setF({ ...f, customer_id: e.target.value })}>
-                            <option value="">{f.customer_hint ? `Create new: ${f.customer_hint}` : '-'}</option>
+                        <select className="input" value={f.selected_customer || f.customer_id || ''} onChange={e => setF({
+                            ...f,
+                            selected_customer: e.target.value,
+                            customer_id: e.target.value === CREATE_NEW_CUSTOMER ? '' : e.target.value
+                        })}>
+                            <option value="">-</option>
+                            {f.customer_hint && (
+                                <option value={CREATE_NEW_CUSTOMER}>Create new: {f.customer_hint}</option>
+                            )}
                             {customers.map(c => <option key={c.id} value={c.id}>{c.alias} - {c.full_name}</option>)}
                         </select></div>
                     <div><label className="label">Status</label>
@@ -474,9 +595,54 @@ function PipelineModal({ customers, documentTypes, onClose, onCreated }) {
                                onRevenue={v => setF({ ...f, service_ma_revenue: v })} />
                 </div>
 
+            </div>
+        </Modal>
+    );
+}
+
+function PipelineNoteModal({ project, notes, onClose, onSaved }) {
+    const [note, setNote] = useState('');
+    const [saving, setSaving] = useState(false);
+
+    async function save() {
+        if (!note.trim()) return toast.error('Please enter a note');
+        setSaving(true);
+        try {
+            await api.post(`/projects/${project.id}/pipeline-notes`, { note });
+            setNote('');
+            toast.success('Note added');
+            await onSaved();
+        } catch (err) {
+            toast.error(err.response?.data?.error || err.response?.data?.errors?.[0]?.msg || 'Save note failed');
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    return (
+        <Modal open onClose={onClose} title={`Pipeline Notes - ${project.project_code}`} size="lg"
+               footer={<>
+                   <button className="btn-ghost" onClick={onClose}>Close</button>
+                   <button className="btn-primary" disabled={saving} onClick={save}>{saving ? 'Saving...' : 'Add Note'}</button>
+               </>}>
+            <div className="space-y-4">
                 <div>
-                    <label className="label">Note</label>
-                    <textarea className="input" rows={3} value={f.note} onChange={e => setF({ ...f, note: e.target.value })} />
+                    <label className="label">New Note</label>
+                    <textarea className="input" rows={4} value={note} onChange={e => setNote(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                    <div className="text-sm font-bold text-slate-700">History</div>
+                    {notes.length === 0 ? (
+                        <div className="text-sm text-slate-400">No notes yet.</div>
+                    ) : notes.map(item => (
+                        <div key={item.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                            <div className="text-xs font-semibold text-slate-500">
+                                {dateTime(item.created_at)}
+                                {item.created_by_full_name || item.created_by_username ? ` - ${item.created_by_full_name || item.created_by_username}` : ''}
+                            </div>
+                            <div className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{item.note}</div>
+                        </div>
+                    ))}
                 </div>
             </div>
         </Modal>
