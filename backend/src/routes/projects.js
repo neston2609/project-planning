@@ -338,6 +338,22 @@ router.post('/:id/pipeline-notes',
     }
 );
 
+router.delete('/:id/pipeline-notes/:noteId',
+    param('id').isInt(),
+    param('noteId').isInt(),
+    async (req, res) => {
+        const projectCode = await projectCodeInTenant(req.params.id, req.tenantId);
+        if (!projectCode) return res.status(404).json({ error: 'Not found' });
+        const { rowCount } = await db.query(
+            `DELETE FROM pipeline_notes
+              WHERE id=$1 AND tenant_id=$2 AND project_code=$3`,
+            [req.params.noteId, req.tenantId, projectCode]
+        );
+        if (!rowCount) return res.status(404).json({ error: 'Note not found' });
+        res.json({ ok: true });
+    }
+);
+
 // ---------- create / update master record ----------
 const projValidators = [
     body('project_code').isString().trim().isLength({ min: 1, max: 64 }),

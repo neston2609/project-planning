@@ -603,6 +603,7 @@ function PipelineModal({ customers, documentTypes, onClose, onCreated }) {
 function PipelineNoteModal({ project, notes, onClose, onSaved }) {
     const [note, setNote] = useState('');
     const [saving, setSaving] = useState(false);
+    const [deletingId, setDeletingId] = useState(null);
 
     async function save() {
         if (!note.trim()) return toast.error('Please enter a note');
@@ -616,6 +617,20 @@ function PipelineNoteModal({ project, notes, onClose, onSaved }) {
             toast.error(err.response?.data?.error || err.response?.data?.errors?.[0]?.msg || 'Save note failed');
         } finally {
             setSaving(false);
+        }
+    }
+
+    async function deleteNote(item) {
+        if (!confirm('Delete this pipeline note?')) return;
+        setDeletingId(item.id);
+        try {
+            await api.delete(`/projects/${project.id}/pipeline-notes/${item.id}`);
+            toast.success('Note deleted');
+            await onSaved();
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Delete note failed');
+        } finally {
+            setDeletingId(null);
         }
     }
 
@@ -636,11 +651,21 @@ function PipelineNoteModal({ project, notes, onClose, onSaved }) {
                         <div className="text-sm text-slate-400">No notes yet.</div>
                     ) : notes.map(item => (
                         <div key={item.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                            <div className="text-xs font-semibold text-slate-500">
-                                {dateTime(item.created_at)}
-                                {item.created_by_full_name || item.created_by_username ? ` - ${item.created_by_full_name || item.created_by_username}` : ''}
+                            <div className="flex items-start gap-3">
+                                <div className="min-w-0 flex-1">
+                                    <div className="text-xs font-semibold text-slate-500">
+                                        {dateTime(item.created_at)}
+                                        {item.created_by_full_name || item.created_by_username ? ` - ${item.created_by_full_name || item.created_by_username}` : ''}
+                                    </div>
+                                    <div className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{item.note}</div>
+                                </div>
+                                <button type="button"
+                                        className="btn-ghost text-red-600"
+                                        disabled={deletingId === item.id}
+                                        onClick={() => deleteNote(item)}>
+                                    {deletingId === item.id ? 'Deleting...' : 'Delete'}
+                                </button>
                             </div>
-                            <div className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{item.note}</div>
                         </div>
                     ))}
                 </div>
