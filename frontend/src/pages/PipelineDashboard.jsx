@@ -284,8 +284,13 @@ function ServiceRevenueModal({ project, revenue, onClose }) {
 }
 
 function PipelineNotesModal({ project, notes, onClose }) {
+    const titleParts = [
+        project.project_code,
+        project.customer_alias || project.customer_full_name,
+        project.description
+    ].filter(Boolean);
     return (
-        <Modal open onClose={onClose} title={`Pipeline Notes - ${project.project_code}`} size="lg"
+        <Modal open onClose={onClose} title={`Pipeline Notes - ${titleParts.join(' - ')}`} size="lg"
                footer={<button className="btn-ghost" onClick={onClose}>Close</button>}>
             <div className="space-y-3">
                 {notes.length === 0 ? (

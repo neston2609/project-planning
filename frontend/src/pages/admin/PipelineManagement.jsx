@@ -604,6 +604,11 @@ function PipelineNoteModal({ project, notes, onClose, onSaved }) {
     const [note, setNote] = useState('');
     const [saving, setSaving] = useState(false);
     const [deletingId, setDeletingId] = useState(null);
+    const titleParts = [
+        project.project_code,
+        project.customer_alias || project.customer_full_name,
+        project.description
+    ].filter(Boolean);
 
     async function save() {
         if (!note.trim()) return toast.error('Please enter a note');
@@ -635,7 +640,7 @@ function PipelineNoteModal({ project, notes, onClose, onSaved }) {
     }
 
     return (
-        <Modal open onClose={onClose} title={`Pipeline Notes - ${project.project_code}`} size="lg"
+        <Modal open onClose={onClose} title={`Pipeline Notes - ${titleParts.join(' - ')}`} size="lg"
                footer={<>
                    <button className="btn-ghost" onClick={onClose}>Close</button>
                    <button className="btn-primary" disabled={saving} onClick={save}>{saving ? 'Saving...' : 'Add Note'}</button>
