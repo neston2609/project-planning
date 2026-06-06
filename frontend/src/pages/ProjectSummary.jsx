@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import api from '../api';
 import { useYear } from '../YearContext';
 import { useAuth, isPlatformRole } from '../auth';
+import useDragScroll from '../hooks/useDragScroll';
 import { baht, formatDate, pct } from '../format';
 import StatusPill from '../components/StatusPill';
 import Modal from '../components/Modal';
@@ -76,6 +77,7 @@ export default function ProjectSummary() {
     const [visibleColumns, setVisibleColumns] = useState(() => new Set(hideableColumnOptions.map(c => c.key)));
     const [attachmentModal, setAttachmentModal] = useState(null);
     const [preview, setPreview] = useState(null);
+    const tableScroll = useDragScroll();
 
     const cur = new Date().getFullYear();
     const years = useMemo(() => {
@@ -297,7 +299,9 @@ export default function ProjectSummary() {
                 </details>
             </div>
 
-            <div className="card overflow-x-auto">
+            <div ref={tableScroll.ref}
+                 className="card overflow-x-auto drag-scroll"
+                 {...tableScroll.dragScrollProps}>
                 <table className="table-clean min-w-[2200px]">
                     <thead>
                         <tr>

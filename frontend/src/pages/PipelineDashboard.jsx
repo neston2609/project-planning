@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import api from '../api';
 import Modal from '../components/Modal';
 import StatusPill from '../components/StatusPill';
+import useDragScroll from '../hooks/useDragScroll';
 import { baht, formatDate } from '../format';
 import { ChartPieIcon, CurrencyDollarIcon } from '@heroicons/react/24/outline';
 
@@ -33,12 +34,14 @@ function revenueForProject(project = {}) {
             ? (project.outsource.months || []).reduce((sum, row) => sum + num(row.revenue), 0)
             : num(project.outsource.revenue);
     }
+    const serviceRevenue = serviceMaRevenue + implementationRevenue + outsourceRevenue;
     const totalRevenue = subscriptionRevenue + perpetualRevenue + softwareMaRevenue
-        + serviceMaRevenue + implementationRevenue + outsourceRevenue;
+        + serviceRevenue;
     return {
         subscriptionRevenue,
         perpetualRevenue,
         softwareMaRevenue,
+        serviceRevenue,
         serviceMaRevenue,
         implementationRevenue,
         outsourceRevenue,
@@ -50,7 +53,9 @@ export default function PipelineDashboard() {
     const [projects, setProjects] = useState([]);
     const [notes, setNotes] = useState([]);
     const [noteProject, setNoteProject] = useState(null);
+    const [serviceBreakdown, setServiceBreakdown] = useState(null);
     const [loading, setLoading] = useState(true);
+    const tableScroll = useDragScroll();
 
     useEffect(() => {
         setLoading(true);
@@ -88,6 +93,7 @@ export default function PipelineDashboard() {
         subscriptionRevenue: sum.subscriptionRevenue + num(project.revenue?.subscriptionRevenue),
         perpetualRevenue: sum.perpetualRevenue + num(project.revenue?.perpetualRevenue),
         softwareMaRevenue: sum.softwareMaRevenue + num(project.revenue?.softwareMaRevenue),
+        serviceRevenue: sum.serviceRevenue + num(project.revenue?.serviceRevenue),
         serviceMaRevenue: sum.serviceMaRevenue + num(project.revenue?.serviceMaRevenue),
         implementationRevenue: sum.implementationRevenue + num(project.revenue?.implementationRevenue),
         outsourceRevenue: sum.outsourceRevenue + num(project.revenue?.outsourceRevenue),
@@ -96,6 +102,7 @@ export default function PipelineDashboard() {
         subscriptionRevenue: 0,
         perpetualRevenue: 0,
         softwareMaRevenue: 0,
+        serviceRevenue: 0,
         serviceMaRevenue: 0,
         implementationRevenue: 0,
         outsourceRevenue: 0,
@@ -132,8 +139,10 @@ export default function PipelineDashboard() {
                 </div>
             </div>
 
-            <div className="card overflow-x-auto">
-                <table className="table-clean min-w-[1800px]">
+            <div ref={tableScroll.ref}
+                 className="card overflow-x-auto drag-scroll"
+                 {...tableScroll.dragScrollProps}>
+                <table className="table-clean min-w-[1500px]">
                     <thead>
                         <tr>
                             <th>Project Code</th>
@@ -146,15 +155,13 @@ export default function PipelineDashboard() {
                             <th className="text-right">Subscription Revenue</th>
                             <th className="text-right">Perpetual Revenue</th>
                             <th className="text-right">Software MA Revenue</th>
-                            <th className="text-right">Service MA Revenue</th>
-                            <th className="text-right">Implementation Revenue</th>
-                            <th className="text-right">Outsource Revenue</th>
+                            <th className="text-right">Service Revenue</th>
                             <th className="text-right">Total Revenue</th>
                             <th>Note</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {loading && <tr><td colSpan={15} className="text-center text-slate-400 py-6">Loading...</td></tr>}
+                        {loading && <tr><td colSpan={13} className="text-center text-slate-400 py-6">Loading...</td></tr>}
                         {!loading && projects.map(project => {
                             const projectNotes = notesByProject.get(project.project_code) || [];
                             const revenue = project.revenue || revenueForProject(project);
@@ -170,9 +177,9 @@ export default function PipelineDashboard() {
                                     <MoneyCell value={revenue.subscriptionRevenue} />
                                     <MoneyCell value={revenue.perpetualRevenue} />
                                     <MoneyCell value={revenue.softwareMaRevenue} />
-                                    <MoneyCell value={revenue.serviceMaRevenue} />
-                                    <MoneyCell value={revenue.implementationRevenue} />
-                                    <MoneyCell value={revenue.outsourceRevenue} />
+                                    <MoneyCell value={revenue.serviceRevenue}
+                                               button
+                                               onClick={() => setServiceBreakdown({ project, revenue })} />
                                     <MoneyCell value={revenue.totalRevenue} strong />
                                     <td className="min-w-[320px] max-w-[420px]">
                                         {projectNotes.length === 0 ? (
@@ -195,7 +202,7 @@ export default function PipelineDashboard() {
                             );
                         })}
                         {!loading && projects.length === 0 && (
-                            <tr><td colSpan={15} className="text-center text-slate-400 py-6">No pipeline projects.</td></tr>
+                            <tr><td colSpan={13} className="text-center text-slate-400 py-6">No pipeline projects.</td></tr>
                         )}
                         {!loading && projects.length > 0 && (
                             <tr className="bg-slate-50 font-bold">
@@ -203,9 +210,10 @@ export default function PipelineDashboard() {
                                 <MoneyCell value={totals.subscriptionRevenue} strong />
                                 <MoneyCell value={totals.perpetualRevenue} strong />
                                 <MoneyCell value={totals.softwareMaRevenue} strong />
-                                <MoneyCell value={totals.serviceMaRevenue} strong />
-                                <MoneyCell value={totals.implementationRevenue} strong />
-                                <MoneyCell value={totals.outsourceRevenue} strong />
+                                <MoneyCell value={totals.serviceRevenue}
+                                           strong
+                                           button
+                                           onClick={() => setServiceBreakdown({ project: { project_code: 'TOTAL' }, revenue: totals })} />
                                 <MoneyCell value={totals.totalRevenue} strong />
                                 <td></td>
                             </tr>
@@ -221,15 +229,57 @@ export default function PipelineDashboard() {
                     onClose={() => setNoteProject(null)}
                 />
             )}
+            {serviceBreakdown && (
+                <ServiceRevenueModal
+                    project={serviceBreakdown.project}
+                    revenue={serviceBreakdown.revenue}
+                    onClose={() => setServiceBreakdown(null)}
+                />
+            )}
         </div>
     );
 }
 
-function MoneyCell({ value, strong = false }) {
+function MoneyCell({ value, strong = false, button = false, onClick }) {
     return (
         <td className={`text-right tabular-nums ${strong ? 'font-extrabold text-emerald-700' : ''}`}>
-            {baht(value || 0)}
+            {button ? (
+                <button type="button"
+                        className={`font-semibold underline decoration-dotted underline-offset-2 hover:text-indigo-700 ${strong ? 'text-emerald-700' : 'text-indigo-600'}`}
+                        onClick={onClick}>
+                    {baht(value || 0)}
+                </button>
+            ) : baht(value || 0)}
         </td>
+    );
+}
+
+function ServiceRevenueModal({ project, revenue, onClose }) {
+    const rows = [
+        ['Service MA Revenue', revenue.serviceMaRevenue],
+        ['Implementation Revenue', revenue.implementationRevenue],
+        ['Outsource Revenue', revenue.outsourceRevenue]
+    ];
+    return (
+        <Modal open onClose={onClose} title={`Service Revenue Detail - ${project.project_code}`} size="md"
+               footer={<button className="btn-ghost" onClick={onClose}>Close</button>}>
+            <div className="overflow-x-auto">
+                <table className="table-clean">
+                    <tbody>
+                        {rows.map(([label, value]) => (
+                            <tr key={label}>
+                                <td className="font-semibold text-slate-700">{label}</td>
+                                <td className="text-right tabular-nums font-bold">{baht(value || 0)}</td>
+                            </tr>
+                        ))}
+                        <tr className="bg-slate-50">
+                            <td className="font-extrabold text-slate-900">Service Revenue</td>
+                            <td className="text-right tabular-nums font-extrabold text-emerald-700">{baht(revenue.serviceRevenue || 0)}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </Modal>
     );
 }
 
