@@ -35,6 +35,7 @@ async function seedTenantConfig(client, tenantId) {
         ['web_search_cx', ''],
         ['announcement_enabled', 'false'],
         ['announcement_content', ''],
+        ['announcement_expires_at', ''],
         ['footer_text',           'Implemented and Maintain by BSM RPA Team. For Internal use only']
     ];
     for (const [key, value] of defaults) {

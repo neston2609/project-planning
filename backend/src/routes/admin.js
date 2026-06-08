@@ -72,6 +72,28 @@ function normalizeEndpoint(value) {
     return String(value || '').trim().replace(/\/+$/, '');
 }
 
+function todayYmd() {
+    const d = new Date();
+    return [
+        d.getFullYear(),
+        String(d.getMonth() + 1).padStart(2, '0'),
+        String(d.getDate()).padStart(2, '0')
+    ].join('-');
+}
+
+async function expireAnnouncementIfNeeded(tenantId, config) {
+    const enabled = String(config.announcement_enabled || 'false') === 'true';
+    const expiresAt = String(config.announcement_expires_at || '').trim();
+    if (!enabled || !/^\d{4}-\d{2}-\d{2}$/.test(expiresAt)) return config;
+    if (expiresAt >= todayYmd()) return config;
+    await db.query(
+        `INSERT INTO tenant_config(tenant_id, key, value) VALUES ($1, 'announcement_enabled', 'false')
+         ON CONFLICT (tenant_id, key) DO UPDATE SET value='false', updated_at=NOW()`,
+        [tenantId]
+    );
+    return { ...config, announcement_enabled: 'false' };
+}
+
 async function getTenantConfigMap(tenantId, keys) {
     const { rows } = await db.query(
         'SELECT key, value FROM tenant_config WHERE tenant_id=$1 AND key = ANY($2)',
@@ -470,7 +492,7 @@ router.get('/app-config', async (req, res) => {
         'SELECT key, value FROM tenant_config WHERE tenant_id=$1',
         [req.tenantId]
     );
-    res.json({
+    const config = {
         footer_text: DEFAULT_FOOTER_TEXT,
         login_log_retention_days: String(DEFAULT_LOGIN_LOG_RETENTION_DAYS),
         post_it_expiry_days: '30',
@@ -478,8 +500,10 @@ router.get('/app-config', async (req, res) => {
         pipeline_win_threshold_pct: '50',
         announcement_enabled: 'false',
         announcement_content: '',
+        announcement_expires_at: '',
         ...Object.fromEntries(rows.map(r => [r.key, r.value]))
-    });
+    };
+    res.json(await expireAnnouncementIfNeeded(req.tenantId, config));
 });
 
 router.put('/app-config/:key', param('key').isString(), async (req, res) => {

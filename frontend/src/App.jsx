@@ -20,6 +20,7 @@ import PipelineDashboard  from './pages/PipelineDashboard';
 import OfficeBooking      from './pages/OfficeBooking';
 import KnowledgeBase      from './pages/KnowledgeBase';
 import PostItBoard        from './pages/PostItBoard';
+import UserManual         from './pages/UserManual';
 
 import ProjectManagement from './pages/admin/ProjectManagement';
 import PipelineManagement from './pages/admin/PipelineManagement';
@@ -142,6 +143,7 @@ export default function App() {
                 <Route path="customer-information" element={<RequireMenu menuKey="customer.information"><CustomerInformation /></RequireMenu>} />
                 <Route path="license-dashboard"    element={<RequireMenu menuKey="license.dashboard"><LicenseDashboard /></RequireMenu>} />
                 <Route path="change-password"      element={<ChangePassword />} />
+                <Route path="user-manual"           element={<UserManual />} />
 
                 <Route path="admin/projects"   element={<RequireAdmin><RequireMenu menuKey="admin.projects"><ProjectManagement /></RequireMenu></RequireAdmin>} />
                 <Route path="admin/pipeline"   element={<RequireAdmin><RequireMenu menuKey="admin.pipeline"><PipelineManagement /></RequireMenu></RequireAdmin>} />

@@ -28,6 +28,8 @@ export default function AppConfigPage() {
     const [footerText, setFooterText] = useState('');
     const [announcementEnabled, setAnnouncementEnabled] = useState(false);
     const [announcementContent, setAnnouncementContent] = useState('');
+    const [announcementNoExpired, setAnnouncementNoExpired] = useState(true);
+    const [announcementExpiresAt, setAnnouncementExpiresAt] = useState('');
     const [aiProvider, setAiProvider] = useState('openai');
     const [aiApiKey, setAiApiKey] = useState('');
     const [aiEndpoint, setAiEndpoint] = useState('');
@@ -62,6 +64,8 @@ export default function AppConfigPage() {
         setFooterText(r.data.footer_text || 'Implemented and Maintain by BSM RPA Team. For Internal use only');
         setAnnouncementEnabled(String(r.data.announcement_enabled || 'false') === 'true');
         setAnnouncementContent(r.data.announcement_content || '');
+        setAnnouncementExpiresAt(r.data.announcement_expires_at || '');
+        setAnnouncementNoExpired(!r.data.announcement_expires_at);
         if (announcementEditorRef.current) announcementEditorRef.current.innerHTML = r.data.announcement_content || '';
         setAiProvider(ai.data.provider || 'openai');
         setAiApiKey(ai.data.api_key || '');
@@ -120,12 +124,17 @@ export default function AppConfigPage() {
 
     async function saveAnnouncement() {
         const content = announcementEditorRef.current?.innerHTML || announcementContent || '';
+        if (!announcementNoExpired && !announcementExpiresAt) {
+            return toast.error('Select an announcement expired date or choose No Expired');
+        }
         try {
             await Promise.all([
                 api.put('/admin/app-config/announcement_enabled', { value: announcementEnabled ? 'true' : 'false' }),
-                api.put('/admin/app-config/announcement_content', { value: content })
+                api.put('/admin/app-config/announcement_content', { value: content }),
+                api.put('/admin/app-config/announcement_expires_at', { value: announcementNoExpired ? '' : announcementExpiresAt })
             ]);
             setAnnouncementContent(content);
+            if (announcementNoExpired) setAnnouncementExpiresAt('');
             toast.success('Announcement saved');
         } catch {
             toast.error('Save failed');
@@ -470,6 +479,28 @@ export default function AppConfigPage() {
                                onChange={e => setAnnouncementEnabled(e.target.checked)} />
                         Enabled
                     </label>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                    <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600">
+                        <input type="checkbox"
+                               checked={announcementNoExpired}
+                               onChange={e => {
+                                   setAnnouncementNoExpired(e.target.checked);
+                                   if (e.target.checked) setAnnouncementExpiresAt('');
+                               }} />
+                        No Expired
+                    </label>
+                    <div>
+                        <label className="label">Expired Date</label>
+                        <input type="date"
+                               className="input"
+                               disabled={announcementNoExpired}
+                               value={announcementExpiresAt}
+                               onChange={e => {
+                                   setAnnouncementExpiresAt(e.target.value);
+                                   if (e.target.value) setAnnouncementNoExpired(false);
+                               }} />
+                    </div>
                 </div>
                 <div className="rounded-lg border border-slate-200 overflow-hidden">
                     <div className="flex flex-wrap gap-1 border-b border-slate-200 bg-slate-50 p-2">

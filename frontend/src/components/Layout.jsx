@@ -171,6 +171,7 @@ export default function Layout() {
         if (!platform) return;
         const p = location.pathname;
         if (p === '/change-password') return;
+        if (p === '/user-manual') return;
 
         if (tenantUser) {
             if (p !== '/admin/platform-dashboard' && p !== '/project-summary') {
@@ -308,6 +309,14 @@ export default function Layout() {
                             </>}
                         </div>
                         <div className="ml-auto flex items-center gap-2">
+                            <a href="/user-manual"
+                               target="_blank"
+                               rel="noopener noreferrer"
+                               className="btn-ghost !py-1.5"
+                               title="Open User Manual">
+                                <BookOpenIcon className="w-4 h-4 text-indigo-600" />
+                                <span className="hidden sm:inline">User Manual</span>
+                            </a>
                             <button type="button"
                                     className={`theme-toggle ${darkMode ? 'theme-toggle-dark' : ''}`}
                                     onClick={toggleTheme}
