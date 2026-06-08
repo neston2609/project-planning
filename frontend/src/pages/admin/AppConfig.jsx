@@ -322,7 +322,8 @@ export default function AppConfigPage() {
         <div className="space-y-4">
             <h1 className="text-2xl font-bold">App Configuration</h1>
 
-            <div className="card p-4 max-w-md space-y-3">
+            <div className="grid gap-4 xl:grid-cols-2 items-start">
+            <div className="card p-4 space-y-3">
                 <div>
                     <label className="label">Default Selected Year</label>
                     <input type="number" className="input" value={defaultYear}
@@ -332,7 +333,7 @@ export default function AppConfigPage() {
                 <button className="btn-primary" onClick={saveYear}>Save Year</button>
             </div>
 
-            <div className="card p-4 max-w-md space-y-3">
+            <div className="card p-4 space-y-3">
                 <div>
                     <label className="label">License Expiring Soon Threshold (Days)</label>
                     <input type="number" min="0" className="input" value={licenseDays}
@@ -344,7 +345,7 @@ export default function AppConfigPage() {
                 <button className="btn-primary" onClick={saveDays}>Save Threshold</button>
             </div>
 
-            <div className="card p-4 max-w-md space-y-3">
+            <div className="card p-4 space-y-3">
                 <div>
                     <label className="label">Login Logs Retention (Days)</label>
                     <input type="number" min="0" className="input" value={loginRetentionDays}
@@ -356,7 +357,7 @@ export default function AppConfigPage() {
                 <button className="btn-primary" onClick={saveLoginRetention}>Save Login Retention</button>
             </div>
 
-            <div className="card p-4 max-w-md space-y-3">
+            <div className="card p-4 space-y-3">
                 <div>
                     <label className="label">Post-It Expiry (Days)</label>
                     <input type="number" min="1" className="input" value={postItExpiryDays}
@@ -368,7 +369,7 @@ export default function AppConfigPage() {
                 <button className="btn-primary" onClick={savePostItExpiry}>Save Post-It Expiry</button>
             </div>
 
-            <div className="card p-4 max-w-md space-y-3">
+            <div className="card p-4 space-y-3">
                 <div>
                     <label className="label">Post-It Per Board</label>
                     <input type="number" min="1" max="100" className="input" value={postItBoardSize}
@@ -380,7 +381,7 @@ export default function AppConfigPage() {
                 <button className="btn-primary" onClick={savePostItBoardSize}>Save Post-It Board Size</button>
             </div>
 
-            <div className="card p-4 max-w-md space-y-3">
+            <div className="card p-4 space-y-3">
                 <div>
                     <label className="label">Pipeline % to Win Threshold</label>
                     <input type="number" min="0" max="100" step="1" className="input" value={pipelineWinThresholdPct}
@@ -392,7 +393,7 @@ export default function AppConfigPage() {
                 <button className="btn-primary" onClick={savePipelineWinThreshold}>Save Pipeline Threshold</button>
             </div>
 
-            <div className="card p-4 max-w-2xl space-y-3">
+            <div className="card p-4 space-y-3">
                 <div>
                     <label className="label">Project Attachment Document Types</label>
                     <p className="text-xs text-slate-400 mt-1">
@@ -455,7 +456,7 @@ export default function AppConfigPage() {
                 </div>
             </div>
 
-            <div className="card p-4 max-w-2xl space-y-3">
+            <div className="card p-4 space-y-3">
                 <div className="flex items-center justify-between gap-3">
                     <div>
                         <label className="label">Announcement</label>
@@ -487,7 +488,7 @@ export default function AppConfigPage() {
                 <button className="btn-primary" onClick={saveAnnouncement}>Save Announcement</button>
             </div>
 
-            <div className="card p-4 max-w-2xl space-y-3">
+            <div className="card p-4 space-y-3">
                 <div>
                     <label className="label">AI Model Configuration</label>
                     <p className="text-xs text-slate-400 mt-1">
@@ -544,7 +545,7 @@ export default function AppConfigPage() {
                 </div>
             </div>
 
-            <div className="card p-4 max-w-2xl space-y-3">
+            <div className="card p-4 space-y-3">
                 <div>
                     <label className="label">Web Search Configuration</label>
                     <p className="text-xs text-slate-400 mt-1">
@@ -590,7 +591,7 @@ export default function AppConfigPage() {
                 <button className="btn-primary" onClick={saveWebSearchConfig}>Save Web Search Configuration</button>
             </div>
 
-            <div className="card p-4 max-w-2xl space-y-3">
+            <div className="card p-4 space-y-3">
                 <div>
                     <label className="label">Footer Text</label>
                     <textarea className="input" rows={3} value={footerText}
@@ -600,6 +601,7 @@ export default function AppConfigPage() {
                     </p>
                 </div>
                 <button className="btn-primary" onClick={saveFooter}>Save Footer</button>
+            </div>
             </div>
         </div>
     );
