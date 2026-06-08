@@ -162,6 +162,69 @@ async function projectCodeInTenant(projectId, tenantId) {
     return r.rows[0]?.project_code || null;
 }
 
+function dateDiffDays(from, to) {
+    if (!from || !to) return 0;
+    const a = new Date(`${String(from).slice(0, 10)}T00:00:00Z`);
+    const b = new Date(`${String(to).slice(0, 10)}T00:00:00Z`);
+    if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return 0;
+    return Math.round((b.getTime() - a.getTime()) / 86400000);
+}
+
+async function shiftProjectDetailDates(client, projectId, startDelta, endDelta) {
+    if (startDelta) {
+        await client.query(
+            `UPDATE project_subscriptions
+                SET license_start_date = license_start_date + $1::int
+              WHERE project_id=$2 AND license_start_date IS NOT NULL`,
+            [startDelta, projectId]
+        );
+        await client.query(
+            `UPDATE project_perpetual_ma
+                SET start_date = start_date + $1::int
+              WHERE project_id=$2 AND start_date IS NOT NULL`,
+            [startDelta, projectId]
+        );
+        await client.query(
+            `UPDATE project_service_ma
+                SET start_date = start_date + $1::int
+              WHERE project_id=$2 AND start_date IS NOT NULL`,
+            [startDelta, projectId]
+        );
+        await client.query(
+            `UPDATE project_outsource
+                SET start_date = start_date + $1::int
+              WHERE project_id=$2 AND start_date IS NOT NULL`,
+            [startDelta, projectId]
+        );
+    }
+    if (endDelta) {
+        await client.query(
+            `UPDATE project_subscriptions
+                SET license_end_date = license_end_date + $1::int
+              WHERE project_id=$2 AND license_end_date IS NOT NULL`,
+            [endDelta, projectId]
+        );
+        await client.query(
+            `UPDATE project_perpetual_ma
+                SET end_date = end_date + $1::int
+              WHERE project_id=$2 AND end_date IS NOT NULL`,
+            [endDelta, projectId]
+        );
+        await client.query(
+            `UPDATE project_service_ma
+                SET end_date = end_date + $1::int
+              WHERE project_id=$2 AND end_date IS NOT NULL`,
+            [endDelta, projectId]
+        );
+        await client.query(
+            `UPDATE project_outsource
+                SET end_date = end_date + $1::int
+              WHERE project_id=$2 AND end_date IS NOT NULL`,
+            [endDelta, projectId]
+        );
+    }
+}
+
 /** True if customerId is null/absent, or belongs to `tenantId`. */
 async function customerInTenant(customerId, tenantId) {
     if (customerId == null) return true;
@@ -404,7 +467,7 @@ router.put('/:id', param('id').isInt(), projValidators, async (req, res) => {
     try {
         await client.query('BEGIN');
         const before = await client.query(
-            'SELECT project_code FROM projects WHERE id=$1 AND tenant_id=$2 FOR UPDATE',
+            'SELECT project_code, project_start_date, project_end_date FROM projects WHERE id=$1 AND tenant_id=$2 FOR UPDATE',
             [req.params.id, req.tenantId]
         );
         if (!before.rows[0]) {
@@ -428,6 +491,9 @@ router.put('/:id', param('id').isInt(), projValidators, async (req, res) => {
             return res.status(404).json({ error: 'Not found' });
         }
         const projectCode = rows[0].project_code;
+        const startDelta = dateDiffDays(before.rows[0].project_start_date, rows[0].project_start_date);
+        const endDelta = dateDiffDays(before.rows[0].project_end_date, rows[0].project_end_date);
+        await shiftProjectDetailDates(client, req.params.id, startDelta, endDelta);
         await client.query('UPDATE project_subscriptions SET erp_code=$1 WHERE project_id=$2', [projectCode, req.params.id]);
         await client.query('UPDATE project_perpetual_ma SET erp_code=$1 WHERE project_id=$2', [projectCode, req.params.id]);
         await client.query('UPDATE project_service_ma SET erp_code=$1 WHERE project_id=$2', [projectCode, req.params.id]);
