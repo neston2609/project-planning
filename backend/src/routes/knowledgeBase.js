@@ -18,7 +18,7 @@ router.use(requireAuth, requireTenant);
 const DEFAULT_CATEGORIES = ['Knowledge', 'Troubleshooting'];
 const DEFAULT_PRODUCTS = ['UiPath', 'Kryon'];
 const DEFAULT_VERSION_LIMIT = 20;
-const DEFAULT_ATTACHMENT_LIMIT_MB = 5;
+const DEFAULT_ATTACHMENT_LIMIT_MB = 50;
 const AI_CONFIG_KEYS = ['ai_provider', 'ai_api_key', 'ai_endpoint', 'ai_model'];
 
 function cleanString(value, max = 255) {
@@ -473,7 +473,7 @@ router.put('/config/version-limit',
 
 router.put('/config/attachment-limit',
     requireRole('admin', 'superadmin'),
-    body('value').isFloat({ min: 1, max: 10 }),
+    body('value').isFloat({ min: 1, max: 50 }),
     async (req, res) => {
         const errs = validationResult(req);
         if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });

@@ -34,7 +34,7 @@ export default function KnowledgeBase() {
     const loc = useLocation();
     const nav = useNavigate();
     const [articles, setArticles] = useState([]);
-    const [config, setConfig] = useState({ categories: [], products: [], version_limit: 20, attachment_limit_mb: 5 });
+    const [config, setConfig] = useState({ categories: [], products: [], version_limit: 20, attachment_limit_mb: 50 });
     const [search, setSearch] = useState('');
     const [aiSearch, setAiSearch] = useState(false);
     const [aiMeta, setAiMeta] = useState(null);
@@ -535,7 +535,7 @@ function ArticleForm({ initial, config, articles, onClose, onSave }) {
     const attachRef = useRef(null);
     const [selectedImage, setSelectedImage] = useState(null);
     const [imageBox, setImageBox] = useState(null);
-    const attachmentLimitMb = Number(config.attachment_limit_mb || 5);
+    const attachmentLimitMb = Number(config.attachment_limit_mb || 50);
     const attachmentLimitBytes = attachmentLimitMb * 1024 * 1024;
 
     useEffect(() => {

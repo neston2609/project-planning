@@ -190,7 +190,7 @@ async function bootstrap() {
                         : key === 'kb_version_limit'
                             ? '20'
                             : key === 'kb_attachment_limit_mb'
-                                ? '5'
+                                ? '50'
                                 : key === 'post_it_expiry_days'
                                     ? '30'
                                     : key === 'post_it_board_size'

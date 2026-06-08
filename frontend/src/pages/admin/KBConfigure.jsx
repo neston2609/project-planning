@@ -7,7 +7,7 @@ export default function KBConfigure() {
     const [categories, setCategories] = useState([]);
     const [products, setProducts] = useState([]);
     const [versionLimit, setVersionLimit] = useState(20);
-    const [attachmentLimit, setAttachmentLimit] = useState(5);
+    const [attachmentLimit, setAttachmentLimit] = useState(50);
     const [categoryName, setCategoryName] = useState('');
     const [productName, setProductName] = useState('');
 
@@ -16,7 +16,7 @@ export default function KBConfigure() {
         setCategories(res.data.categories || []);
         setProducts(res.data.products || []);
         setVersionLimit(res.data.version_limit ?? 20);
-        setAttachmentLimit(res.data.attachment_limit_mb ?? 5);
+        setAttachmentLimit(res.data.attachment_limit_mb ?? 50);
     }
 
     useEffect(() => { load(); }, []);
@@ -35,7 +35,7 @@ export default function KBConfigure() {
 
     async function saveAttachmentLimit() {
         const n = Number(attachmentLimit);
-        if (!Number.isFinite(n) || n < 1 || n > 10) return toast.error('Attachment limit must be between 1 and 10 MB');
+        if (!Number.isFinite(n) || n < 1 || n > 50) return toast.error('Attachment limit must be between 1 and 50 MB');
         try {
             const res = await api.put('/knowledge-base/config/attachment-limit', { value: n });
             setAttachmentLimit(res.data.attachment_limit_mb);
@@ -104,10 +104,10 @@ export default function KBConfigure() {
                 <div className="card p-4 space-y-3">
                     <div>
                         <label className="label">Attachment File Limit (MB)</label>
-                        <input className="input" type="number" min="1" max="10" step="0.5"
+                        <input className="input" type="number" min="1" max="50" step="0.5"
                                value={attachmentLimit}
                                onChange={e => setAttachmentLimit(e.target.value)} />
-                        <p className="text-xs text-slate-400 mt-1">Default 5 MB per file. Maximum 10 MB per file.</p>
+                        <p className="text-xs text-slate-400 mt-1">Default 50 MB per file. Maximum 50 MB per file.</p>
                     </div>
                     <button className="btn-primary" onClick={saveAttachmentLimit}>Save Attachment Limit</button>
                 </div>
