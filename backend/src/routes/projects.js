@@ -8,8 +8,10 @@ const { cleanAiProvider, normalizeEndpoint, runAiPrompt } = require('../utils/ai
 const {
     listProjectAttachments,
     saveProjectAttachmentStream,
+    PROJECT_ATTACHMENT_MAX_BYTES,
     getProjectAttachment,
     deleteProjectAttachment,
+    updateProjectAttachmentType,
     sendProjectAttachment
 } = require('../utils/projectAttachments');
 const { DEFAULT_PIPELINE_WIN_PCT, normalizePercent } = require('../utils/pipeline');
@@ -468,17 +470,28 @@ router.post('/:id/attachments',
     async (req, res) => {
         const errs = validationResult(req);
         if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
-        const saved = await saveProjectAttachmentStream(db, {
-            tenantId: req.tenantId,
-            projectId: req.params.id,
-            userId: req.user?.uid,
-            documentTypeId: Number(req.query.document_type_id || req.headers['x-document-type-id'] || 0) || null,
-            originalName: req.query.filename || req.headers['x-file-name'],
-            mimeType: req.headers['x-file-type'] || req.headers['content-type'],
-            stream: req
-        });
-        if (!saved) return res.status(404).json({ error: 'Not found' });
-        res.status(201).json(saved);
+        const declaredSize = Number(req.headers['content-length'] || 0);
+        if (declaredSize > PROJECT_ATTACHMENT_MAX_BYTES) {
+            return res.status(413).json({ error: 'Project attachment must be 50 MB or smaller' });
+        }
+        try {
+            const saved = await saveProjectAttachmentStream(db, {
+                tenantId: req.tenantId,
+                projectId: req.params.id,
+                userId: req.user?.uid,
+                documentTypeId: Number(req.query.document_type_id || req.headers['x-document-type-id'] || 0) || null,
+                originalName: req.query.filename || req.headers['x-file-name'],
+                mimeType: req.headers['x-file-type'] || req.headers['content-type'],
+                stream: req
+            });
+            if (!saved) return res.status(404).json({ error: 'Not found' });
+            res.status(201).json(saved);
+        } catch (err) {
+            if (err.statusCode === 413) {
+                return res.status(413).json({ error: err.message || 'Project attachment must be 50 MB or smaller' });
+            }
+            throw err;
+        }
     }
 );
 
@@ -499,6 +512,23 @@ router.delete('/attachments/:attachmentId', param('attachmentId').isInt(), async
     if (!ok) return res.status(404).json({ error: 'Attachment not found' });
     res.json({ ok: true });
 });
+
+router.put('/attachments/:attachmentId/category',
+    param('attachmentId').isInt(),
+    body('document_type_id').optional({ nullable: true, checkFalsy: true }).isInt(),
+    async (req, res) => {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+        const updated = await updateProjectAttachmentType(
+            db,
+            req.params.attachmentId,
+            req.tenantId,
+            Number(req.body.document_type_id || 0) || null
+        );
+        if (!updated) return res.status(404).json({ error: 'Attachment not found' });
+        res.json(updated);
+    }
+);
 
 // ---------- Subscription tab ----------
 router.put('/:id/subscription', param('id').isInt(), async (req, res) => {

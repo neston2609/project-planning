@@ -414,6 +414,7 @@ export default function AppConfigPage() {
                         <tbody>
                             {documentTypes.map(item => {
                                 const editing = editingDocumentType === item.id;
+                                const isGeneral = item.name === 'General';
                                 return (
                                     <tr key={item.id}>
                                         <td>
@@ -438,8 +439,8 @@ export default function AppConfigPage() {
                                                 </>
                                             ) : (
                                                 <>
-                                                    <button className="btn-ghost" onClick={() => beginEditDocumentType(item)}>Edit</button>
-                                                    <button className="btn-ghost text-red-600" onClick={() => deleteDocumentType(item)}>Delete</button>
+                                                    <button className="btn-ghost" disabled={isGeneral} onClick={() => beginEditDocumentType(item)}>Edit</button>
+                                                    <button className="btn-ghost text-red-600" disabled={isGeneral} onClick={() => deleteDocumentType(item)}>Delete</button>
                                                 </>
                                             )}
                                         </td>

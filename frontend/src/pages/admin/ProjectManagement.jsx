@@ -10,6 +10,9 @@ import {
     ArrowsUpDownIcon, PaperClipIcon, ArrowDownTrayIcon, EyeIcon
 } from '@heroicons/react/24/outline';
 
+const PROJECT_ATTACHMENT_MAX_BYTES = 50 * 1024 * 1024;
+const PROJECT_ATTACHMENT_MAX_MB = 50;
+
 function fileSize(bytes) {
     const n = Number(bytes || 0);
     if (n < 1024) return `${n} B`;
@@ -40,6 +43,9 @@ async function downloadAttachment(url, fileName) {
 }
 
 async function uploadProjectAttachment(projectId, file, documentTypeId) {
+    if (file.size > PROJECT_ATTACHMENT_MAX_BYTES) {
+        throw new Error(`${file.name} is larger than ${PROJECT_ATTACHMENT_MAX_MB} MB`);
+    }
     const params = new URLSearchParams({ filename: file.name });
     if (documentTypeId) params.set('document_type_id', String(documentTypeId));
     return api.post(`/projects/${projectId}/attachments?${params.toString()}`, file, {
@@ -51,6 +57,18 @@ async function uploadProjectAttachment(projectId, file, documentTypeId) {
         },
         timeout: 0
     });
+}
+
+function validProjectAttachmentFiles(files) {
+    const valid = [];
+    for (const file of files) {
+        if (file.size > PROJECT_ATTACHMENT_MAX_BYTES) {
+            toast.error(`${file.name} is larger than ${PROJECT_ATTACHMENT_MAX_MB} MB`);
+        } else {
+            valid.push(file);
+        }
+    }
+    return valid;
 }
 
 export default function ProjectManagement() {
@@ -254,7 +272,7 @@ function CreateProjectModal({ customers, documentTypes, onClose, onCreated }) {
     }
 
     function chooseAttachments(e) {
-        const selected = Array.from(e.target.files || []);
+        const selected = validProjectAttachmentFiles(Array.from(e.target.files || []));
         e.target.value = '';
         if (selected.length === 0) return;
         setAttachments(prev => [...prev, ...selected]);
@@ -285,7 +303,7 @@ function CreateProjectModal({ customers, documentTypes, onClose, onCreated }) {
             }
             onCreated(r.data.id);
         } catch (err) {
-            toast.error(err.response?.data?.error || 'Create failed');
+            toast.error(err.response?.data?.error || err.message || 'Create failed');
         } finally { setBusy(false); }
     }
 
@@ -479,6 +497,7 @@ function ProjectAttachmentsPanel({ project, documentTypes }) {
     const [files, setFiles] = useState([]);
     const [loading, setLoading] = useState(true);
     const [uploading, setUploading] = useState(false);
+    const [updatingCategoryId, setUpdatingCategoryId] = useState(null);
     const [preview, setPreview] = useState(null);
     const [documentTypeId, setDocumentTypeId] = useState(() => defaultDocumentTypeId(documentTypes));
 
@@ -500,7 +519,7 @@ function ProjectAttachmentsPanel({ project, documentTypes }) {
     }, [documentTypes, documentTypeId]);
 
     async function upload(e) {
-        const selected = Array.from(e.target.files || []);
+        const selected = validProjectAttachmentFiles(Array.from(e.target.files || []));
         e.target.value = '';
         if (selected.length === 0) return;
         setUploading(true);
@@ -511,7 +530,7 @@ function ProjectAttachmentsPanel({ project, documentTypes }) {
             toast.success(`Uploaded ${selected.length} file(s)`);
             await load();
         } catch (err) {
-            toast.error(err.response?.data?.error || 'Upload failed');
+            toast.error(err.response?.data?.error || err.message || 'Upload failed');
         } finally {
             setUploading(false);
         }
@@ -525,6 +544,21 @@ function ProjectAttachmentsPanel({ project, documentTypes }) {
             await load();
         } catch (err) {
             toast.error(err.response?.data?.error || 'Delete failed');
+        }
+    }
+
+    async function changeCategory(file, nextTypeId) {
+        setUpdatingCategoryId(file.id);
+        try {
+            await api.put(`/projects/attachments/${file.id}/category`, {
+                document_type_id: nextTypeId || null
+            });
+            toast.success('Attachment category updated');
+            await load();
+        } catch (err) {
+            toast.error(err.response?.data?.error || err.response?.data?.errors?.[0]?.msg || 'Update category failed');
+        } finally {
+            setUpdatingCategoryId(null);
         }
     }
 
@@ -570,6 +604,13 @@ function ProjectAttachmentsPanel({ project, documentTypes }) {
                                 <div className="font-semibold text-sm truncate">{file.original_name}</div>
                                 <div className="text-xs text-slate-400">{file.document_type_name || 'General'} - {fileSize(file.file_size)} - {file.mime_type || 'application/octet-stream'}</div>
                             </div>
+                            <select className="input !w-40 !py-1.5 text-xs"
+                                    title="Attachment category"
+                                    disabled={updatingCategoryId === file.id || uploading}
+                                    value={file.document_type_id || defaultDocumentTypeId(documentTypes)}
+                                    onChange={e => changeCategory(file, e.target.value)}>
+                                {normalizedDocumentTypes(documentTypes).map(t => <option key={t.id || t.name} value={t.id}>{t.name}</option>)}
+                            </select>
                             {canPreview(file) && (
                                 <button className="btn-ghost !p-2" title="Preview" onClick={() => openPreview(file)}>
                                     <EyeIcon className="w-4 h-4 text-indigo-600" />

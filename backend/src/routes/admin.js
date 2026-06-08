@@ -588,6 +588,14 @@ router.put('/project-attachment-types/:id',
         const errs = validationResult(req);
         if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
         try {
+            const current = await db.query(
+                `SELECT name FROM project_attachment_types WHERE id=$1 AND tenant_id=$2`,
+                [req.params.id, req.tenantId]
+            );
+            if (!current.rows[0]) return res.status(404).json({ error: 'Document type not found' });
+            if (current.rows[0].name === 'General') {
+                return res.status(400).json({ error: 'General document type cannot be renamed' });
+            }
             const { rows } = await db.query(
                 `UPDATE project_attachment_types
                     SET name=$1, updated_at=NOW()
@@ -613,22 +621,18 @@ router.delete('/project-attachment-types/:id', param('id').isInt(), async (req, 
         [req.tenantId]
     );
     const fallbackId = fallback.rows[0]?.id || null;
+    if (fallbackId && Number(fallbackId) === Number(req.params.id)) {
+        return res.status(400).json({ error: 'General document type cannot be deleted' });
+    }
     const client = await db.getClient();
     try {
         await client.query('BEGIN');
-        if (fallbackId && Number(fallbackId) !== Number(req.params.id)) {
+        if (fallbackId) {
             await client.query(
                 `UPDATE project_attachments
                     SET document_type_id=$1
                   WHERE tenant_id=$2 AND document_type_id=$3`,
                 [fallbackId, req.tenantId, req.params.id]
-            );
-        } else {
-            await client.query(
-                `UPDATE project_attachments
-                    SET document_type_id=NULL
-                  WHERE tenant_id=$1 AND document_type_id=$2`,
-                [req.tenantId, req.params.id]
             );
         }
         const { rowCount } = await client.query(

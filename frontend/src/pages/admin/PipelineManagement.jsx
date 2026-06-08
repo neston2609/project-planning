@@ -13,6 +13,8 @@ import {
 } from '@heroicons/react/24/outline';
 
 const CREATE_NEW_CUSTOMER = '__create_new_customer__';
+const PROJECT_ATTACHMENT_MAX_BYTES = 50 * 1024 * 1024;
+const PROJECT_ATTACHMENT_MAX_MB = 50;
 
 function addMonths(date, months) {
     const d = new Date(date.getFullYear(), date.getMonth() + months, date.getDate());
@@ -191,6 +193,9 @@ async function parseBudgetFile(file, customers) {
 }
 
 async function uploadProjectAttachment(projectId, file, documentTypeId) {
+    if (file.size > PROJECT_ATTACHMENT_MAX_BYTES) {
+        throw new Error(`${file.name} is larger than ${PROJECT_ATTACHMENT_MAX_MB} MB`);
+    }
     const params = new URLSearchParams({ filename: file.name });
     if (documentTypeId) params.set('document_type_id', String(documentTypeId));
     return api.post(`/projects/${projectId}/attachments?${params.toString()}`, file, {
@@ -388,6 +393,9 @@ function PipelineModal({ customers, documentTypes, onClose, onCreated }) {
         const selected = e.target.files?.[0];
         e.target.value = '';
         if (!selected) return;
+        if (selected.size > PROJECT_ATTACHMENT_MAX_BYTES) {
+            return toast.error(`${selected.name} is larger than ${PROJECT_ATTACHMENT_MAX_MB} MB`);
+        }
         setFile(selected);
         setAnalyzing(true);
         try {
@@ -511,7 +519,7 @@ function PipelineModal({ customers, documentTypes, onClose, onCreated }) {
             toast.success('Pipeline project created');
             onCreated(id);
         } catch (err) {
-            toast.error(err.response?.data?.error || err.response?.data?.errors?.[0]?.msg || 'Create failed');
+            toast.error(err.response?.data?.error || err.response?.data?.errors?.[0]?.msg || err.message || 'Create failed');
         } finally {
             setSaving(false);
         }

@@ -6,6 +6,13 @@ const { Transform } = require('stream');
 const { pipeline } = require('stream/promises');
 
 const ROOT = path.resolve(__dirname, '..', '..', 'uploads', 'project_attachments');
+const PROJECT_ATTACHMENT_MAX_BYTES = 50 * 1024 * 1024;
+
+function fileLimitError() {
+    const err = new Error('Project attachment must be 50 MB or smaller');
+    err.statusCode = 413;
+    return err;
+}
 
 function cleanFileName(value) {
     return String(value || 'attachment')
@@ -73,6 +80,7 @@ async function saveProjectAttachmentStream(db, { tenantId, projectId, userId, do
     const counter = new Transform({
         transform(chunk, _encoding, callback) {
             size += chunk.length;
+            if (size > PROJECT_ATTACHMENT_MAX_BYTES) return callback(fileLimitError());
             callback(null, chunk);
         }
     });
@@ -124,6 +132,18 @@ async function deleteProjectAttachment(db, attachmentId, tenantId) {
     return true;
 }
 
+async function updateProjectAttachmentType(db, attachmentId, tenantId, documentTypeId) {
+    const typeId = await attachmentTypeInTenant(db, documentTypeId, tenantId);
+    const { rows } = await db.query(
+        `UPDATE project_attachments
+            SET document_type_id=$1
+          WHERE id=$2 AND tenant_id=$3
+          RETURNING id, project_id, document_type_id, original_name, mime_type, file_size, created_at`,
+        [typeId, attachmentId, tenantId]
+    );
+    return rows[0] || null;
+}
+
 function contentDispositionName(name) {
     return encodeURIComponent(name);
 }
@@ -141,10 +161,12 @@ function sendProjectAttachment(res, row, inline = false) {
 }
 
 module.exports = {
+    PROJECT_ATTACHMENT_MAX_BYTES,
     ensureProjectInTenant,
     listProjectAttachments,
     saveProjectAttachmentStream,
     getProjectAttachment,
     deleteProjectAttachment,
+    updateProjectAttachmentType,
     sendProjectAttachment
 };
