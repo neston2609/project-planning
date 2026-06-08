@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import * as XLSX from 'xlsx';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import { useYear } from '../../YearContext';
@@ -7,7 +8,7 @@ import Modal from '../../components/Modal';
 import { baht, formatDate } from '../../format';
 import {
     PencilSquareIcon, TrashIcon, PlusIcon, MagnifyingGlassIcon, FunnelIcon,
-    ArrowsUpDownIcon, PaperClipIcon, ArrowDownTrayIcon, EyeIcon
+    ArrowsUpDownIcon, PaperClipIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, EyeIcon
 } from '@heroicons/react/24/outline';
 
 const PROJECT_ATTACHMENT_MAX_BYTES = 50 * 1024 * 1024;
@@ -71,6 +72,321 @@ function validProjectAttachmentFiles(files) {
     return valid;
 }
 
+function exportDate(value) {
+    return formatDate(value) || '';
+}
+
+function moneyValue(value) {
+    const n = Number(value || 0);
+    return Number.isFinite(n) ? n : 0;
+}
+
+function appendSheet(workbook, name, rows, widths = []) {
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    if (widths.length) worksheet['!cols'] = widths.map(wch => ({ wch }));
+    XLSX.utils.book_append_sheet(workbook, worksheet, name);
+}
+
+function asString(value) {
+    return String(value ?? '').trim();
+}
+
+function asNumber(value) {
+    if (value === '' || value == null) return 0;
+    const n = Number(String(value).replace(/,/g, ''));
+    return Number.isFinite(n) ? n : 0;
+}
+
+function normalizeImportDate(value) {
+    if (!value) return '';
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+    if (typeof value === 'number') {
+        const parsed = XLSX.SSF.parse_date_code(value);
+        if (parsed) {
+            return `${parsed.y}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
+        }
+    }
+    return formatDate(value) || asString(value).slice(0, 10);
+}
+
+function sheetRows(workbook, name) {
+    const sheet = workbook.Sheets[name];
+    return sheet ? XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false }) : [];
+}
+
+function importWorkbook(workbook) {
+    const projects = new Map();
+    const ensure = (code) => {
+        const key = asString(code);
+        if (!key) return null;
+        if (!projects.has(key)) {
+            projects.set(key, {
+                project_code: key,
+                master: null,
+                subscription: null,
+                perpetual_ma: [],
+                service_ma: [],
+                implementation: null,
+                outsource: null,
+                outsource_monthly: []
+            });
+        }
+        return projects.get(key);
+    };
+
+    for (const row of sheetRows(workbook, 'Projects')) {
+        const project = ensure(row['Project Code']);
+        if (!project) continue;
+        project.master = {
+            project_code: project.project_code,
+            description: asString(row.Description),
+            customer_name: asString(row.Customer),
+            status: asString(row.Status) || 'Pipeline',
+            pipeline_win_pct: row['% to Win'] === '' ? 50 : asNumber(row['% to Win']),
+            project_start_date: normalizeImportDate(row['Start Date']),
+            project_end_date: normalizeImportDate(row['End Date']),
+            pipeline_target_date: normalizeImportDate(row['Pipeline Target Date']),
+            note: asString(row.Note)
+        };
+    }
+    for (const row of sheetRows(workbook, 'Subscription')) {
+        const project = ensure(row['Project Code']);
+        if (!project) continue;
+        project.subscription = {
+            license_name: asString(row['License Name']),
+            license_start_date: normalizeImportDate(row['Start Date']),
+            license_end_date: normalizeImportDate(row['End Date']),
+            license_revenue: asNumber(row.Revenue),
+            license_cost: asNumber(row.Cost)
+        };
+    }
+    for (const row of sheetRows(workbook, 'Perpetual SW MA')) {
+        const project = ensure(row['Project Code']);
+        if (!project) continue;
+        project.perpetual_ma.push({
+            item_name: asString(row['Item Name']),
+            item_type: asString(row.Type) || 'License',
+            start_date: normalizeImportDate(row['Start Date']),
+            end_date: normalizeImportDate(row['End Date']),
+            revenue: asNumber(row.Revenue),
+            cost: asNumber(row.Cost)
+        });
+    }
+    for (const row of sheetRows(workbook, 'Service MA')) {
+        const project = ensure(row['Project Code']);
+        if (!project) continue;
+        project.service_ma.push({
+            description: asString(row.Description),
+            start_date: normalizeImportDate(row['Start Date']),
+            end_date: normalizeImportDate(row['End Date']),
+            revenue: asNumber(row.Revenue),
+            cost: asNumber(row.Cost)
+        });
+    }
+    for (const row of sheetRows(workbook, 'Implementation')) {
+        const project = ensure(row['Project Code']);
+        if (!project) continue;
+        project.implementation = {
+            description: asString(row.Description),
+            progress_last_year_pct: asNumber(row['Progress Last Year']),
+            progress_this_year_pct: asNumber(row['Progress This Year']),
+            revenue: asNumber(row.Revenue),
+            cost: asNumber(row.Cost)
+        };
+    }
+    for (const row of sheetRows(workbook, 'Outsource')) {
+        const project = ensure(row['Project Code']);
+        if (!project) continue;
+        project.outsource = {
+            outsource_type: asString(row.Type) || 'Man-Year',
+            description: asString(row.Description),
+            start_date: normalizeImportDate(row['Start Date']),
+            end_date: normalizeImportDate(row['End Date']),
+            revenue: asNumber(row.Revenue),
+            cost: asNumber(row.Cost),
+            months: []
+        };
+    }
+    for (const row of sheetRows(workbook, 'Outsource Monthly')) {
+        const project = ensure(row['Project Code']);
+        if (!project) continue;
+        project.outsource_monthly.push({
+            year: Number(row.Year || 0),
+            month: Number(row.Month || 0),
+            revenue: asNumber(row.Revenue),
+            cost: asNumber(row.Cost)
+        });
+    }
+
+    for (const project of projects.values()) {
+        if (!project.master) {
+            project.master = {
+                project_code: project.project_code,
+                description: '',
+                customer_name: '',
+                status: 'Pipeline',
+                pipeline_win_pct: 50,
+                project_start_date: '',
+                project_end_date: '',
+                pipeline_target_date: '',
+                note: ''
+            };
+        }
+        if (project.outsource) project.outsource.months = project.outsource_monthly;
+    }
+    return Array.from(projects.values());
+}
+
+function sameValue(a, b) {
+    return String(a ?? '') === String(b ?? '');
+}
+
+function addFieldChange(changes, label, current, next) {
+    if (!sameValue(current, next)) {
+        changes.push(`${label}: "${current || '-'}" -> "${next || '-'}"`);
+    }
+}
+
+function diffObject(changes, scope, current, next, fields) {
+    const before = current || {};
+    const after = next || {};
+    for (const [key, label] of fields) {
+        addFieldChange(changes, `${scope} ${label}`, before[key], after[key]);
+    }
+}
+
+function diffRows(changes, scope, currentRows, nextRows, fields) {
+    const max = Math.max(currentRows.length, nextRows.length);
+    for (let i = 0; i < max; i += 1) {
+        const before = currentRows[i];
+        const after = nextRows[i];
+        if (!before && after) {
+            changes.push(`${scope} row ${i + 1}: add ${JSON.stringify(after)}`);
+        } else if (before && !after) {
+            changes.push(`${scope} row ${i + 1}: remove ${JSON.stringify(before)}`);
+        } else if (before && after) {
+            diffObject(changes, `${scope} row ${i + 1}`, before, after, fields);
+        }
+    }
+}
+
+function buildImportDiff(current, imported) {
+    const changes = [];
+    const master = imported.master;
+    const currentSubscription = current?.subscription ? {
+        ...current.subscription,
+        license_start_date: exportDate(current.subscription.license_start_date),
+        license_end_date: exportDate(current.subscription.license_end_date),
+        license_revenue: moneyValue(current.subscription.license_revenue),
+        license_cost: moneyValue(current.subscription.license_cost)
+    } : null;
+    const currentPerpetual = (current?.perpetual_ma || []).map(row => ({
+        ...row,
+        start_date: exportDate(row.start_date),
+        end_date: exportDate(row.end_date),
+        revenue: moneyValue(row.revenue),
+        cost: moneyValue(row.cost)
+    }));
+    const currentServiceMa = (current?.service_ma || []).map(row => ({
+        ...row,
+        start_date: exportDate(row.start_date),
+        end_date: exportDate(row.end_date),
+        revenue: moneyValue(row.revenue),
+        cost: moneyValue(row.cost)
+    }));
+    const currentImplementation = current?.implementation ? {
+        ...current.implementation,
+        progress_last_year_pct: moneyValue(current.implementation.progress_last_year_pct),
+        progress_this_year_pct: moneyValue(current.implementation.progress_this_year_pct),
+        revenue: moneyValue(current.implementation.revenue),
+        cost: moneyValue(current.implementation.cost)
+    } : null;
+    const currentOutsource = current?.outsource ? {
+        ...current.outsource,
+        start_date: exportDate(current.outsource.start_date),
+        end_date: exportDate(current.outsource.end_date),
+        revenue: moneyValue(current.outsource.revenue),
+        cost: moneyValue(current.outsource.cost)
+    } : null;
+    const currentOutsourceMonthly = (current?.outsource?.months || []).map(row => ({
+        ...row,
+        year: Number(row.year || 0),
+        month: Number(row.month || 0),
+        revenue: moneyValue(row.revenue),
+        cost: moneyValue(row.cost)
+    }));
+    if (!current) {
+        changes.push('Project will be created');
+    } else {
+        diffObject(changes, 'Project', {
+            project_code: current.project_code || '',
+            description: current.description || '',
+            customer_name: current.customer_alias || '',
+            status: current.status || '',
+            pipeline_win_pct: current.status === 'Pipeline' ? Number(current.pipeline_win_pct ?? 50) : '',
+            project_start_date: exportDate(current.project_start_date),
+            project_end_date: exportDate(current.project_end_date),
+            pipeline_target_date: exportDate(current.pipeline_target_date),
+            note: current.note || ''
+        }, master, [
+            ['project_code', 'Code'],
+            ['description', 'Description'],
+            ['customer_name', 'Customer'],
+            ['status', 'Status'],
+            ['pipeline_win_pct', '% to Win'],
+            ['project_start_date', 'Start Date'],
+            ['project_end_date', 'End Date'],
+            ['pipeline_target_date', 'Pipeline Target Date'],
+            ['note', 'Note']
+        ]);
+    }
+
+    diffObject(changes, 'Subscription', currentSubscription, imported.subscription, [
+        ['license_name', 'License Name'],
+        ['license_start_date', 'Start Date'],
+        ['license_end_date', 'End Date'],
+        ['license_revenue', 'Revenue'],
+        ['license_cost', 'Cost']
+    ]);
+    diffRows(changes, 'Perpetual SW MA', currentPerpetual, imported.perpetual_ma, [
+        ['item_name', 'Item Name'],
+        ['item_type', 'Type'],
+        ['start_date', 'Start Date'],
+        ['end_date', 'End Date'],
+        ['revenue', 'Revenue'],
+        ['cost', 'Cost']
+    ]);
+    diffRows(changes, 'Service MA', currentServiceMa, imported.service_ma, [
+        ['description', 'Description'],
+        ['start_date', 'Start Date'],
+        ['end_date', 'End Date'],
+        ['revenue', 'Revenue'],
+        ['cost', 'Cost']
+    ]);
+    diffObject(changes, 'Implementation', currentImplementation, imported.implementation, [
+        ['description', 'Description'],
+        ['progress_last_year_pct', 'Progress Last Year'],
+        ['progress_this_year_pct', 'Progress This Year'],
+        ['revenue', 'Revenue'],
+        ['cost', 'Cost']
+    ]);
+    diffObject(changes, 'Outsource', currentOutsource, imported.outsource, [
+        ['outsource_type', 'Type'],
+        ['description', 'Description'],
+        ['start_date', 'Start Date'],
+        ['end_date', 'End Date'],
+        ['revenue', 'Revenue'],
+        ['cost', 'Cost']
+    ]);
+    diffRows(changes, 'Outsource Monthly', currentOutsourceMonthly, imported.outsource_monthly, [
+        ['year', 'Year'],
+        ['month', 'Month'],
+        ['revenue', 'Revenue'],
+        ['cost', 'Cost']
+    ]);
+    return changes;
+}
+
 export default function ProjectManagement() {
     const { year } = useYear();
     const [list, setList] = useState([]);
@@ -81,6 +397,10 @@ export default function ProjectManagement() {
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
     const [sortBy, setSortBy] = useState('project_code_asc');
+    const [exporting, setExporting] = useState(false);
+    const [importReview, setImportReview] = useState(null);
+    const [importing, setImporting] = useState(false);
+    const importFileRef = useRef(null);
 
     async function load() {
         const [p, c, t] = await Promise.all([
@@ -141,11 +461,286 @@ export default function ProjectManagement() {
         return sorted;
     }, [list, search, statusFilter, sortBy]);
 
+    async function exportProjects() {
+        if (filtered.length === 0) {
+            toast.error('No projects to export');
+            return;
+        }
+        setExporting(true);
+        try {
+            const details = await Promise.all(filtered.map(p => api.get(`/projects/${p.id}`).then(r => r.data)));
+            const workbook = XLSX.utils.book_new();
+
+            appendSheet(workbook, 'Projects', details.map(p => ({
+                'Project Code': p.project_code || '',
+                'Description': p.description || '',
+                'Customer': p.customer_alias || '',
+                'Customer Full Name': p.customer_full_name || '',
+                'Status': p.status || '',
+                '% to Win': p.status === 'Pipeline' ? moneyValue(p.pipeline_win_pct ?? 50) : '',
+                'Start Date': exportDate(p.project_start_date),
+                'End Date': exportDate(p.project_end_date),
+                'Pipeline Target Date': exportDate(p.pipeline_target_date),
+                'Note': p.note || ''
+            })), [18, 38, 24, 34, 14, 12, 14, 14, 20, 36]);
+
+            appendSheet(workbook, 'Subscription', details
+                .filter(p => p.subscription)
+                .map(p => ({
+                    'Project Code': p.project_code || '',
+                    'License Name': p.subscription.license_name || '',
+                    'Start Date': exportDate(p.subscription.license_start_date),
+                    'End Date': exportDate(p.subscription.license_end_date),
+                    'Revenue': moneyValue(p.subscription.license_revenue),
+                    'Cost': moneyValue(p.subscription.license_cost),
+                    'ERP Code': p.subscription.erp_code || p.project_code || ''
+                })), [18, 32, 14, 14, 16, 16, 18]);
+
+            appendSheet(workbook, 'Perpetual SW MA', details.flatMap(p => (p.perpetual_ma || []).map(row => ({
+                'Project Code': p.project_code || '',
+                'Item Name': row.item_name || '',
+                'Type': row.item_type || '',
+                'Start Date': exportDate(row.start_date),
+                'End Date': exportDate(row.end_date),
+                'Revenue': moneyValue(row.revenue),
+                'Cost': moneyValue(row.cost),
+                'ERP Code': row.erp_code || p.project_code || ''
+            }))), [18, 32, 14, 14, 14, 16, 16, 18]);
+
+            appendSheet(workbook, 'Service MA', details.flatMap(p => (p.service_ma || []).map(row => ({
+                'Project Code': p.project_code || '',
+                'Description': row.description || '',
+                'Start Date': exportDate(row.start_date),
+                'End Date': exportDate(row.end_date),
+                'Revenue': moneyValue(row.revenue),
+                'Cost': moneyValue(row.cost),
+                'ERP Code': row.erp_code || p.project_code || ''
+            }))), [18, 36, 14, 14, 16, 16, 18]);
+
+            appendSheet(workbook, 'Implementation', details
+                .filter(p => p.implementation)
+                .map(p => ({
+                    'Project Code': p.project_code || '',
+                    'Description': p.implementation.description || '',
+                    'Progress Last Year': moneyValue(p.implementation.progress_last_year_pct),
+                    'Progress This Year': moneyValue(p.implementation.progress_this_year_pct),
+                    'Revenue': moneyValue(p.implementation.revenue),
+                    'Cost': moneyValue(p.implementation.cost),
+                    'ERP Code': p.implementation.erp_code || p.project_code || ''
+                })), [18, 36, 18, 18, 16, 16, 18]);
+
+            appendSheet(workbook, 'Outsource', details
+                .filter(p => p.outsource)
+                .map(p => ({
+                    'Project Code': p.project_code || '',
+                    'Type': p.outsource.outsource_type || '',
+                    'Description': p.outsource.description || '',
+                    'Start Date': exportDate(p.outsource.start_date),
+                    'End Date': exportDate(p.outsource.end_date),
+                    'Revenue': moneyValue(p.outsource.revenue),
+                    'Cost': moneyValue(p.outsource.cost),
+                    'ERP Code': p.outsource.erp_code || p.project_code || ''
+                })), [18, 16, 36, 14, 14, 16, 16, 18]);
+
+            appendSheet(workbook, 'Outsource Monthly', details.flatMap(p => ((p.outsource && p.outsource.months) || []).map(row => ({
+                'Project Code': p.project_code || '',
+                'Year': row.year || '',
+                'Month': row.month || '',
+                'Revenue': moneyValue(row.revenue),
+                'Cost': moneyValue(row.cost)
+            }))), [18, 10, 10, 16, 16]);
+
+            const stamp = new Date().toISOString().slice(0, 10);
+            XLSX.writeFile(workbook, `Project_Management_${year}_${stamp}.xlsx`);
+            toast.success(`Exported ${details.length} project(s)`);
+        } catch (err) {
+            toast.error(err.response?.data?.error || err.message || 'Export failed');
+        } finally {
+            setExporting(false);
+        }
+    }
+
+    async function chooseImportFile(e) {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        if (!file) return;
+        setImporting(true);
+        try {
+            const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+            const importedProjects = importWorkbook(workbook);
+            if (importedProjects.length === 0) {
+                toast.error('No project data found in this Excel file');
+                return;
+            }
+
+            const all = await api.get('/projects');
+            const byCode = new Map((all.data || []).map(p => [String(p.project_code || '').toLowerCase(), p]));
+            const currentDetails = new Map();
+            await Promise.all(importedProjects.map(async (project) => {
+                const existing = byCode.get(project.project_code.toLowerCase());
+                if (existing) {
+                    const detail = await api.get(`/projects/${existing.id}`);
+                    currentDetails.set(project.project_code.toLowerCase(), detail.data);
+                }
+            }));
+
+            const items = importedProjects.map(project => {
+                const current = currentDetails.get(project.project_code.toLowerCase()) || null;
+                const changes = buildImportDiff(current, project);
+                return {
+                    project_code: project.project_code,
+                    current,
+                    imported: project,
+                    status: current ? (changes.length ? 'updated' : 'nochange') : 'new',
+                    changes,
+                    applied: false,
+                    applying: false,
+                    error: ''
+                };
+            });
+            setImportReview({ fileName: file.name, items });
+        } catch (err) {
+            toast.error(err.message || 'Import file failed');
+        } finally {
+            setImporting(false);
+        }
+    }
+
+    async function ensureImportCustomerId(customerName) {
+        const name = asString(customerName);
+        if (!name) return null;
+        const found = customers.find(c =>
+            asString(c.alias).toLowerCase() === name.toLowerCase() ||
+            asString(c.full_name).toLowerCase() === name.toLowerCase()
+        );
+        if (found) return found.id;
+        const created = await api.post('/customers', { alias: name, full_name: name });
+        setCustomers(prev => [...prev, created.data].sort((a, b) => asString(a.alias).localeCompare(asString(b.alias))));
+        return created.data.id;
+    }
+
+    async function syncMultiRows(projectId, currentRows, importedRows, removeUrl, createUrl, toPayload) {
+        for (const row of currentRows || []) {
+            await api.delete(removeUrl(row));
+        }
+        for (const row of importedRows || []) {
+            await api.post(createUrl(projectId), toPayload(row));
+        }
+    }
+
+    async function applyImportItem(item) {
+        if (!item || item.status === 'nochange' || item.applied) return;
+        const customerId = await ensureImportCustomerId(item.imported.master.customer_name);
+        const masterPayload = {
+            project_code: item.imported.master.project_code,
+            description: item.imported.master.description,
+            customer_id: customerId,
+            project_start_date: item.imported.master.project_start_date || null,
+            project_end_date: item.imported.master.project_end_date || null,
+            status: item.imported.master.status || 'Pipeline',
+            pipeline_win_pct: Number(item.imported.master.pipeline_win_pct || 50),
+            pipeline_target_date: item.imported.master.pipeline_target_date || null,
+            note: item.imported.master.note || ''
+        };
+        let projectId = item.current?.id;
+        if (projectId) {
+            await api.put(`/projects/${projectId}`, masterPayload);
+        } else {
+            const created = await api.post('/projects', masterPayload);
+            projectId = created.data.id;
+        }
+
+        if (item.imported.subscription) {
+            await api.put(`/projects/${projectId}/subscription`, item.imported.subscription);
+        } else if (item.current?.subscription) {
+            await api.delete(`/projects/${projectId}/subscription`);
+        }
+
+        await syncMultiRows(
+            projectId,
+            item.current?.perpetual_ma || [],
+            item.imported.perpetual_ma,
+            row => `/projects/perpetual-ma/${row.id}`,
+            id => `/projects/${id}/perpetual-ma`,
+            row => row
+        );
+
+        await syncMultiRows(
+            projectId,
+            item.current?.service_ma || [],
+            item.imported.service_ma,
+            row => `/projects/service-ma/${row.id}`,
+            id => `/projects/${id}/service-ma`,
+            row => row
+        );
+
+        if (item.imported.implementation) {
+            await api.put(`/projects/${projectId}/implementation`, item.imported.implementation);
+        } else if (item.current?.implementation) {
+            await api.delete(`/projects/${projectId}/implementation`);
+        }
+
+        if (item.imported.outsource) {
+            await api.put(`/projects/${projectId}/outsource`, {
+                ...item.imported.outsource,
+                months: item.imported.outsource_monthly
+            });
+        } else if (item.current?.outsource) {
+            await api.delete(`/projects/${projectId}/outsource`);
+        }
+    }
+
+    async function confirmImport(projectCode = null) {
+        if (!importReview) return;
+        const targets = importReview.items.filter(item =>
+            (!projectCode || item.project_code === projectCode) &&
+            item.status !== 'nochange' &&
+            !item.applied
+        );
+        if (targets.length === 0) return;
+        setImporting(true);
+        try {
+            for (const target of targets) {
+                setImportReview(prev => ({
+                    ...prev,
+                    items: prev.items.map(item => item.project_code === target.project_code ? { ...item, applying: true, error: '' } : item)
+                }));
+                try {
+                    await applyImportItem(target);
+                    setImportReview(prev => ({
+                        ...prev,
+                        items: prev.items.map(item => item.project_code === target.project_code ? { ...item, applying: false, applied: true, error: '' } : item)
+                    }));
+                } catch (err) {
+                    setImportReview(prev => ({
+                        ...prev,
+                        items: prev.items.map(item => item.project_code === target.project_code ? {
+                            ...item,
+                            applying: false,
+                            error: err.response?.data?.error || err.message || 'Import failed'
+                        } : item)
+                    }));
+                }
+            }
+            await load();
+            toast.success('Import completed');
+        } finally {
+            setImporting(false);
+        }
+    }
+
     return (
         <div className="space-y-4">
             <div className="flex items-center gap-3">
                 <h1 className="text-2xl font-bold">Project Management</h1>
-                <button className="btn-primary ml-auto" onClick={() => setCreating(true)}>
+                <button className="btn-ghost ml-auto" disabled={exporting || filtered.length === 0} onClick={exportProjects}>
+                    <ArrowDownTrayIcon className="w-4 h-4" /> {exporting ? 'Exporting...' : 'Export Excel'}
+                </button>
+                <button className="btn-ghost" disabled={importing} onClick={() => importFileRef.current?.click()}>
+                    <ArrowUpTrayIcon className="w-4 h-4" /> {importing ? 'Reading...' : 'Import Excel'}
+                </button>
+                <input ref={importFileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={chooseImportFile} />
+                <button className="btn-primary" onClick={() => setCreating(true)}>
                     <PlusIcon className="w-4 h-4" /> New Project
                 </button>
             </div>
@@ -221,7 +816,78 @@ export default function ProjectManagement() {
             {editing && (
                 <ProjectEditor project={editing} customers={customers} documentTypes={documentTypes} onClose={() => setEditing(null)} onSaved={async () => { await load(); const r = await api.get(`/projects/${editing.id}`); setEditing(r.data); }} year={year} />
             )}
+
+            {importReview && (
+                <ProjectImportReviewModal
+                    review={importReview}
+                    busy={importing}
+                    onClose={() => setImportReview(null)}
+                    onConfirmOne={code => confirmImport(code)}
+                    onConfirmAll={() => confirmImport()}
+                />
+            )}
         </div>
+    );
+}
+
+function ImportStatus({ status, applied, error }) {
+    if (error) return <span className="pill bg-red-100 text-red-700 ring-red-200">Error</span>;
+    if (applied) return <span className="pill bg-emerald-100 text-emerald-700 ring-emerald-200">Applied</span>;
+    if (status === 'new') return <span className="pill bg-indigo-100 text-indigo-700 ring-indigo-200">New</span>;
+    if (status === 'updated') return <span className="pill bg-amber-100 text-amber-700 ring-amber-200">Updated</span>;
+    return <span className="pill bg-slate-100 text-slate-500 ring-slate-200">No Change</span>;
+}
+
+function ProjectImportReviewModal({ review, busy, onClose, onConfirmOne, onConfirmAll }) {
+    const actionable = review.items.filter(item => item.status !== 'nochange' && !item.applied);
+    return (
+        <Modal open onClose={onClose} title={`Import Project Excel - ${review.fileName}`} size="xl"
+               footer={<>
+                   <button className="btn-ghost" disabled={busy} onClick={onClose}>Close</button>
+                   <button className="btn-primary" disabled={busy || actionable.length === 0} onClick={onConfirmAll}>
+                       Confirm All ({actionable.length})
+                   </button>
+               </>}>
+            <div className="space-y-3">
+                <div className="text-sm text-slate-500">
+                    Review changes before import. Projects with no changes will be skipped automatically.
+                </div>
+                <div className="max-h-[70vh] overflow-auto space-y-3 pr-1">
+                    {review.items.map(item => (
+                        <div key={item.project_code} className="rounded-lg border border-slate-200 bg-white p-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <div className="font-mono text-sm font-bold">{item.project_code}</div>
+                                <ImportStatus status={item.status} applied={item.applied} error={item.error} />
+                                <div className="text-xs text-slate-400">
+                                    {item.current ? 'Existing project' : 'New project'}
+                                </div>
+                                {item.status !== 'nochange' && !item.applied && (
+                                    <button className="btn-ghost ml-auto !py-1.5 text-xs"
+                                            disabled={busy || item.applying}
+                                            onClick={() => onConfirmOne(item.project_code)}>
+                                        {item.applying ? 'Importing...' : 'Confirm This Project'}
+                                    </button>
+                                )}
+                            </div>
+                            {item.error && (
+                                <div className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+                                    {item.error}
+                                </div>
+                            )}
+                            {item.changes.length === 0 ? (
+                                <div className="mt-2 text-sm text-slate-400">No data changes detected.</div>
+                            ) : (
+                                <ul className="mt-2 list-disc pl-5 text-sm text-slate-600 space-y-1">
+                                    {item.changes.map((change, idx) => (
+                                        <li key={idx} className="break-words">{change}</li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </Modal>
     );
 }
 
