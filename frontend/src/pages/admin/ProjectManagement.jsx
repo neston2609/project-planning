@@ -137,12 +137,13 @@ function importWorkbook(workbook) {
     for (const row of sheetRows(workbook, 'Projects')) {
         const project = ensure(row['Project Code']);
         if (!project) continue;
+        const status = asString(row.Status) || 'Pipeline';
         project.master = {
             project_code: project.project_code,
             description: asString(row.Description),
             customer_name: asString(row.Customer),
-            status: asString(row.Status) || 'Pipeline',
-            pipeline_win_pct: row['% to Win'] === '' ? 50 : asNumber(row['% to Win']),
+            status,
+            pipeline_win_pct: status === 'Pipeline' ? (row['% to Win'] === '' ? 50 : asNumber(row['% to Win'])) : '',
             project_start_date: normalizeImportDate(row['Start Date']),
             project_end_date: normalizeImportDate(row['End Date']),
             pipeline_target_date: normalizeImportDate(row['Pipeline Target Date']),
@@ -238,7 +239,17 @@ function importWorkbook(workbook) {
 }
 
 function sameValue(a, b) {
-    return String(a ?? '') === String(b ?? '');
+    const left = a == null ? '' : a;
+    const right = b == null ? '' : b;
+    const leftText = String(left).trim();
+    const rightText = String(right).trim();
+    if (leftText === '' && rightText === '') return true;
+    const leftNumber = Number(leftText.replace(/,/g, ''));
+    const rightNumber = Number(rightText.replace(/,/g, ''));
+    if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) {
+        return Math.abs(leftNumber - rightNumber) < 0.000001;
+    }
+    return leftText === rightText;
 }
 
 function addFieldChange(changes, label, current, next) {
