@@ -4,7 +4,7 @@ import Modal from '../components/Modal';
 import StatusPill from '../components/StatusPill';
 import useDragScroll from '../hooks/useDragScroll';
 import { baht, formatDate } from '../format';
-import { ChartPieIcon, CurrencyDollarIcon } from '@heroicons/react/24/outline';
+import { ArrowDownTrayIcon, ChartPieIcon, CurrencyDollarIcon, PaperClipIcon } from '@heroicons/react/24/outline';
 
 function dateTime(value) {
     if (!value) return '-';
@@ -16,6 +16,14 @@ function dateTime(value) {
 function num(value) {
     const n = Number(value || 0);
     return Number.isFinite(n) ? n : 0;
+}
+
+function fileSize(bytes) {
+    const n = Number(bytes || 0);
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+    return `${(n / 1024 / 1024 / 1024).toFixed(1)} GB`;
 }
 
 function revenueForProject(project = {}) {
@@ -54,6 +62,7 @@ export default function PipelineDashboard() {
     const [notes, setNotes] = useState([]);
     const [noteProject, setNoteProject] = useState(null);
     const [serviceBreakdown, setServiceBreakdown] = useState(null);
+    const [attachmentModal, setAttachmentModal] = useState(null);
     const [loading, setLoading] = useState(true);
     const tableScroll = useDragScroll();
 
@@ -109,6 +118,29 @@ export default function PipelineDashboard() {
         totalRevenue: 0
     }), [projects]);
 
+    async function openAttachments(project) {
+        setAttachmentModal({ project, files: [], loading: true });
+        try {
+            const r = await api.get(`/projects/${project.id}/attachments`);
+            setAttachmentModal({ project, files: r.data || [], loading: false });
+        } catch (err) {
+            setAttachmentModal(null);
+            alert(err.response?.data?.error || 'Could not load attachments');
+        }
+    }
+
+    async function downloadAttachment(file) {
+        const r = await api.get(`/projects/attachments/${file.id}/download`, { responseType: 'blob' });
+        const objectUrl = URL.createObjectURL(r.data);
+        const a = document.createElement('a');
+        a.href = objectUrl;
+        a.download = file.original_name || 'attachment';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    }
+
     return (
         <div className="space-y-4">
             <div>
@@ -142,7 +174,7 @@ export default function PipelineDashboard() {
             <div ref={tableScroll.ref}
                  className="card overflow-x-auto drag-scroll"
                  {...tableScroll.dragScrollProps}>
-                <table className="table-clean min-w-[1500px]">
+                <table className="table-clean min-w-[1580px]">
                     <thead>
                         <tr>
                             <th>Project Code</th>
@@ -157,11 +189,12 @@ export default function PipelineDashboard() {
                             <th className="text-right">Software MA Revenue</th>
                             <th className="text-right">Service Revenue</th>
                             <th className="text-right">Total Revenue</th>
+                            <th>Documents</th>
                             <th>Note</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {loading && <tr><td colSpan={13} className="text-center text-slate-400 py-6">Loading...</td></tr>}
+                        {loading && <tr><td colSpan={14} className="text-center text-slate-400 py-6">Loading...</td></tr>}
                         {!loading && projects.map(project => {
                             const projectNotes = notesByProject.get(project.project_code) || [];
                             const revenue = project.revenue || revenueForProject(project);
@@ -181,6 +214,14 @@ export default function PipelineDashboard() {
                                                button
                                                onClick={() => setServiceBreakdown({ project, revenue })} />
                                     <MoneyCell value={revenue.totalRevenue} strong />
+                                    <td>
+                                        <button type="button"
+                                                className="btn-ghost !py-1.5 text-xs"
+                                                onClick={() => openAttachments(project)}>
+                                            <PaperClipIcon className="w-4 h-4 text-indigo-600" />
+                                            Documents
+                                        </button>
+                                    </td>
                                     <td className="min-w-[320px] max-w-[420px]">
                                         {projectNotes.length === 0 ? (
                                             <span className="text-slate-400">-</span>
@@ -202,7 +243,7 @@ export default function PipelineDashboard() {
                             );
                         })}
                         {!loading && projects.length === 0 && (
-                            <tr><td colSpan={13} className="text-center text-slate-400 py-6">No pipeline projects.</td></tr>
+                            <tr><td colSpan={14} className="text-center text-slate-400 py-6">No pipeline projects.</td></tr>
                         )}
                         {!loading && projects.length > 0 && (
                             <tr className="bg-slate-50 font-bold">
@@ -215,6 +256,7 @@ export default function PipelineDashboard() {
                                            button
                                            onClick={() => setServiceBreakdown({ project: { project_code: 'TOTAL' }, revenue: totals })} />
                                 <MoneyCell value={totals.totalRevenue} strong />
+                                <td></td>
                                 <td></td>
                             </tr>
                         )}
@@ -234,6 +276,13 @@ export default function PipelineDashboard() {
                     project={serviceBreakdown.project}
                     revenue={serviceBreakdown.revenue}
                     onClose={() => setServiceBreakdown(null)}
+                />
+            )}
+            {attachmentModal && (
+                <ProjectAttachmentsModal
+                    modal={attachmentModal}
+                    onClose={() => setAttachmentModal(null)}
+                    onDownload={downloadAttachment}
                 />
             )}
         </div>
@@ -302,6 +351,38 @@ function PipelineNotesModal({ project, notes, onClose }) {
                     </div>
                 ))}
             </div>
+        </Modal>
+    );
+}
+
+function ProjectAttachmentsModal({ modal, onClose, onDownload }) {
+    return (
+        <Modal open onClose={onClose}
+               title={`Project Documents - ${modal.project.project_code}`}
+               size="lg"
+               footer={<button className="btn-ghost" onClick={onClose}>Close</button>}>
+            {modal.loading ? (
+                <div className="text-center text-slate-400 py-8 animate-pulse">Loading documents...</div>
+            ) : modal.files.length === 0 ? (
+                <div className="text-center text-slate-400 py-8">No documents.</div>
+            ) : (
+                <div className="space-y-2">
+                    {modal.files.map(file => (
+                        <div key={file.id} className="flex items-center gap-2 rounded-md border border-slate-200 p-3">
+                            <PaperClipIcon className="w-5 h-5 text-slate-400 shrink-0" />
+                            <div className="min-w-0 flex-1">
+                                <div className="font-semibold truncate">{file.original_name}</div>
+                                <div className="text-xs text-slate-400">
+                                    {file.document_type_name || 'General'} - {fileSize(file.file_size)} - {file.mime_type || 'application/octet-stream'}
+                                </div>
+                            </div>
+                            <button className="btn-ghost !p-2" title="Download" onClick={() => onDownload(file)}>
+                                <ArrowDownTrayIcon className="w-4 h-4 text-emerald-600" />
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
         </Modal>
     );
 }
