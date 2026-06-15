@@ -51,7 +51,12 @@ function dataUrlToBuffer(dataUrl) {
 }
 
 function cleanExtractedText(value, max = 120000) {
-    return String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
+    return String(value || '')
+        .replace(/\u0000/g, '')
+        .replace(/[\u0001-\u0008\u000B\u000C\u000E-\u001F]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, max);
 }
 
 async function extractAttachmentText(file = {}) {
