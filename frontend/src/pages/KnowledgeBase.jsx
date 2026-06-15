@@ -29,6 +29,17 @@ function stripHtml(html) {
     return div.textContent || div.innerText || '';
 }
 
+const FONT_SIZE_OPTIONS = [
+    { label: '12 px', value: '12px' },
+    { label: '14 px', value: '14px' },
+    { label: '16 px', value: '16px' },
+    { label: '18 px', value: '18px' },
+    { label: '20 px', value: '20px' },
+    { label: '24 px', value: '24px' },
+    { label: '28 px', value: '28px' },
+    { label: '32 px', value: '32px' }
+];
+
 export default function KnowledgeBase() {
     const { user } = useAuth();
     const loc = useLocation();
@@ -492,7 +503,7 @@ function ArticleDetail({ article, canDelete, onShare, onEdit, onDelete, onOpen }
 
             <TagRow tags={article.tags} />
 
-            <div className="kb-article-content max-w-none rounded-lg border border-slate-200 bg-white p-4 text-sm"
+            <div className="kb-article-content max-w-none max-h-[62vh] overflow-y-auto rounded-lg border border-slate-200 bg-white p-4 text-sm"
                  dangerouslySetInnerHTML={{ __html: article.content || '' }} />
 
             {(article.reference_urls || []).length > 0 && (
@@ -577,6 +588,7 @@ function ArticleForm({ initial, config, articles, savingStatus = '', onClose, on
     const editorFrameRef = useRef(null);
     const imageRef = useRef(null);
     const attachRef = useRef(null);
+    const savedSelectionRef = useRef(null);
     const [selectedImage, setSelectedImage] = useState(null);
     const [imageBox, setImageBox] = useState(null);
     const attachmentLimitMb = Number(config.attachment_limit_mb || 50);
@@ -603,6 +615,48 @@ function ArticleForm({ initial, config, articles, savingStatus = '', onClose, on
         editorRef.current?.focus();
         document.execCommand(command, false, null);
         setF(s => ({ ...s, content: editorRef.current?.innerHTML || '' }));
+    }
+
+    function saveEditorSelection() {
+        const editor = editorRef.current;
+        const selection = window.getSelection();
+        if (!editor || !selection || selection.rangeCount === 0) return;
+        const range = selection.getRangeAt(0);
+        if (editor.contains(range.commonAncestorContainer)) {
+            savedSelectionRef.current = range.cloneRange();
+        }
+    }
+
+    function applyFontSize(size) {
+        if (!size) return;
+        const editor = editorRef.current;
+        const selection = window.getSelection();
+        let range = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+        if (!editor) return;
+        if (!range || !editor.contains(range.commonAncestorContainer) || selection.isCollapsed) {
+            range = savedSelectionRef.current;
+        }
+        if (!range || range.collapsed || !editor.contains(range.commonAncestorContainer)) {
+            toast.error('Select text before changing font size');
+            return;
+        }
+        editor.focus();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        const span = document.createElement('span');
+        span.style.fontSize = size;
+        try {
+            range.surroundContents(span);
+        } catch {
+            const fragment = range.extractContents();
+            span.appendChild(fragment);
+            range.insertNode(span);
+        }
+        selection.removeAllRanges();
+        const nextRange = document.createRange();
+        nextRange.selectNodeContents(span);
+        selection.addRange(nextRange);
+        setF(s => ({ ...s, content: editor.innerHTML }));
     }
 
     async function insertImage(e) {
@@ -772,10 +826,21 @@ function ArticleForm({ initial, config, articles, savingStatus = '', onClose, on
                 <div>
                     <label className="label">Content</label>
                     <div className="rounded-lg border border-slate-200 overflow-hidden">
-                        <div className="flex flex-wrap gap-1 border-b border-slate-200 bg-slate-50 p-2">
+                        <div className="sticky top-0 z-10 flex flex-wrap gap-1 border-b border-slate-200 bg-slate-50 p-2">
                             <button type="button" className="btn-ghost !py-1" onClick={() => exec('bold')}>B</button>
                             <button type="button" className="btn-ghost !py-1 italic" onClick={() => exec('italic')}>I</button>
                             <button type="button" className="btn-ghost !py-1 underline" onClick={() => exec('underline')}>U</button>
+                            <select className="input !w-28 !py-1 text-xs font-semibold"
+                                    defaultValue=""
+                                    onChange={e => {
+                                        applyFontSize(e.target.value);
+                                        e.target.value = '';
+                                    }}>
+                                <option value="" disabled>Font Size</option>
+                                {FONT_SIZE_OPTIONS.map(opt => (
+                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                ))}
+                            </select>
                             <button type="button" className="btn-ghost !py-1" onClick={() => exec('insertUnorderedList')}>List</button>
                             <button type="button" className="btn-ghost !py-1" onClick={() => imageRef.current?.click()}>
                                 <ArrowUpTrayIcon className="w-4 h-4" /> Image
@@ -785,8 +850,10 @@ function ArticleForm({ initial, config, articles, savingStatus = '', onClose, on
                         <div ref={editorFrameRef} className="relative">
                             <div ref={editorRef}
                                  contentEditable
-                                 className="kb-article-content min-h-[260px] bg-white p-4 text-sm outline-none"
+                                 className="kb-article-content min-h-[260px] max-h-[52vh] overflow-y-auto bg-white p-4 text-sm outline-none"
                                  onClick={onEditorClick}
+                                 onMouseUp={saveEditorSelection}
+                                 onKeyUp={saveEditorSelection}
                                  onInput={() => setF(s => ({ ...s, content: editorRef.current?.innerHTML || '' }))} />
                             {imageBox && (
                                 <div className="kb-image-resize-box"
