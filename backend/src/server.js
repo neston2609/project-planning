@@ -31,12 +31,13 @@ const knowledgeBaseRouter = require('./routes/knowledgeBase');
 const postItsRouter = require('./routes/postIts');
 
 const app = express();
+const JSON_BODY_LIMIT = process.env.JSON_BODY_LIMIT || '100mb';
 
 app.use(cors({
     origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : '*',
     credentials: false
 }));
-app.use(express.json({ limit: '15mb' }));
+app.use(express.json({ limit: JSON_BODY_LIMIT }));
 app.use(morgan('tiny'));
 app.use(softAuth);
 
@@ -67,6 +68,11 @@ if (fs.existsSync(path.join(distDir, 'index.html'))) {
 app.use((err, req, res, _next) => {
     console.error('[err]', err);
     if (res.headersSent) return;
+    if (err.type === 'entity.too.large') {
+        return res.status(413).json({
+            error: `Request body is too large. Maximum accepted payload is ${JSON_BODY_LIMIT}.`
+        });
+    }
     res.status(500).json({ error: err.message || 'Internal server error' });
 });
 
