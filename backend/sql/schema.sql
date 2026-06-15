@@ -356,12 +356,25 @@ CREATE TABLE IF NOT EXISTS kb_articles (
     author_id       INT REFERENCES users(id) ON DELETE SET NULL,
     last_updated_by INT REFERENCES users(id) ON DELETE SET NULL,
     version         INT NOT NULL DEFAULT 1,
+    status          VARCHAR(16) NOT NULL DEFAULT 'published' CHECK (status IN ('draft','published')),
     created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
 );
+ALTER TABLE kb_articles ADD COLUMN IF NOT EXISTS status VARCHAR(16) NOT NULL DEFAULT 'published';
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname='kb_articles_status_check' AND conrelid='kb_articles'::regclass
+    ) THEN
+        ALTER TABLE kb_articles
+            ADD CONSTRAINT kb_articles_status_check CHECK (status IN ('draft','published'));
+    END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS idx_kb_articles_tenant ON kb_articles(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_kb_articles_category ON kb_articles(category_id);
 CREATE INDEX IF NOT EXISTS idx_kb_articles_product ON kb_articles(product_id);
+CREATE INDEX IF NOT EXISTS idx_kb_articles_status ON kb_articles(tenant_id, status);
 
 CREATE TABLE IF NOT EXISTS kb_article_versions (
     id              SERIAL PRIMARY KEY,
@@ -376,10 +389,12 @@ CREATE TABLE IF NOT EXISTS kb_article_versions (
     reference_urls  TEXT[] NOT NULL DEFAULT ARRAY[]::text[],
     attachments     JSONB NOT NULL DEFAULT '[]'::jsonb,
     related_ids     INT[] NOT NULL DEFAULT ARRAY[]::int[],
+    status          VARCHAR(16) NOT NULL DEFAULT 'published',
     changed_by      INT REFERENCES users(id) ON DELETE SET NULL,
     change_summary  TEXT NOT NULL DEFAULT '',
     changed_at      TIMESTAMP NOT NULL DEFAULT NOW()
 );
+ALTER TABLE kb_article_versions ADD COLUMN IF NOT EXISTS status VARCHAR(16) NOT NULL DEFAULT 'published';
 CREATE INDEX IF NOT EXISTS idx_kb_article_versions_article ON kb_article_versions(article_id, version DESC);
 
 CREATE TABLE IF NOT EXISTS kb_attachments (

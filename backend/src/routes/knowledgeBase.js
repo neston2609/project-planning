@@ -220,6 +220,23 @@ function isAdminRole(user) {
     return user && (user.role === 'admin' || user.role === 'superadmin');
 }
 
+function normalizeArticleStatus(value) {
+    return String(value || '').toLowerCase() === 'draft' ? 'draft' : 'published';
+}
+
+function articleVisibilityWhere(alias = 'a', user = {}) {
+    if (isAdminRole(user)) return '';
+    const uid = Number(user.uid || 0);
+    return ` AND (${alias}.status='published' OR ${alias}.author_id=${uid} OR ${alias}.last_updated_by=${uid})`;
+}
+
+function canAccessDraft(article, user = {}) {
+    if (!article || article.status !== 'draft') return true;
+    if (isAdminRole(user)) return true;
+    const uid = Number(user.uid || 0);
+    return Number(article.author_id || 0) === uid || Number(article.last_updated_by || 0) === uid;
+}
+
 async function ensureDefaults(tenantId, client = db) {
     const categorySeed = await client.query(
         "SELECT value FROM tenant_config WHERE tenant_id=$1 AND key='kb_categories_seeded'",
@@ -358,7 +375,8 @@ function changeSummary(prev, next) {
         ['tags', 'Tags'],
         ['reference_urls', 'Reference URLs'],
         ['attachments', 'Attachments'],
-        ['related_ids', 'Related Articles']
+        ['related_ids', 'Related Articles'],
+        ['status', 'Status']
     ];
     const changed = checks.filter(([key]) => JSON.stringify(prev[key] || null) !== JSON.stringify(next[key] || null))
         .map(([, label]) => label);
@@ -407,7 +425,7 @@ async function insertRelated(articleId, tenantId, relatedIds, client = db) {
         .filter(id => id !== Number(articleId));
     if (ids.length === 0) return;
     const valid = await client.query(
-        `SELECT id FROM kb_articles WHERE tenant_id=$1 AND id = ANY($2::int[])`,
+        `SELECT id FROM kb_articles WHERE tenant_id=$1 AND id = ANY($2::int[]) AND status='published'`,
         [tenantId, ids]
     );
     for (const row of valid.rows) {
@@ -567,7 +585,7 @@ router.get('/articles',
             }
         }
         const params = [req.tenantId];
-        let where = 'WHERE a.tenant_id=$1';
+        let where = `WHERE a.tenant_id=$1${articleVisibilityWhere('a', req.user)}`;
         const scoreParts = [];
         if (searchTerms.length > 0) {
             const orParts = [];
@@ -619,7 +637,7 @@ router.get('/articles',
 router.get('/articles/:id', param('id').isInt(), async (req, res) => {
     const articleRows = await db.query(
         `${articleSelect}
-          WHERE a.id=$1 AND a.tenant_id=$2`,
+          WHERE a.id=$1 AND a.tenant_id=$2${articleVisibilityWhere('a', req.user)}`,
         [req.params.id, req.tenantId]
     );
     const article = articleRows.rows[0];
@@ -635,7 +653,7 @@ router.get('/articles/:id', param('id').isInt(), async (req, res) => {
         db.query(
             `${articleSelect}
               JOIN kb_article_related rel ON rel.related_article_id = a.id
-             WHERE rel.article_id=$1 AND a.tenant_id=$2
+             WHERE rel.article_id=$1 AND a.tenant_id=$2${articleVisibilityWhere('a', req.user)}
              ORDER BY a.title`,
             [req.params.id, req.tenantId]
         ),
@@ -654,11 +672,13 @@ router.get('/articles/:id', param('id').isInt(), async (req, res) => {
 
 router.post('/articles',
     body('title').isString().trim().notEmpty().isLength({ max: 255 }),
+    body('status').optional().isIn(['draft', 'published']),
     async (req, res) => {
         const errs = validationResult(req);
         if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
         const attachmentError = await validateAttachmentLimits(req.tenantId, req.body.attachments);
         if (attachmentError) return res.status(400).json({ error: attachmentError });
+        const status = normalizeArticleStatus(req.body.status);
         const client = await db.getClient();
         try {
             await client.query('BEGIN');
@@ -666,8 +686,8 @@ router.post('/articles',
             const categoryId = await assertLookup('kb_categories', req.body.category_id, req.tenantId, client);
             const productId = await assertLookup('kb_products', req.body.product_id, req.tenantId, client);
             const { rows } = await client.query(
-                `INSERT INTO kb_articles(tenant_id, title, content, category_id, product_id, tags, reference_urls, author_id, last_updated_by, version)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8,1)
+                `INSERT INTO kb_articles(tenant_id, title, content, category_id, product_id, tags, reference_urls, author_id, last_updated_by, version, status)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8,1,$9)
                  RETURNING id`,
                 [
                     req.tenantId,
@@ -677,7 +697,8 @@ router.post('/articles',
                     productId,
                     cleanStringArray(req.body.tags, 50, 80),
                     cleanStringArray(req.body.reference_urls, 30, 1000),
-                    req.user.uid
+                    req.user.uid,
+                    status
                 ]
             );
             await insertAttachments(rows[0].id, req.tenantId, req.body.attachments, client);
@@ -697,6 +718,7 @@ router.post('/articles',
 router.put('/articles/:id',
     param('id').isInt(),
     body('title').isString().trim().notEmpty().isLength({ max: 255 }),
+    body('status').optional().isIn(['draft', 'published']),
     async (req, res) => {
         const errs = validationResult(req);
         if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
@@ -711,6 +733,10 @@ router.put('/articles/:id',
                 await client.query('ROLLBACK');
                 return res.status(404).json({ error: 'Article not found' });
             }
+            if (!canAccessDraft(prev, req.user)) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({ error: 'Article not found' });
+            }
             const categoryId = await assertLookup('kb_categories', req.body.category_id, req.tenantId, client);
             const productId = await assertLookup('kb_products', req.body.product_id, req.tenantId, client);
             const nextSnapshot = {
@@ -721,14 +747,15 @@ router.put('/articles/:id',
                 tags: cleanStringArray(req.body.tags, 50, 80),
                 reference_urls: cleanStringArray(req.body.reference_urls, 30, 1000),
                 attachments: Array.isArray(req.body.attachments) ? req.body.attachments : [],
-                related_ids: Array.isArray(req.body.related_ids) ? req.body.related_ids.map(Number).filter(Boolean) : []
+                related_ids: Array.isArray(req.body.related_ids) ? req.body.related_ids.map(Number).filter(Boolean) : [],
+                status: normalizeArticleStatus(req.body.status)
             };
             await client.query(
                 `INSERT INTO kb_article_versions(
                     tenant_id, article_id, version, title, content, category_id, product_id,
-                    tags, reference_urls, attachments, related_ids, changed_by, change_summary
+                    tags, reference_urls, attachments, related_ids, status, changed_by, change_summary
                  )
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12,$13)`,
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12,$13,$14)`,
                 [
                     req.tenantId,
                     prev.id,
@@ -741,6 +768,7 @@ router.put('/articles/:id',
                     prev.reference_urls || [],
                     JSON.stringify(prev.attachments || []),
                     prev.related_ids || [],
+                    prev.status || 'published',
                     req.user.uid,
                     changeSummary(prev, nextSnapshot)
                 ]
@@ -749,8 +777,8 @@ router.put('/articles/:id',
                 `UPDATE kb_articles
                     SET title=$1, content=$2, category_id=$3, product_id=$4,
                         tags=$5, reference_urls=$6,
-                        last_updated_by=$7, version=version + 1, updated_at=NOW()
-                  WHERE id=$8 AND tenant_id=$9`,
+                        last_updated_by=$7, version=version + 1, status=$8, updated_at=NOW()
+                  WHERE id=$9 AND tenant_id=$10`,
                 [
                     nextSnapshot.title,
                     nextSnapshot.content,
@@ -759,6 +787,7 @@ router.put('/articles/:id',
                     nextSnapshot.tags,
                     nextSnapshot.reference_urls,
                     req.user.uid,
+                    nextSnapshot.status,
                     req.params.id,
                     req.tenantId
                 ]

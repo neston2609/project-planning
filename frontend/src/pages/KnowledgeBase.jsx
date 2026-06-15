@@ -41,6 +41,7 @@ export default function KnowledgeBase() {
     const [searching, setSearching] = useState(false);
     const [categoryFilter, setCategoryFilter] = useState(() => new Set());
     const [productFilter, setProductFilter] = useState(() => new Set());
+    const [statusFilter, setStatusFilter] = useState('all');
     const [selected, setSelected] = useState(null);
     const [edit, setEdit] = useState(null);
     const openedLinkArticleRef = useRef(null);
@@ -112,11 +113,12 @@ export default function KnowledgeBase() {
         }
     }
 
-    async function saveArticle(payload) {
+    async function saveArticle(payload, publishStatus = 'published') {
         try {
-            if (payload.id) await api.put(`/knowledge-base/articles/${payload.id}`, payload);
-            else await api.post('/knowledge-base/articles', payload);
-            toast.success('Article saved');
+            const body = { ...payload, status: publishStatus };
+            if (payload.id) await api.put(`/knowledge-base/articles/${payload.id}`, body);
+            else await api.post('/knowledge-base/articles', body);
+            toast.success(publishStatus === 'draft' ? 'Draft saved' : 'Article published');
             setEdit(null);
             await load(search, false);
             if (selected?.id === payload.id) openArticle(payload);
@@ -185,6 +187,9 @@ export default function KnowledgeBase() {
 
     const filtered = useMemo(() => {
         let out = articles;
+        if (statusFilter !== 'all') {
+            out = out.filter(a => (a.status || 'published') === statusFilter);
+        }
         if (categoryFilter.size > 0) {
             out = out.filter(a => categoryFilter.has(a.category_id ? String(a.category_id) : '__none__'));
         }
@@ -192,7 +197,7 @@ export default function KnowledgeBase() {
             out = out.filter(a => productFilter.has(a.product_id ? String(a.product_id) : '__none__'));
         }
         return out;
-    }, [articles, categoryFilter, productFilter]);
+    }, [articles, categoryFilter, productFilter, statusFilter]);
 
     return (
         <div className="space-y-4">
@@ -203,7 +208,7 @@ export default function KnowledgeBase() {
                     </h1>
                     <p className="text-sm text-slate-500">Team articles, troubleshooting notes, references, and attachments.</p>
                 </div>
-                <button className="btn-primary ml-auto" onClick={() => setEdit({ title: '', content: '', tags: [], reference_urls: [], attachments: [], related_ids: [] })}>
+                <button className="btn-primary ml-auto" onClick={() => setEdit({ title: '', content: '', status: 'draft', tags: [], reference_urls: [], attachments: [], related_ids: [] })}>
                     <PlusIcon className="w-4 h-4" /> Add Article
                 </button>
             </div>
@@ -217,6 +222,13 @@ export default function KnowledgeBase() {
                     <input type="checkbox" checked={aiSearch} onChange={e => setAiSearch(e.target.checked)} />
                     AI Search
                 </label>
+                <select className="input !w-36 !py-1.5 text-xs font-semibold"
+                        value={statusFilter}
+                        onChange={e => setStatusFilter(e.target.value)}>
+                    <option value="all">All Status</option>
+                    <option value="published">Published</option>
+                    <option value="draft">Draft</option>
+                </select>
                 {(categoryFilter.size > 0 || productFilter.size > 0) && (
                     <button type="button" onClick={clearFilters}
                             className="text-xs text-slate-500 hover:text-indigo-600 underline whitespace-nowrap">
@@ -334,6 +346,7 @@ function ArticleList({ articles, onOpen }) {
                     <thead>
                         <tr>
                             <th>Article</th>
+                            <th>Status</th>
                             <th>Category</th>
                             <th>Product</th>
                             <th>Version</th>
@@ -358,6 +371,7 @@ function ArticleList({ articles, onOpen }) {
                                         </div>
                                     </div>
                                 </td>
+                                <td className="whitespace-nowrap"><ArticleStatusPill status={article.status} /></td>
                                 <td className="whitespace-nowrap">{article.category_name || 'No category'}</td>
                                 <td className="whitespace-nowrap">{article.product_name || 'No product'}</td>
                                 <td className="font-semibold whitespace-nowrap">v{article.version}</td>
@@ -429,12 +443,22 @@ function TagRow({ tags }) {
     );
 }
 
+function ArticleStatusPill({ status }) {
+    const value = status === 'draft' ? 'draft' : 'published';
+    return value === 'draft'
+        ? <span className="pill bg-amber-100 text-amber-700 ring-amber-200">Draft</span>
+        : <span className="pill bg-emerald-100 text-emerald-700 ring-emerald-200">Published</span>;
+}
+
 function ArticleDetail({ article, canDelete, onShare, onEdit, onDelete, onOpen }) {
     return (
         <div className="space-y-4">
             <div className="flex items-start gap-3">
                 <div className="min-w-0 flex-1">
-                    <h2 className="text-2xl font-extrabold text-slate-900">{article.title}</h2>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="text-2xl font-extrabold text-slate-900">{article.title}</h2>
+                        <ArticleStatusPill status={article.status} />
+                    </div>
                     <div className="text-xs text-slate-500 mt-1">
                         {article.category_name || 'No category'} · {article.product_name || 'No product'} · v{article.version}
                     </div>
@@ -522,6 +546,7 @@ function ArticleDetail({ article, canDelete, onShare, onEdit, onDelete, onOpen }
 function ArticleForm({ initial, config, articles, onClose, onSave }) {
     const [f, setF] = useState({
         ...initial,
+        status: initial.status || 'draft',
         category_id: initial.category_id || '',
         product_id: initial.product_id || '',
         tags_text: (initial.tags || []).join(', '),
@@ -658,7 +683,7 @@ function ArticleForm({ initial, config, articles, onClose, onSave }) {
         setF(s => ({ ...s, attachments: [...(s.attachments || []), ...next] }));
     }
 
-    function submit() {
+    function submit(status) {
         const content = editorRef.current?.innerHTML || '';
         onSave({
             id: f.id,
@@ -670,7 +695,7 @@ function ArticleForm({ initial, config, articles, onClose, onSave }) {
             reference_urls: toList(f.refs_text),
             attachments: f.attachments || [],
             related_ids: (f.related_ids || []).map(Number).filter(Boolean)
-        });
+        }, status);
     }
 
     function toggleRelated(id) {
@@ -685,9 +710,14 @@ function ArticleForm({ initial, config, articles, onClose, onSave }) {
         <Modal open onClose={onClose} title={f.id ? `Edit Article - ${f.title}` : 'New Article'} size="xl"
                footer={<>
                    <button className="btn-ghost" onClick={onClose}>Cancel</button>
-                   <button className="btn-primary" onClick={submit}>Save Article</button>
+                   <button className="btn-ghost" onClick={() => submit('draft')}>Save Draft</button>
+                   <button className="btn-primary" onClick={() => submit('published')}>Publish</button>
                </>}>
             <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Current Status</span>
+                    <ArticleStatusPill status={f.status} />
+                </div>
                 <div>
                     <label className="label">Title</label>
                     <input className="input" value={f.title || ''} onChange={e => setF({ ...f, title: e.target.value })} />
@@ -779,7 +809,7 @@ function ArticleForm({ initial, config, articles, onClose, onSave }) {
                 <div>
                     <label className="label">Related Articles</label>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-48 overflow-y-auto rounded-lg border border-slate-200 p-2">
-                        {articles.filter(a => Number(a.id) !== Number(f.id)).map(a => (
+                        {articles.filter(a => Number(a.id) !== Number(f.id) && (a.status || 'published') === 'published').map(a => (
                             <label key={a.id} className="flex items-center gap-2 rounded p-2 hover:bg-slate-50">
                                 <input type="checkbox"
                                        checked={(f.related_ids || []).map(Number).includes(Number(a.id))}
@@ -787,8 +817,8 @@ function ArticleForm({ initial, config, articles, onClose, onSave }) {
                                 <span className="text-sm truncate">{a.title}</span>
                             </label>
                         ))}
-                        {articles.filter(a => Number(a.id) !== Number(f.id)).length === 0 && (
-                            <div className="text-sm text-slate-400 p-2">No other articles yet.</div>
+                        {articles.filter(a => Number(a.id) !== Number(f.id) && (a.status || 'published') === 'published').length === 0 && (
+                            <div className="text-sm text-slate-400 p-2">No published articles yet.</div>
                         )}
                     </div>
                 </div>
