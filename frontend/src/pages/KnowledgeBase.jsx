@@ -43,7 +43,9 @@ export default function KnowledgeBase() {
     const [productFilter, setProductFilter] = useState(() => new Set());
     const [statusFilter, setStatusFilter] = useState('all');
     const [selected, setSelected] = useState(null);
+    const [openingArticle, setOpeningArticle] = useState(null);
     const [edit, setEdit] = useState(null);
+    const [savingArticleStatus, setSavingArticleStatus] = useState('');
     const openedLinkArticleRef = useRef(null);
     const canDelete = isAdmin(user);
 
@@ -105,15 +107,22 @@ export default function KnowledgeBase() {
     }, [search, aiSearch]);
 
     async function openArticle(article) {
+        setSelected(null);
+        setOpeningArticle(article);
         try {
             const res = await api.get(`/knowledge-base/articles/${article.id}`);
             setSelected(res.data);
         } catch (err) {
+            setOpeningArticle(null);
             toast.error(err.response?.data?.error || 'Could not open article');
+        } finally {
+            setOpeningArticle(null);
         }
     }
 
     async function saveArticle(payload, publishStatus = 'published') {
+        if (savingArticleStatus) return;
+        setSavingArticleStatus(publishStatus);
         try {
             const body = { ...payload, status: publishStatus };
             if (payload.id) await api.put(`/knowledge-base/articles/${payload.id}`, body);
@@ -124,6 +133,8 @@ export default function KnowledgeBase() {
             if (selected?.id === payload.id) openArticle(payload);
         } catch (err) {
             toast.error(err.response?.data?.error || 'Save failed');
+        } finally {
+            setSavingArticleStatus('');
         }
     }
 
@@ -141,6 +152,7 @@ export default function KnowledgeBase() {
 
     function closeSelected() {
         setSelected(null);
+        setOpeningArticle(null);
         const params = new URLSearchParams(loc.search);
         if (params.has('article')) {
             params.delete('article');
@@ -270,10 +282,16 @@ export default function KnowledgeBase() {
 
             <ArticleList articles={filtered} onOpen={openArticle} />
 
-            <Modal open={!!selected}
+            <Modal open={!!selected || !!openingArticle}
                    onClose={closeSelected}
-                   title={selected?.title || 'Article Detail'}
+                   title={selected?.title || openingArticle?.title || 'Article Detail'}
                    size="xl">
+                {!selected && openingArticle && (
+                    <div className="flex items-center justify-center gap-3 py-16 text-sm font-semibold text-blue-700">
+                        <span className="h-5 w-5 rounded-full border-2 border-blue-200 border-t-blue-600 animate-spin" />
+                        Loading article. Please wait...
+                    </div>
+                )}
                 {selected && (
                     <ArticleDetail article={selected}
                                    canDelete={canDelete}
@@ -327,6 +345,7 @@ export default function KnowledgeBase() {
                 <ArticleForm initial={edit}
                              config={config}
                              articles={articles}
+                             savingStatus={savingArticleStatus}
                              onClose={() => setEdit(null)}
                              onSave={saveArticle} />
             )}
@@ -543,7 +562,7 @@ function ArticleDetail({ article, canDelete, onShare, onEdit, onDelete, onOpen }
     );
 }
 
-function ArticleForm({ initial, config, articles, onClose, onSave }) {
+function ArticleForm({ initial, config, articles, savingStatus = '', onClose, onSave }) {
     const [f, setF] = useState({
         ...initial,
         status: initial.status || 'draft',
@@ -684,6 +703,7 @@ function ArticleForm({ initial, config, articles, onClose, onSave }) {
     }
 
     function submit(status) {
+        if (savingStatus) return;
         const content = editorRef.current?.innerHTML || '';
         onSave({
             id: f.id,
@@ -707,13 +727,23 @@ function ArticleForm({ initial, config, articles, onClose, onSave }) {
     }
 
     return (
-        <Modal open onClose={onClose} title={f.id ? `Edit Article - ${f.title}` : 'New Article'} size="xl"
+        <Modal open onClose={savingStatus ? undefined : onClose} title={f.id ? `Edit Article - ${f.title}` : 'New Article'} size="xl"
                footer={<>
-                   <button className="btn-ghost" onClick={onClose}>Cancel</button>
-                   <button className="btn-ghost" onClick={() => submit('draft')}>Save Draft</button>
-                   <button className="btn-primary" onClick={() => submit('published')}>Publish</button>
+                   <button className="btn-ghost" disabled={!!savingStatus} onClick={onClose}>Cancel</button>
+                   <button className="btn-ghost" disabled={!!savingStatus} onClick={() => submit('draft')}>
+                       {savingStatus === 'draft' ? 'Saving Draft...' : 'Save Draft'}
+                   </button>
+                   <button className="btn-primary" disabled={!!savingStatus} onClick={() => submit('published')}>
+                       {savingStatus === 'published' ? 'Publishing...' : 'Publish'}
+                   </button>
                </>}>
             <div className="space-y-4">
+                {savingStatus && (
+                    <div className="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700">
+                        <span className="h-4 w-4 rounded-full border-2 border-blue-200 border-t-blue-600 animate-spin" />
+                        {savingStatus === 'draft' ? 'Saving draft. Please wait...' : 'Publishing article. Please wait...'}
+                    </div>
+                )}
                 <div className="flex items-center gap-2">
                     <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Current Status</span>
                     <ArticleStatusPill status={f.status} />
