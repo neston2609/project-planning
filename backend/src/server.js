@@ -15,6 +15,7 @@ const cors = require('cors');
 const morgan = require('morgan');
 
 const { bootstrap }   = require('./utils/bootstrap');
+const { startOfficeBookingNotificationScheduler } = require('./utils/officeBookingNotifications');
 const { softAuth }    = require('./middleware/auth');
 const authRouter      = require('./routes/auth');
 const customersRouter = require('./routes/customers');
@@ -83,5 +84,8 @@ const PORT = Number(process.env.PORT) || 6000;
     } catch (err) {
         console.error('[startup] bootstrap failed; continuing without auto schema init.');
     }
-    app.listen(PORT, () => console.log(`[rpa-planning] backend listening on :${PORT}`));
+    app.listen(PORT, () => {
+        console.log(`[rpa-planning] backend listening on :${PORT}`);
+        startOfficeBookingNotificationScheduler();
+    });
 })();

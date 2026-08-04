@@ -38,11 +38,13 @@ export default function LeaveManagement() {
     const [users, setUsers] = useState([]);
     const [edit, setEdit] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState('');
 
     const bounds = useMemo(() => monthBounds(month), [month]);
 
     async function load() {
         setLoading(true);
+        setLoadError('');
         try {
             const [leaveRes, userRes] = await Promise.all([
                 api.get(`/office-bookings/leaves?start=${bounds.start}&end=${bounds.end}`),
@@ -51,7 +53,9 @@ export default function LeaveManagement() {
             setLeaves(leaveRes.data || []);
             setUsers(userRes.data || []);
         } catch (err) {
-            toast.error(err.response?.data?.error || 'Could not load leave records');
+            const message = err.response?.data?.error || 'Could not load leave records';
+            setLoadError(message);
+            toast.error(message);
         } finally {
             setLoading(false);
         }
@@ -112,10 +116,17 @@ export default function LeaveManagement() {
                     </h1>
                     <p className="text-sm text-slate-500">Manage team leave dates shown on the Office Booking calendar.</p>
                 </div>
-                <button className="btn-primary ml-auto" onClick={addLeave} disabled={loading || users.length === 0}>
+                <button className="btn-primary ml-auto" onClick={addLeave} disabled={loading}>
                     <PlusIcon className="w-4 h-4" /> Add Leave
                 </button>
             </div>
+
+            {loadError && (
+                <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 flex flex-wrap items-center gap-3">
+                    <span>{loadError}</span>
+                    <button className="btn-ghost ml-auto" onClick={load}>Retry</button>
+                </div>
+            )}
 
             <div className="card p-4">
                 <div className="flex flex-wrap items-end gap-3">

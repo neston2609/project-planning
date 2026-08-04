@@ -206,7 +206,8 @@ router.get('/users', requireRole('superadmin'), async (req, res) => {
     const { rows } = await db.query(
         `SELECT u.id, u.username, u.full_name, u.email, u.phone_number, u.role,
                 u.tenant_role_id, tr.name AS tenant_role_name,
-                u.must_change_password, u.created_at
+                u.must_change_password, u.office_booking_notification_enabled,
+                u.office_booking_min_required, u.created_at
            FROM users u
            LEFT JOIN tenant_roles tr ON tr.id = u.tenant_role_id AND tr.tenant_id = u.tenant_id
           WHERE u.tenant_id=$1
@@ -257,6 +258,15 @@ router.post('/users', requireRole('superadmin'),
 
 router.put('/users/:id', requireRole('superadmin'), param('id').isInt(), async (req, res) => {
     const { full_name, email, phone_number, role, password, tenant_role_id } = req.body;
+    if (!String(email || '').trim()) {
+        const current = await db.query(
+            'SELECT office_booking_notification_enabled FROM users WHERE id=$1 AND tenant_id=$2',
+            [req.params.id, req.tenantId]
+        );
+        if (current.rows[0]?.office_booking_notification_enabled) {
+            return res.status(400).json({ error: 'Disable booking notifications before removing this email address' });
+        }
+    }
     let tenantRole = await roleForTenant(req.tenantId, tenant_role_id);
     const safeRole = tenantRole ? tenantRole.base_role : ((role && ['user','admin','superadmin'].includes(role)) ? role : null);
     if (!tenantRole && safeRole) tenantRole = await defaultRoleForBase(req.tenantId, safeRole);
@@ -280,6 +290,36 @@ router.put('/users/:id', requireRole('superadmin'), param('id').isInt(), async (
     if (!rows[0]) return res.status(404).json({ error: 'Not found' });
     res.json(rows[0]);
 });
+
+router.put('/users/:id/office-booking-notification',
+    requireRole('superadmin'),
+    param('id').isInt(),
+    body('enabled').isBoolean(),
+    body('min_required').isInt({ min: 1, max: 5 }),
+    async (req, res) => {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+        const enabled = req.body.enabled === true || req.body.enabled === 'true';
+        const minRequired = Number(req.body.min_required);
+        const current = await db.query(
+            'SELECT email FROM users WHERE id=$1 AND tenant_id=$2',
+            [req.params.id, req.tenantId]
+        );
+        if (!current.rows[0]) return res.status(404).json({ error: 'Not found' });
+        if (enabled && !String(current.rows[0].email || '').trim()) {
+            return res.status(400).json({ error: 'Add an email address before enabling booking notifications' });
+        }
+        const { rows } = await db.query(
+            `UPDATE users
+                SET office_booking_notification_enabled=$1,
+                    office_booking_min_required=$2
+              WHERE id=$3 AND tenant_id=$4
+              RETURNING id, office_booking_notification_enabled, office_booking_min_required`,
+            [enabled, minRequired, req.params.id, req.tenantId]
+        );
+        res.json(rows[0]);
+    }
+);
 
 // ---------- Role management (tenant-scoped menu permissions) ----------
 router.get('/menu-registry', requireRole('superadmin'), (_req, res) => {
