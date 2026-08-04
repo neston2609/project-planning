@@ -189,10 +189,9 @@ async function leaveUserExists(tenantId, userId, client = db) {
     const { rows } = await client.query(
         `SELECT id
            FROM users
-          WHERE id=$1
-            AND tenant_id=$2
-            AND role IN ('user','admin','superadmin')
-            AND is_active=TRUE`,
+           WHERE id=$1
+             AND tenant_id=$2
+             AND role IN ('user','admin','superadmin')`,
         [userId, tenantId]
     );
     return !!rows[0];
@@ -319,7 +318,6 @@ router.get('/leaves/users', requireRole('admin', 'superadmin'), async (req, res)
            LEFT JOIN resources r ON r.user_id = u.id AND r.tenant_id = u.tenant_id
           WHERE u.tenant_id=$1
             AND u.role IN ('user','admin','superadmin')
-            AND u.is_active=TRUE
           ORDER BY display_name, u.username`,
         [req.tenantId]
     );
@@ -358,7 +356,7 @@ router.post('/leaves',
         if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
         const userId = Number(req.body.user_id);
         if (!await leaveUserExists(req.tenantId, userId)) {
-            return res.status(404).json({ error: 'Active team member not found' });
+            return res.status(404).json({ error: 'Team member not found' });
         }
         try {
             const { rows } = await db.query(
@@ -391,7 +389,7 @@ router.put('/leaves/:id',
         if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
         const userId = Number(req.body.user_id);
         if (!await leaveUserExists(req.tenantId, userId)) {
-            return res.status(404).json({ error: 'Active team member not found' });
+            return res.status(404).json({ error: 'Team member not found' });
         }
         try {
             const { rows } = await db.query(

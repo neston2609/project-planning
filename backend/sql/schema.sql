@@ -40,21 +40,35 @@ CREATE TABLE IF NOT EXISTS users (
     tenant_role_id  INT,
     must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
     theme_mode      VARCHAR(16) NOT NULL DEFAULT 'light',
+    office_booking_notification_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    office_booking_min_required INT NOT NULL DEFAULT 2,
     created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
 );
 ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id INT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_role_id INT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS theme_mode VARCHAR(16) NOT NULL DEFAULT 'light';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS office_booking_notification_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS office_booking_min_required INT NOT NULL DEFAULT 2;
 ALTER TABLE users ALTER COLUMN theme_mode SET DEFAULT 'light';
+ALTER TABLE users ALTER COLUMN office_booking_notification_enabled SET DEFAULT FALSE;
+ALTER TABLE users ALTER COLUMN office_booking_min_required SET DEFAULT 2;
 UPDATE users SET theme_mode='light' WHERE theme_mode IS NULL OR theme_mode NOT IN ('light', 'dark');
+UPDATE users SET office_booking_notification_enabled=FALSE WHERE office_booking_notification_enabled IS NULL;
+UPDATE users SET office_booking_min_required=2
+ WHERE office_booking_min_required IS NULL OR office_booking_min_required NOT BETWEEN 1 AND 5;
 ALTER TABLE users ALTER COLUMN theme_mode SET NOT NULL;
+ALTER TABLE users ALTER COLUMN office_booking_notification_enabled SET NOT NULL;
+ALTER TABLE users ALTER COLUMN office_booking_min_required SET NOT NULL;
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
 ALTER TABLE users ADD  CONSTRAINT users_role_check
     CHECK (role IN ('user', 'admin', 'superadmin', 'tenantadmin', 'tenantuser'));
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_theme_mode_check;
 ALTER TABLE users ADD  CONSTRAINT users_theme_mode_check
     CHECK (theme_mode IN ('light', 'dark'));
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_office_booking_min_required_check;
+ALTER TABLE users ADD CONSTRAINT users_office_booking_min_required_check
+    CHECK (office_booking_min_required BETWEEN 1 AND 5);
 CREATE INDEX IF NOT EXISTS idx_users_tenant ON users(tenant_id);
 -- Partial unique indexes for the username rules. bootstrap.js drops the old
 -- global UNIQUE constraint (users_username_key) on existing databases before
@@ -331,6 +345,26 @@ CREATE INDEX IF NOT EXISTS idx_employee_leaves_tenant_date
     ON employee_leaves(tenant_id, leave_date);
 CREATE INDEX IF NOT EXISTS idx_employee_leaves_user
     ON employee_leaves(user_id);
+
+CREATE TABLE IF NOT EXISTS office_booking_notification_runs (
+    id            BIGSERIAL PRIMARY KEY,
+    tenant_id     INT NOT NULL,
+    user_id       INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    week_start    DATE NOT NULL,
+    week_end      DATE NOT NULL,
+    booking_count INT NOT NULL DEFAULT 0,
+    min_required  INT NOT NULL DEFAULT 2,
+    status        VARCHAR(32) NOT NULL DEFAULT 'processing',
+    error_message TEXT NOT NULL DEFAULT '',
+    created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+    sent_at       TIMESTAMP,
+    CHECK (week_end >= week_start),
+    CHECK (min_required BETWEEN 1 AND 5),
+    CHECK (status IN ('processing', 'sent', 'sufficient', 'no_email', 'failed')),
+    UNIQUE (tenant_id, user_id, week_start)
+);
+CREATE INDEX IF NOT EXISTS idx_office_booking_notification_runs_week
+    ON office_booking_notification_runs(tenant_id, week_start);
 
 -- ---------- Post-It board ----------
 CREATE TABLE IF NOT EXISTS post_it_notes (
