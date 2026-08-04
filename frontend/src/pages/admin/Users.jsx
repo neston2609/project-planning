@@ -2,13 +2,15 @@ import { useEffect, useState } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
 import Modal from '../../components/Modal';
-import { PencilSquareIcon, TrashIcon, PlusIcon } from '@heroicons/react/24/outline';
+import { PaperAirplaneIcon, PencilSquareIcon, TrashIcon, PlusIcon } from '@heroicons/react/24/outline';
 
 export default function UsersPage() {
     const [list, setList] = useState([]);
     const [roles, setRoles] = useState([]);
     const [edit, setEdit] = useState(null);
     const [savingNotifications, setSavingNotifications] = useState(() => new Set());
+    const [testingNotifications, setTestingNotifications] = useState(() => new Set());
+    const [notificationTestResults, setNotificationTestResults] = useState({});
 
     async function load() {
         try {
@@ -71,6 +73,29 @@ export default function UsersPage() {
             });
         }
     }
+
+    async function testBookingNotification(user) {
+        if (!String(user.email || '').trim()) {
+            toast.error('Add an email address before testing booking notifications');
+            return;
+        }
+        setTestingNotifications(current => new Set(current).add(user.id));
+        setNotificationTestResults(current => ({ ...current, [user.id]: null }));
+        try {
+            const response = await api.post(`/admin/users/${user.id}/office-booking-notification/test`);
+            const result = response.data;
+            setNotificationTestResults(current => ({ ...current, [user.id]: result }));
+            toast.success(`Test email sent (${result.booking_count}/${result.min_required} booking days)`);
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Could not test booking notification');
+        } finally {
+            setTestingNotifications(current => {
+                const next = new Set(current);
+                next.delete(user.id);
+                return next;
+            });
+        }
+    }
     const defaultUserRole = roles.find(r => r.is_system && r.base_role === 'user') || roles.find(r => r.base_role === 'user') || roles[0];
 
     return (
@@ -108,6 +133,18 @@ export default function UsersPage() {
                                             {u.office_booking_notification_enabled ? 'On' : 'Off'}
                                         </span>
                                     </div>
+                                    <button type="button" className="btn-ghost !px-2 !py-1 mt-2 text-xs"
+                                            disabled={testingNotifications.has(u.id) || savingNotifications.has(u.id)}
+                                            onClick={() => testBookingNotification(u)}>
+                                        <PaperAirplaneIcon className="w-3.5 h-3.5" />
+                                        {testingNotifications.has(u.id) ? 'Testing...' : 'Test Email'}
+                                    </button>
+                                    {notificationTestResults[u.id] && (
+                                        <div className={`mt-1 text-[11px] leading-4 ${notificationTestResults[u.id].sent ? 'text-emerald-700' : 'text-slate-500'}`}>
+                                            Email sent · {notificationTestResults[u.id].requirement_met ? 'Requirement met' : 'Below requirement'} · {notificationTestResults[u.id].booking_count}/{notificationTestResults[u.id].min_required}<br />
+                                            {notificationTestResults[u.id].start} to {notificationTestResults[u.id].end}
+                                        </div>
+                                    )}
                                 </td>
                                 <td>
                                     <select className="input !w-20 !py-1.5"
