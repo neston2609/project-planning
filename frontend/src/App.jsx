@@ -35,6 +35,7 @@ import LoginLogsPage    from './pages/admin/LoginLogs';
 import LicenseManagement from './pages/admin/LicenseManagement';
 import RoleManagement   from './pages/admin/RoleManagement';
 import BookingConfig    from './pages/admin/BookingConfig';
+import LeaveManagement  from './pages/admin/LeaveManagement';
 import KBConfigure      from './pages/admin/KBConfigure';
 import Tenants          from './pages/admin/Tenants';
 import TenantUsers      from './pages/admin/TenantUsers';
@@ -112,6 +113,7 @@ function HomeRedirect() {
             ['resource.planning', '/resource-planning'],
             ['admin.projects', '/admin/projects'],
             ['admin.pipeline', '/admin/pipeline'],
+            ['admin.leave_management', '/admin/leave-management'],
             ['superadmin.users', '/admin/users']
         ];
         const found = fallbacks.find(([key]) => hasMenuAccess(user, key));
@@ -155,6 +157,7 @@ export default function App() {
                 <Route path="admin/smtp"       element={<RequireAdmin><RequireMenu menuKey="admin.smtp"><SmtpPage /></RequireMenu></RequireAdmin>} />
                 <Route path="admin/kb-config"  element={<RequireAdmin><RequireMenu menuKey="admin.kb_config"><KBConfigure /></RequireMenu></RequireAdmin>} />
                 <Route path="admin/licenses"   element={<RequireAdmin><RequireMenu menuKey="admin.licenses"><LicenseManagement /></RequireMenu></RequireAdmin>} />
+                <Route path="admin/leave-management" element={<RequireAdmin><RequireMenu menuKey="admin.leave_management"><LeaveManagement /></RequireMenu></RequireAdmin>} />
                 <Route path="admin/roles"      element={<RequireSuper><RequireMenu menuKey="admin.roles"><RoleManagement /></RequireMenu></RequireSuper>} />
 
                 <Route path="admin/booking-config" element={<RequireSuper><RequireMenu menuKey="superadmin.booking_config"><BookingConfig /></RequireMenu></RequireSuper>} />

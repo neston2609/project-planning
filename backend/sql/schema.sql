@@ -265,16 +265,45 @@ CREATE TABLE IF NOT EXISTS office_bookings (
     tenant_id     INT NOT NULL,
     user_id       INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     booking_date  DATE NOT NULL,
+    booking_type  VARCHAR(16) NOT NULL DEFAULT 'office' CHECK (booking_type IN ('office', 'customer')),
+    customer_id   INT REFERENCES customers(id) ON DELETE SET NULL,
+    customer_name VARCHAR(255) NOT NULL DEFAULT '',
     is_extra      BOOLEAN NOT NULL DEFAULT FALSE,
     reason        TEXT NOT NULL DEFAULT '',
     created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at    TIMESTAMP NOT NULL DEFAULT NOW(),
     UNIQUE (tenant_id, user_id, booking_date)
 );
+ALTER TABLE office_bookings ADD COLUMN IF NOT EXISTS booking_type VARCHAR(16) NOT NULL DEFAULT 'office';
+ALTER TABLE office_bookings ADD COLUMN IF NOT EXISTS customer_id INT;
+ALTER TABLE office_bookings ADD COLUMN IF NOT EXISTS customer_name VARCHAR(255) NOT NULL DEFAULT '';
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname='office_bookings_booking_type_check'
+          AND conrelid='office_bookings'::regclass
+    ) THEN
+        ALTER TABLE office_bookings
+            ADD CONSTRAINT office_bookings_booking_type_check
+            CHECK (booking_type IN ('office', 'customer'));
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname='office_bookings_customer_id_fkey'
+          AND conrelid='office_bookings'::regclass
+    ) THEN
+        ALTER TABLE office_bookings
+            ADD CONSTRAINT office_bookings_customer_id_fkey
+            FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL;
+    END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS idx_office_bookings_tenant_date
     ON office_bookings(tenant_id, booking_date);
 CREATE INDEX IF NOT EXISTS idx_office_bookings_user
     ON office_bookings(user_id);
+CREATE INDEX IF NOT EXISTS idx_office_bookings_customer
+    ON office_bookings(customer_id) WHERE customer_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS office_booking_holidays (
     id            SERIAL PRIMARY KEY,
@@ -287,6 +316,21 @@ CREATE TABLE IF NOT EXISTS office_booking_holidays (
 );
 CREATE INDEX IF NOT EXISTS idx_office_booking_holidays_tenant_date
     ON office_booking_holidays(tenant_id, holiday_date);
+
+CREATE TABLE IF NOT EXISTS employee_leaves (
+    id            SERIAL PRIMARY KEY,
+    tenant_id     INT NOT NULL,
+    user_id       INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    leave_date    DATE NOT NULL,
+    created_by    INT REFERENCES users(id) ON DELETE SET NULL,
+    created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+    UNIQUE (tenant_id, user_id, leave_date)
+);
+CREATE INDEX IF NOT EXISTS idx_employee_leaves_tenant_date
+    ON employee_leaves(tenant_id, leave_date);
+CREATE INDEX IF NOT EXISTS idx_employee_leaves_user
+    ON employee_leaves(user_id);
 
 -- ---------- Post-It board ----------
 CREATE TABLE IF NOT EXISTS post_it_notes (
@@ -616,7 +660,7 @@ BEGIN
     FOR t IN SELECT unnest(ARRAY[
         'tenants','users','customers','resources','projects',
         'smtp_config','year_config','tenant_config','customer_licenses',
-        'tenant_roles','office_booking_config','office_bookings','office_booking_holidays',
+        'tenant_roles','office_booking_config','office_bookings','office_booking_holidays','employee_leaves',
         'post_it_notes','kb_categories','kb_products','kb_articles'
     ]) LOOP
         EXECUTE format(

@@ -68,6 +68,9 @@ const bookingSelect = `
     SELECT ob.id,
            ob.user_id,
            to_char(ob.booking_date, 'YYYY-MM-DD') AS booking_date,
+           ob.booking_type,
+           ob.customer_id,
+           ob.customer_name,
            ob.is_extra,
            ob.reason,
            ob.created_at,
@@ -97,9 +100,37 @@ async function bookingsForDate(tenantId, date, client = db) {
     return rows;
 }
 
+async function resolveBookingDestination(tenantId, payload, client = db) {
+    const bookingType = payload.booking_type === 'customer' ? 'customer' : 'office';
+    if (bookingType === 'office') {
+        return { booking_type: 'office', customer_id: null, customer_name: '' };
+    }
+
+    const customerId = payload.customer_id === null || payload.customer_id === undefined || payload.customer_id === ''
+        ? null
+        : Number(payload.customer_id);
+    if (customerId) {
+        const { rows } = await client.query(
+            'SELECT id, alias FROM customers WHERE id=$1 AND tenant_id=$2',
+            [customerId, tenantId]
+        );
+        if (!rows[0]) return null;
+        return {
+            booking_type: 'customer',
+            customer_id: rows[0].id,
+            customer_name: rows[0].alias
+        };
+    }
+
+    const otherName = String(payload.customer_name || '').trim();
+    if (!otherName) return null;
+    return { booking_type: 'customer', customer_id: null, customer_name: otherName };
+}
+
 function capacityForDate(bookings, config) {
-    const normalCount = bookings.filter(b => !b.is_extra).length;
-    const extraCount = bookings.filter(b => b.is_extra).length;
+    const officeBookings = bookings.filter(b => b.booking_type !== 'customer');
+    const normalCount = officeBookings.filter(b => !b.is_extra).length;
+    const extraCount = officeBookings.filter(b => b.is_extra).length;
     return {
         normal_count: normalCount,
         extra_count: extraCount,
@@ -120,6 +151,51 @@ async function holidaysBetween(tenantId, start, end, client = db) {
         [tenantId, start, end]
     );
     return rows;
+}
+
+const leaveSelect = `
+    SELECT el.id,
+           el.user_id,
+           to_char(el.leave_date, 'YYYY-MM-DD') AS leave_date,
+           el.created_by,
+           el.created_at,
+           el.updated_at,
+           u.username,
+           u.full_name,
+           u.email,
+           COALESCE(
+             NULLIF(r.nick_name, ''),
+             NULLIF(CONCAT_WS(' ', NULLIF(r.first_name, ''), NULLIF(r.last_name, '')), ''),
+             NULLIF(u.full_name, ''),
+             u.username
+           ) AS display_name
+      FROM employee_leaves el
+      JOIN users u ON u.id = el.user_id AND u.tenant_id = el.tenant_id
+      LEFT JOIN resources r ON r.user_id = u.id AND r.tenant_id = el.tenant_id
+`;
+
+async function leavesBetween(tenantId, start, end, client = db) {
+    const { rows } = await client.query(
+        `${leaveSelect}
+          WHERE el.tenant_id=$1
+            AND el.leave_date BETWEEN $2::date AND $3::date
+          ORDER BY el.leave_date, display_name, u.username`,
+        [tenantId, start, end]
+    );
+    return rows;
+}
+
+async function leaveUserExists(tenantId, userId, client = db) {
+    const { rows } = await client.query(
+        `SELECT id
+           FROM users
+          WHERE id=$1
+            AND tenant_id=$2
+            AND role IN ('user','admin','superadmin')
+            AND is_active=TRUE`,
+        [userId, tenantId]
+    );
+    return !!rows[0];
 }
 
 async function holidayForDate(tenantId, date, client = db) {
@@ -215,6 +291,7 @@ router.get('/',
 
         const config = await ensureConfig(req.tenantId);
         const holidays = await holidaysBetween(req.tenantId, req.query.start, req.query.end);
+        const leaves = await leavesBetween(req.tenantId, req.query.start, req.query.end);
         const { rows } = await db.query(
             `${bookingSelect}
               WHERE ob.tenant_id=$1
@@ -222,7 +299,135 @@ router.get('/',
               ORDER BY ob.booking_date, ob.is_extra, display_name, u.username`,
             [req.tenantId, req.query.start, req.query.end]
         );
-        res.json({ config, today: localDateISO(), bookings: rows, holidays });
+        res.json({ config, today: localDateISO(), bookings: rows, holidays, leaves });
+    }
+);
+
+router.get('/leaves/users', requireRole('admin', 'superadmin'), async (req, res) => {
+    const { rows } = await db.query(
+        `SELECT u.id,
+                u.username,
+                u.full_name,
+                u.email,
+                COALESCE(
+                  NULLIF(r.nick_name, ''),
+                  NULLIF(CONCAT_WS(' ', NULLIF(r.first_name, ''), NULLIF(r.last_name, '')), ''),
+                  NULLIF(u.full_name, ''),
+                  u.username
+                ) AS display_name
+           FROM users u
+           LEFT JOIN resources r ON r.user_id = u.id AND r.tenant_id = u.tenant_id
+          WHERE u.tenant_id=$1
+            AND u.role IN ('user','admin','superadmin')
+            AND u.is_active=TRUE
+          ORDER BY display_name, u.username`,
+        [req.tenantId]
+    );
+    res.json(rows);
+});
+
+router.get('/customers', async (req, res) => {
+    const { rows } = await db.query(
+        `SELECT id, alias, full_name
+           FROM customers
+          WHERE tenant_id=$1
+          ORDER BY alias`,
+        [req.tenantId]
+    );
+    res.json(rows);
+});
+
+router.get('/leaves',
+    requireRole('admin', 'superadmin'),
+    query('start').custom(isISODate),
+    query('end').custom(isISODate),
+    async (req, res) => {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+        if (req.query.end < req.query.start) return res.status(400).json({ error: 'Invalid date range' });
+        res.json(await leavesBetween(req.tenantId, req.query.start, req.query.end));
+    }
+);
+
+router.post('/leaves',
+    requireRole('admin', 'superadmin'),
+    body('user_id').isInt({ min: 1 }),
+    body('leave_date').custom(isISODate),
+    async (req, res) => {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+        const userId = Number(req.body.user_id);
+        if (!await leaveUserExists(req.tenantId, userId)) {
+            return res.status(404).json({ error: 'Active team member not found' });
+        }
+        try {
+            const { rows } = await db.query(
+                `INSERT INTO employee_leaves(tenant_id, user_id, leave_date, created_by)
+                 VALUES ($1,$2,$3::date,$4)
+                 RETURNING id`,
+                [req.tenantId, userId, req.body.leave_date, req.user.uid]
+            );
+            const created = await db.query(
+                `${leaveSelect} WHERE el.id=$1 AND el.tenant_id=$2`,
+                [rows[0].id, req.tenantId]
+            );
+            res.status(201).json(created.rows[0]);
+        } catch (err) {
+            if (err.code === '23505') {
+                return res.status(409).json({ error: 'This team member already has leave on this date' });
+            }
+            throw err;
+        }
+    }
+);
+
+router.put('/leaves/:id',
+    requireRole('admin', 'superadmin'),
+    param('id').isInt({ min: 1 }),
+    body('user_id').isInt({ min: 1 }),
+    body('leave_date').custom(isISODate),
+    async (req, res) => {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+        const userId = Number(req.body.user_id);
+        if (!await leaveUserExists(req.tenantId, userId)) {
+            return res.status(404).json({ error: 'Active team member not found' });
+        }
+        try {
+            const { rows } = await db.query(
+                `UPDATE employee_leaves
+                    SET user_id=$1,
+                        leave_date=$2::date,
+                        updated_at=NOW()
+                  WHERE id=$3 AND tenant_id=$4
+                  RETURNING id`,
+                [userId, req.body.leave_date, req.params.id, req.tenantId]
+            );
+            if (!rows[0]) return res.status(404).json({ error: 'Leave record not found' });
+            const updated = await db.query(
+                `${leaveSelect} WHERE el.id=$1 AND el.tenant_id=$2`,
+                [rows[0].id, req.tenantId]
+            );
+            res.json(updated.rows[0]);
+        } catch (err) {
+            if (err.code === '23505') {
+                return res.status(409).json({ error: 'This team member already has leave on this date' });
+            }
+            throw err;
+        }
+    }
+);
+
+router.delete('/leaves/:id',
+    requireRole('admin', 'superadmin'),
+    param('id').isInt({ min: 1 }),
+    async (req, res) => {
+        const { rowCount } = await db.query(
+            'DELETE FROM employee_leaves WHERE id=$1 AND tenant_id=$2',
+            [req.params.id, req.tenantId]
+        );
+        if (!rowCount) return res.status(404).json({ error: 'Leave record not found' });
+        res.json({ ok: true });
     }
 );
 
@@ -355,6 +560,8 @@ router.get('/summary',
             person.days.push({
                 booking_id: row.id,
                 booking_date: row.booking_date,
+                booking_type: row.booking_type,
+                customer_name: row.customer_name,
                 is_extra: row.is_extra,
                 reason: row.reason
             });
@@ -484,6 +691,9 @@ router.post('/bulk',
 
 router.post('/',
     body('booking_date').custom(isISODate),
+    body('booking_type').optional().isIn(['office', 'customer']),
+    body('customer_id').optional({ nullable: true }).isInt({ min: 1 }),
+    body('customer_name').optional({ nullable: true }).isString().trim().isLength({ max: 255 }),
     body('reason').optional({ nullable: true }).isString().isLength({ max: 2000 }),
     async (req, res) => {
         const errs = validationResult(req);
@@ -504,6 +714,11 @@ router.post('/',
         const client = await db.getClient();
         try {
             await client.query('BEGIN');
+            const destination = await resolveBookingDestination(req.tenantId, req.body, client);
+            if (!destination) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: 'Please select a customer or enter an Other customer name' });
+            }
             const config = await ensureConfig(req.tenantId, client);
             await client.query(
                 'SELECT pg_advisory_xact_lock($1, $2)',
@@ -524,7 +739,7 @@ router.post('/',
             const reason = String(req.body.reason || '').trim();
             let isExtra = false;
 
-            if (capacity.is_full) {
+            if (destination.booking_type === 'office' && capacity.is_full) {
                 if (!reason) {
                     await client.query('ROLLBACK');
                     return res.status(409).json({
@@ -549,10 +764,14 @@ router.post('/',
             }
 
             const { rows } = await client.query(
-                `INSERT INTO office_bookings(tenant_id, user_id, booking_date, is_extra, reason)
-                 VALUES ($1,$2,$3::date,$4,$5)
+                `INSERT INTO office_bookings(
+                    tenant_id, user_id, booking_date, booking_type, customer_id, customer_name, is_extra, reason
+                 )
+                 VALUES ($1,$2,$3::date,$4,$5,$6,$7,$8)
                  RETURNING id`,
-                [req.tenantId, req.user.uid, bookingDate, isExtra, reason]
+                [req.tenantId, req.user.uid, bookingDate,
+                 destination.booking_type, destination.customer_id, destination.customer_name,
+                 isExtra, reason]
             );
             const created = await client.query(`${bookingSelect} WHERE ob.id=$1 AND ob.tenant_id=$2`, [rows[0].id, req.tenantId]);
             await client.query('COMMIT');

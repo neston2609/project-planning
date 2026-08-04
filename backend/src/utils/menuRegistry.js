@@ -25,6 +25,7 @@ const MENU_REGISTRY = [
     { key: 'admin.app', label: 'App Config', group: 'Administration', min_role: 'admin' },
     { key: 'admin.smtp', label: 'SMTP', group: 'Administration', min_role: 'admin' },
     { key: 'admin.kb_config', label: 'KB Configure', group: 'Administration', min_role: 'admin' },
+    { key: 'admin.leave_management', label: 'Leave Management', group: 'Administration', min_role: 'admin' },
 
     { key: 'admin.roles', label: 'Role Management', group: 'Superadmin', min_role: 'superadmin' },
     { key: 'superadmin.booking_config', label: 'Booking Config', group: 'Superadmin', min_role: 'superadmin' },

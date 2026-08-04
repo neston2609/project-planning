@@ -41,7 +41,8 @@ export const DEFAULT_MENU_KEYS = {
         'admin.year',
         'admin.app',
         'admin.smtp',
-        'admin.kb_config'
+        'admin.kb_config',
+        'admin.leave_management'
     ],
     superadmin: [
         'dashboard.summary',
@@ -69,6 +70,7 @@ export const DEFAULT_MENU_KEYS = {
         'admin.app',
         'admin.smtp',
         'admin.kb_config',
+        'admin.leave_management',
         'admin.roles',
         'superadmin.booking_config',
         'superadmin.users',
