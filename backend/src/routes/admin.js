@@ -6,6 +6,8 @@ const db = require('../db');
 const { requireAuth, requireRole, requireTenant } = require('../middleware/auth');
 const { MENU_REGISTRY, defaultMenuKeysForRole } = require('../utils/menuRegistry');
 const { ensureDefaultRoles } = require('../utils/roles');
+const { sendMail } = require('../utils/mailer');
+const { DEFAULT_TIME_ZONE, emailContent, nextWorkWeekRange } = require('../utils/officeBookingNotifications');
 
 const router = express.Router();
 const DEFAULT_FOOTER_TEXT = 'Implemented and Maintain by BSM RPA Team. For Internal use only';
@@ -318,6 +320,62 @@ router.put('/users/:id/office-booking-notification',
             [enabled, minRequired, req.params.id, req.tenantId]
         );
         res.json(rows[0]);
+    }
+);
+
+router.post('/users/:id/office-booking-notification/test',
+    requireRole('superadmin'),
+    param('id').isInt({ min: 1 }),
+    async (req, res) => {
+        const errs = validationResult(req);
+        if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+        const { rows } = await db.query(
+            `SELECT id, tenant_id, username, full_name, email, office_booking_min_required
+               FROM users
+              WHERE id=$1 AND tenant_id=$2`,
+            [req.params.id, req.tenantId]
+        );
+        const user = rows[0];
+        if (!user) return res.status(404).json({ error: 'Not found' });
+        if (!String(user.email || '').trim()) {
+            return res.status(400).json({ error: 'Add an email address before testing booking notifications' });
+        }
+
+        const timeZone = process.env.OFFICE_BOOKING_NOTIFICATION_TIMEZONE || DEFAULT_TIME_ZONE;
+        const range = nextWorkWeekRange(new Date(), timeZone);
+        const countResult = await db.query(
+            `SELECT COUNT(*)::int AS count
+               FROM office_bookings
+              WHERE tenant_id=$1 AND user_id=$2
+                AND booking_date BETWEEN $3 AND $4`,
+            [req.tenantId, user.id, range.start, range.end]
+        );
+        const bookingCount = Number(countResult.rows[0]?.count || 0);
+        const minRequired = Number(user.office_booking_min_required) || 2;
+
+        try {
+            const content = emailContent(user, range, bookingCount, minRequired, { isTest: true });
+            await sendMail({ tenantId: req.tenantId, to: user.email.trim(), ...content });
+            console.log('[office-booking-notification/test]', {
+                tenantId: req.tenantId,
+                userId: user.id,
+                range,
+                bookingCount,
+                minRequired
+            });
+            res.json({
+                sent: true,
+                status: 'sent',
+                requirement_met: bookingCount >= minRequired,
+                booking_count: bookingCount,
+                min_required: minRequired,
+                ...range
+            });
+        } catch (err) {
+            console.error('[office-booking-notification/test]', err.message || err);
+            const status = err.code === 'SMTP_NOT_CONFIGURED' ? 400 : 502;
+            res.status(status).json({ error: err.message || 'Could not send test booking notification' });
+        }
     }
 );
 

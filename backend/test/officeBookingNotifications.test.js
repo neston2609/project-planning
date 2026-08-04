@@ -26,6 +26,32 @@ test('email reminder reports the booking shortfall', () => {
     assert.match(content.html, /Dao &lt;Team&gt;/);
 });
 
+test('test reminder is clearly identified without changing the booking calculation', () => {
+    const content = emailContent(
+        { username: 'dao', full_name: 'Dao' },
+        { start: '2026-08-10', end: '2026-08-14' },
+        0,
+        2,
+        { isTest: true }
+    );
+    assert.match(content.subject, /^\[TEST\] Office Booking Reminder/);
+    assert.match(content.text, /test notification triggered by an administrator/i);
+    assert.match(content.html, /<strong>TEST:<\/strong>/);
+});
+
+test('test reminder still sends a clear success result when requirement is met', () => {
+    const content = emailContent(
+        { username: 'may', full_name: 'May' },
+        { start: '2026-08-10', end: '2026-08-14' },
+        2,
+        2,
+        { isTest: true }
+    );
+    assert.equal(content.subject, '[TEST] Office Booking Check: Requirement met');
+    assert.match(content.text, /requirement has been met/i);
+    assert.doesNotMatch(content.text, /Please add 0/);
+});
+
 test('weekly job sends only when booking count is below the user minimum', async () => {
     const sent = [];
     let insertedId = 100;

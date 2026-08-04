@@ -44,25 +44,35 @@ function escapeHtml(value) {
         .replaceAll("'", '&#039;');
 }
 
-function emailContent(user, range, bookingCount, minRequired) {
+function emailContent(user, range, bookingCount, minRequired, options = {}) {
     const name = user.full_name || user.username;
     const remaining = Math.max(0, minRequired - bookingCount);
-    const subject = `Office Booking Reminder: ${remaining} more day${remaining === 1 ? '' : 's'} required`;
+    const requirementMet = bookingCount >= minRequired;
+    const testPrefix = options.isTest ? '[TEST] ' : '';
+    const subject = requirementMet && options.isTest
+        ? '[TEST] Office Booking Check: Requirement met'
+        : `${testPrefix}Office Booking Reminder: ${remaining} more day${remaining === 1 ? '' : 's'} required`;
     const text = [
         `Hello ${name},`,
         '',
+        ...(options.isTest ? ['This is a test notification triggered by an administrator.', ''] : []),
         `You currently have ${bookingCount} booking day${bookingCount === 1 ? '' : 's'} for next week (${range.start} to ${range.end}).`,
         `Your minimum requirement is ${minRequired} day${minRequired === 1 ? '' : 's'} per week.`,
-        `Please add ${remaining} more booking day${remaining === 1 ? '' : 's'} in Office Booking.`,
+        requirementMet
+            ? 'Your booking requirement has been met. No additional booking is required.'
+            : `Please add ${remaining} more booking day${remaining === 1 ? '' : 's'} in Office Booking.`,
         '',
         'This is an automated reminder from Planning.'
     ].join('\n');
     const html = `
         <p>Hello ${escapeHtml(name)},</p>
+        ${options.isTest ? '<p style="padding:10px 12px;border-radius:8px;background:#eef2ff;color:#3730a3"><strong>TEST:</strong> This notification was triggered by an administrator.</p>' : ''}
         <p>You currently have <strong>${bookingCount}</strong> booking day${bookingCount === 1 ? '' : 's'}
            for next week (<strong>${range.start}</strong> to <strong>${range.end}</strong>).</p>
         <p>Your minimum requirement is <strong>${minRequired}</strong> day${minRequired === 1 ? '' : 's'} per week.</p>
-        <p>Please add <strong>${remaining}</strong> more booking day${remaining === 1 ? '' : 's'} in Office Booking.</p>
+        ${requirementMet
+            ? '<p style="color:#047857"><strong>Your booking requirement has been met.</strong> No additional booking is required.</p>'
+            : `<p>Please add <strong>${remaining}</strong> more booking day${remaining === 1 ? '' : 's'} in Office Booking.</p>`}
         <p style="color:#64748b;font-size:12px">This is an automated reminder from Planning.</p>`;
     return { subject, text, html };
 }
