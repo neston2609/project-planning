@@ -46,7 +46,8 @@ const adminNav = [
     { key: 'admin.year',      to: '/admin/year',      label: 'Year Config',        icon: CalendarDaysIcon },
     { key: 'admin.app',       to: '/admin/app',       label: 'App Config',         icon: Cog6ToothIcon },
     { key: 'admin.smtp',      to: '/admin/smtp',      label: 'SMTP',               icon: EnvelopeIcon },
-    { key: 'admin.kb_config', to: '/admin/kb-config', label: 'KB Configure',       icon: BookOpenIcon }
+    { key: 'admin.kb_config', to: '/admin/kb-config', label: 'KB Configure',       icon: BookOpenIcon },
+    { key: 'admin.leave_management', to: '/admin/leave-management', label: 'Leave Management', icon: CalendarDaysIcon }
 ];
 
 const superadminNav = [

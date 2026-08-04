@@ -35,6 +35,31 @@ function bookingDayLabel(isoDate) {
     return `${WEEKDAYS[d.getDay()]} ${d.getDate()}`;
 }
 
+function bookingDisplayName(booking) {
+    if (booking.booking_type === 'customer' && booking.customer_name) {
+        return `${booking.display_name} (${booking.customer_name})`;
+    }
+    return booking.display_name;
+}
+
+function bookingPayload(form) {
+    if (form.booking_type !== 'customer') {
+        return { booking_type: 'office', customer_id: null, customer_name: '' };
+    }
+    if (form.customer_choice === 'other') {
+        return {
+            booking_type: 'customer',
+            customer_id: null,
+            customer_name: String(form.other_customer_name || '').trim()
+        };
+    }
+    return {
+        booking_type: 'customer',
+        customer_id: Number(form.customer_choice) || null,
+        customer_name: ''
+    };
+}
+
 function monthStart(date) {
     return new Date(date.getFullYear(), date.getMonth(), 1);
 }
@@ -69,10 +94,13 @@ function weekendHoliday(isoDate) {
 export default function OfficeBooking() {
     const { user } = useAuth();
     const [bookings, setBookings] = useState([]);
+    const [leaves, setLeaves] = useState([]);
     const [holidays, setHolidays] = useState([]);
+    const [customers, setCustomers] = useState([]);
     const [config, setConfig] = useState({ max_bookings_per_day: 6, extra_bookings_per_day: 3 });
     const [today, setToday] = useState(dateISO(new Date()));
     const [loading, setLoading] = useState(true);
+    const [bookingModal, setBookingModal] = useState(null);
     const [fullModal, setFullModal] = useState(null);
     const [summary, setSummary] = useState(null);
     const [bulkWeekdays, setBulkWeekdays] = useState([]);
@@ -92,6 +120,15 @@ export default function OfficeBooking() {
         }
         return map;
     }, [bookings]);
+
+    const leavesByDate = useMemo(() => {
+        const map = new Map();
+        for (const leave of leaves) {
+            if (!map.has(leave.leave_date)) map.set(leave.leave_date, []);
+            map.get(leave.leave_date).push(leave);
+        }
+        return map;
+    }, [leaves]);
 
     const holidaysByDate = useMemo(() => {
         const map = new Map();
@@ -129,9 +166,14 @@ export default function OfficeBooking() {
     async function load() {
         setLoading(true);
         try {
-            const res = await api.get(`/office-bookings?start=${range.start}&end=${range.end}`);
+            const [res, customerRes] = await Promise.all([
+                api.get(`/office-bookings?start=${range.start}&end=${range.end}`),
+                api.get('/office-bookings/customers')
+            ]);
             setBookings(res.data.bookings || []);
+            setLeaves(res.data.leaves || []);
             setHolidays(res.data.holidays || []);
+            setCustomers(customerRes.data || []);
             setConfig(res.data.config || { max_bookings_per_day: 6, extra_bookings_per_day: 3 });
             setToday(res.data.today || dateISO(new Date()));
         } catch (err) {
@@ -144,8 +186,9 @@ export default function OfficeBooking() {
     useEffect(() => { load(); }, []);
 
     function dayCapacity(dayBookings) {
-        const normal = dayBookings.filter(b => !b.is_extra).length;
-        const extra = dayBookings.filter(b => b.is_extra).length;
+        const officeBookings = dayBookings.filter(b => b.booking_type !== 'customer');
+        const normal = officeBookings.filter(b => !b.is_extra).length;
+        const extra = officeBookings.filter(b => b.is_extra).length;
         return {
             normal,
             extra,
@@ -170,21 +213,35 @@ export default function OfficeBooking() {
         if (holiday) return toast.error(`Cannot book on ${holiday.name}`);
 
         const cap = dayCapacity(dayBookings);
-        if (cap.isFull) {
-            setFullModal({ date, bookings: dayBookings, capacity: cap, reason: '' });
-            return;
-        }
+        setBookingModal({
+            date,
+            bookings: dayBookings,
+            capacity: cap,
+            booking_type: 'office',
+            customer_choice: '',
+            other_customer_name: ''
+        });
+    }
 
+    async function confirmBooking(form) {
+        const destination = bookingPayload(form);
+        if (destination.booking_type === 'customer' && !destination.customer_id && !destination.customer_name) {
+            return toast.error(form.customer_choice === 'other'
+                ? 'Please enter the customer name'
+                : 'Please select a customer or Other');
+        }
         try {
-            await api.post('/office-bookings', { booking_date: date });
-            toast.success('Office booked');
+            await api.post('/office-bookings', { booking_date: form.date, ...destination });
+            toast.success(destination.booking_type === 'customer' ? 'Customer booking saved' : 'Office booked');
+            setBookingModal(null);
             load();
         } catch (err) {
             if (err.response?.data?.code === 'FULL') {
+                setBookingModal(null);
                 setFullModal({
-                    date,
-                    bookings: err.response.data.bookings || dayBookings,
-                    capacity: err.response.data.capacity || cap,
+                    ...form,
+                    bookings: err.response.data.bookings || form.bookings || [],
+                    capacity: err.response.data.capacity || form.capacity,
                     reason: ''
                 });
             } else {
@@ -195,7 +252,7 @@ export default function OfficeBooking() {
 
     async function deleteBooking(booking) {
         if (booking.booking_date < today) return toast.error('Cannot delete a past booking');
-        if (!confirm(`Delete office booking on ${booking.booking_date}?`)) return;
+        if (!confirm(`Delete booking on ${booking.booking_date}?`)) return;
         try {
             await api.delete(`/office-bookings/${booking.id}`);
             toast.success('Booking deleted');
@@ -232,7 +289,11 @@ export default function OfficeBooking() {
     async function requestExtra(f) {
         if (!String(f.reason || '').trim()) return toast.error('Please enter a reason');
         try {
-            await api.post('/office-bookings', { booking_date: f.date, reason: f.reason });
+            await api.post('/office-bookings', {
+                booking_date: f.date,
+                reason: f.reason,
+                ...bookingPayload(f)
+            });
             toast.success('Extra booking saved');
             setFullModal(null);
             load();
@@ -286,6 +347,7 @@ export default function OfficeBooking() {
                                    today={today}
                                    userId={user.id}
                                    bookingsByDate={byDate}
+                                   leavesByDate={leavesByDate}
                                    holidaysByDate={holidaysByDate}
                                    config={config}
                                    loading={loading}
@@ -303,6 +365,10 @@ export default function OfficeBooking() {
                                  onToggle={toggleBulkWeekday}
                                  onBook={bookWeekdays} />
 
+            {bookingModal && <BookingTypeModal initial={bookingModal}
+                                                customers={customers}
+                                                onClose={() => setBookingModal(null)}
+                                                onSubmit={confirmBooking} />}
             {fullModal && <FullBookingModal initial={fullModal} config={config}
                                             onClose={() => setFullModal(null)}
                                             onSubmit={requestExtra} />}
@@ -311,12 +377,18 @@ export default function OfficeBooking() {
     );
 }
 
-function MonthCalendar({ month, today, userId, bookingsByDate, holidaysByDate, config, loading, onDayClick, onSummary }) {
+function MonthCalendar({ month, today, userId, bookingsByDate, leavesByDate, holidaysByDate, config, loading, onDayClick, onSummary }) {
     const days = calendarDays(month);
     return (
         <div className="card overflow-hidden">
             <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
                 <h2 className="text-lg font-bold">{monthLabel(month)}</h2>
+                <div className="hidden sm:flex items-center gap-2 text-[10px] font-semibold text-slate-500">
+                    <span className="rounded bg-blue-100 px-2 py-1 text-blue-800">Office</span>
+                    <span className="rounded bg-emerald-100 px-2 py-1 text-emerald-800">Customer</span>
+                    <span className="rounded border border-rose-200 bg-rose-100 px-2 py-1 text-rose-800">Leave</span>
+                    <span className="rounded bg-amber-100 px-2 py-1 text-amber-800">Extra</span>
+                </div>
                 <button className="btn-ghost ml-auto" onClick={onSummary}>
                     <ClipboardDocumentListIcon className="w-4 h-4" /> Booking Summary
                 </button>
@@ -329,13 +401,16 @@ function MonthCalendar({ month, today, userId, bookingsByDate, holidaysByDate, c
                     if (!day) return <div key={`empty-${idx}`} className="min-h-[120px] border-r border-b border-slate-100 bg-slate-50/60" />;
                     const date = dateISO(day);
                     const bookings = bookingsByDate.get(date) || [];
+                    const dayLeaves = leavesByDate.get(date) || [];
                     const holiday = holidaysByDate.get(date);
-                    const normal = bookings.filter(b => !b.is_extra).length;
-                    const extra = bookings.filter(b => b.is_extra).length;
+                    const officeBookings = bookings.filter(b => b.booking_type !== 'customer');
+                    const normal = officeBookings.filter(b => !b.is_extra).length;
+                    const extra = officeBookings.filter(b => b.is_extra).length;
                     const mine = bookings.some(b => Number(b.user_id) === Number(userId));
                     const isPast = date < today;
                     const isFull = normal >= Number(config.max_bookings_per_day || 0);
-                    const bookedNames = bookings.map(b => `${b.display_name}${b.is_extra ? ' (Extra)' : ''}`).join('\n');
+                    const bookedNames = bookings.map(b => `${bookingDisplayName(b)}${b.is_extra ? ' (Extra)' : ''}`);
+                    const leaveNames = dayLeaves.map(leave => `${leave.display_name} (Leave)`);
                     if (holiday) {
                         const isWeekendHoliday = !!holiday.is_weekend;
                         return (
@@ -353,10 +428,22 @@ function MonthCalendar({ month, today, userId, bookingsByDate, holidaysByDate, c
                                         {holiday.name}
                                     </div>
                                 )}
+                                <div className="mt-2 space-y-1">
+                                    {dayLeaves.slice(0, 3).map(leave => (
+                                        <div key={leave.id}
+                                             className="truncate rounded border border-rose-200 bg-rose-100 px-2 py-1 text-xs font-semibold text-rose-800"
+                                             title={`${leave.display_name} (Leave)`}>
+                                            {leave.display_name} (Leave)
+                                        </div>
+                                    ))}
+                                    {dayLeaves.length > 3 && <div className="text-xs text-rose-500">+{dayLeaves.length - 3} more leave</div>}
+                                </div>
                             </button>
                         );
                     }
-                    const cellTitle = bookedNames;
+                    const cellTitle = [...bookedNames, ...leaveNames].join('\n');
+                    const visibleBookingCount = Math.max(0, 4 - Math.min(dayLeaves.length, 2));
+                    const hiddenCount = Math.max(0, bookings.length - visibleBookingCount) + Math.max(0, dayLeaves.length - 2);
                     return (
                         <button key={date}
                                 className={`relative min-h-[120px] border-r border-b border-slate-100 p-2 pt-9 text-left align-top transition
@@ -373,15 +460,26 @@ function MonthCalendar({ month, today, userId, bookingsByDate, holidaysByDate, c
                             </div>
                             {extra > 0 && <div className="mt-1 text-[10px] text-amber-700">Extra {extra}/{config.extra_bookings_per_day}</div>}
                             <div className="mt-2 space-y-1">
-                                {loading && bookings.length === 0 && <div className="h-4 rounded bg-slate-100 animate-pulse" />}
-                                {bookings.slice(0, 4).map(b => (
-                                    <div key={b.id}
-                                         className={`truncate rounded px-2 py-1 text-xs ${b.is_extra ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`}
-                                         title={b.display_name}>
-                                        {b.display_name}{Number(b.user_id) === Number(userId) ? ' (You)' : ''}
+                                {loading && bookings.length === 0 && dayLeaves.length === 0 && <div className="h-4 rounded bg-slate-100 animate-pulse" />}
+                                {dayLeaves.slice(0, 2).map(leave => (
+                                    <div key={`leave-${leave.id}`}
+                                         className="truncate rounded border border-rose-200 bg-rose-100 px-2 py-1 text-xs font-semibold text-rose-800"
+                                         title={`${leave.display_name} (Leave)`}>
+                                        {leave.display_name} (Leave)
                                     </div>
                                 ))}
-                                {bookings.length > 4 && <div className="text-xs text-slate-400">+{bookings.length - 4} more</div>}
+                                {bookings.slice(0, visibleBookingCount).map(b => (
+                                    <div key={b.id}
+                                         className={`truncate rounded px-2 py-1 text-xs ${b.is_extra
+                                             ? 'bg-amber-100 text-amber-800'
+                                             : b.booking_type === 'customer'
+                                                 ? 'bg-emerald-100 text-emerald-800'
+                                                 : 'bg-blue-100 text-blue-800'}`}
+                                         title={bookingDisplayName(b)}>
+                                        {bookingDisplayName(b)}{Number(b.user_id) === Number(userId) ? ' (You)' : ''}
+                                    </div>
+                                ))}
+                                {hiddenCount > 0 && <div className="text-xs text-slate-400">+{hiddenCount} more</div>}
                             </div>
                         </button>
                     );
@@ -423,12 +521,12 @@ function MyBookingsTable({ bookings, today, onDelete }) {
     return (
         <div className="card overflow-x-auto">
             <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-200">
-                <h2 className="text-lg font-bold">My Office Bookings</h2>
+                <h2 className="text-lg font-bold">My Bookings</h2>
                 <span className="text-sm text-slate-500">{bookings.length} booking(s)</span>
             </div>
             <table className="table-clean">
                 <thead>
-                    <tr><th>Date</th><th>Month</th><th></th></tr>
+                    <tr><th>Date</th><th>Type</th><th>Destination</th><th>Month</th><th></th></tr>
                 </thead>
                 <tbody>
                     {bookings.map(b => {
@@ -437,6 +535,14 @@ function MyBookingsTable({ bookings, today, onDelete }) {
                         return (
                             <tr key={b.id}>
                                 <td className="font-mono text-sm">{b.booking_date}</td>
+                                <td>
+                                    <span className={`pill ${b.booking_type === 'customer'
+                                        ? 'bg-emerald-100 text-emerald-800'
+                                        : 'bg-blue-100 text-blue-800'}`}>
+                                        {b.booking_type === 'customer' ? 'Customer' : 'Office'}
+                                    </span>
+                                </td>
+                                <td>{b.booking_type === 'customer' ? b.customer_name : 'Office'}</td>
                                 <td>{monthLabel(monthStart(d))}</td>
                                 <td className="text-right">
                                     <button className="btn-ghost" disabled={isPast}
@@ -449,11 +555,84 @@ function MyBookingsTable({ bookings, today, onDelete }) {
                         );
                     })}
                     {bookings.length === 0 && (
-                        <tr><td colSpan={3} className="text-center text-slate-400 py-8">No office bookings in the displayed months.</td></tr>
+                        <tr><td colSpan={5} className="text-center text-slate-400 py-8">No bookings in the displayed months.</td></tr>
                     )}
                 </tbody>
             </table>
         </div>
+    );
+}
+
+function BookingTypeModal({ initial, customers, onClose, onSubmit }) {
+    const [form, setForm] = useState({ ...initial });
+    const isCustomer = form.booking_type === 'customer';
+    return (
+        <Modal open onClose={onClose} title={`Book date - ${form.date}`}
+               footer={<>
+                   <button className="btn-ghost" onClick={onClose}>Cancel</button>
+                   <button className="btn-primary" onClick={() => onSubmit(form)}>Confirm Booking</button>
+               </>}>
+            <div className="space-y-4">
+                <div>
+                    <label className="label">Booking Type</label>
+                    <div className="grid grid-cols-2 gap-3">
+                        <button type="button"
+                                className={`rounded-xl border p-4 text-left transition ${!isCustomer
+                                    ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100'
+                                    : 'border-slate-200 hover:bg-slate-50'}`}
+                                onClick={() => setForm({ ...form, booking_type: 'office' })}>
+                            <div className="font-bold text-slate-900">Office</div>
+                            <div className="mt-1 text-xs text-slate-500">Work at the office</div>
+                        </button>
+                        <button type="button"
+                                className={`rounded-xl border p-4 text-left transition ${isCustomer
+                                    ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-100'
+                                    : 'border-slate-200 hover:bg-slate-50'}`}
+                                onClick={() => setForm({ ...form, booking_type: 'customer' })}>
+                            <div className="font-bold text-slate-900">Customer</div>
+                            <div className="mt-1 text-xs text-slate-500">Work at a customer site</div>
+                        </button>
+                    </div>
+                </div>
+
+                {isCustomer && (
+                    <>
+                        <div>
+                            <label className="label">Customer</label>
+                            <select className="input" value={form.customer_choice || ''}
+                                    onChange={event => setForm({
+                                        ...form,
+                                        customer_choice: event.target.value,
+                                        other_customer_name: event.target.value === 'other' ? form.other_customer_name : ''
+                                    })}>
+                                <option value="">Select customer</option>
+                                {customers.map(customer => (
+                                    <option key={customer.id} value={customer.id}>
+                                        {customer.alias}{customer.full_name ? ` - ${customer.full_name}` : ''}
+                                    </option>
+                                ))}
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+                        {form.customer_choice === 'other' && (
+                            <div>
+                                <label className="label">Other Customer Name</label>
+                                <input className="input" maxLength={255} autoFocus
+                                       placeholder="Enter customer name"
+                                       value={form.other_customer_name || ''}
+                                       onChange={event => setForm({ ...form, other_customer_name: event.target.value })} />
+                            </div>
+                        )}
+                    </>
+                )}
+
+                {form.capacity?.isFull && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                        Normal capacity is full. After confirmation, you can request an Extra Booking and provide a reason.
+                    </div>
+                )}
+            </div>
+        </Modal>
     );
 }
 
@@ -484,7 +663,7 @@ function FullBookingModal({ initial, config, onClose, onSubmit }) {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {f.bookings.map(b => (
                             <div key={b.id} className={`rounded border px-3 py-2 text-sm ${b.is_extra ? 'border-amber-200 bg-amber-50' : 'border-slate-200 bg-white'}`}>
-                                <div className="font-semibold">{b.display_name}</div>
+                                <div className="font-semibold">{bookingDisplayName(b)}</div>
                                 <div className="text-xs text-slate-500">{b.username}{b.is_extra ? ' - Extra' : ''}</div>
                                 {b.reason && <div className="text-xs text-amber-700 mt-1">{b.reason}</div>}
                             </div>
@@ -523,8 +702,10 @@ function SummaryModal({ summary, onClose }) {
                                     <div className="flex flex-wrap gap-1">
                                         {p.days.map(d => (
                                             <span key={d.booking_id}
-                                                  className="rounded-full px-2 py-1 text-xs bg-blue-100 text-blue-800">
-                                                {bookingDayLabel(d.booking_date)}
+                                                  className={`rounded-full px-2 py-1 text-xs ${d.booking_type === 'customer'
+                                                      ? 'bg-emerald-100 text-emerald-800'
+                                                      : 'bg-blue-100 text-blue-800'}`}>
+                                                {bookingDayLabel(d.booking_date)}{d.booking_type === 'customer' && d.customer_name ? ` (${d.customer_name})` : ''}
                                             </span>
                                         ))}
                                     </div>
