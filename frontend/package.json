@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --port 3000 --host 0.0.0.0",
     "build": "vite build",
-    "preview": "vite preview --port 3000"
+    "preview": "vite preview --port 3000",
+    "test": "node --test"
   },
   "dependencies": {
     "@heroicons/react": "^2.1.5",

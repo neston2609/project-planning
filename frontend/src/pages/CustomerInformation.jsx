@@ -3,6 +3,7 @@ import api from '../api';
 import HoverImage from '../components/HoverImage';
 import { useYear } from '../YearContext';
 import { baht } from '../format';
+import { buildCustomerRevenueSummaries, emptyCustomerRevenueSummary } from '../customerRevenueSummary';
 import {
     MagnifyingGlassIcon, EnvelopeIcon, PhoneIcon, UserIcon,
     BanknotesIcon, ClockIcon, BriefcaseIcon
@@ -17,10 +18,10 @@ import {
  *   - Revenue Summary (status=Win projects in the selected year)
  *   - Pipeline Summary (status=Pipeline projects in the selected year)
  *
- * Aggregation: we already have five backend dashboard endpoints that compute
+ * Aggregation: the five backend dashboard endpoints already compute
  * `recognize_revenue` / `recognize_gross_margin` per row for the selected year.
- * Each row carries a `customer` field (the alias) and a `status`. We pull all
- * five lists in parallel and group their rows by customer alias.
+ * We group Win/Backlog rows into Subscription, Perpetual License, SW MA, and
+ * total Service revenue while keeping qualifying Pipeline rows separate.
  */
 export default function CustomerInformation() {
     const { year } = useYear();
@@ -44,34 +45,13 @@ export default function CustomerInformation() {
             if (cancelled) return;
             setCustomers(c.data);
 
-            const agg = new Map();
-            const bucket = () => ({
-                winRev: 0, winGm: 0, winProjects: new Set(),
-                pipelineRev: 0, pipelineGm: 0, pipelineProjects: new Set()
-            });
-
-            const allRows = [
-                ...s.data.rows, ...p.data.rows, ...m.data.rows,
-                ...i.data.rows, ...o.data.rows
-            ];
-
-            for (const r of allRows) {
-                const key = r.customer || ''; // empty key = "no customer"
-                if (!agg.has(key)) agg.set(key, bucket());
-                const b   = agg.get(key);
-                const rev = Number(r.recognize_revenue) || 0;
-                const gm  = Number(r.recognize_gross_margin) || 0;
-                if (r.status === 'Win') {
-                    b.winRev += rev;
-                    b.winGm  += gm;
-                    b.winProjects.add(r.project_id);
-                } else if (r.status === 'Pipeline') {
-                    b.pipelineRev += rev;
-                    b.pipelineGm  += gm;
-                    b.pipelineProjects.add(r.project_id);
-                }
-            }
-            setAggregates(agg);
+            setAggregates(buildCustomerRevenueSummaries({
+                subscriptions: s.data.rows,
+                perpetualMa: p.data.rows,
+                serviceMa: m.data.rows,
+                implementation: i.data.rows,
+                outsource: o.data.rows
+            }));
         }).catch(() => {
             if (!cancelled) { setCustomers([]); setAggregates(new Map()); }
         }).finally(() => {
@@ -118,7 +98,7 @@ export default function CustomerInformation() {
                 </h1>
                 <p className="text-sm text-slate-500 mt-1">
                     {customers.length} {customers.length === 1 ? 'customer' : 'customers'} ·
-                    Revenue Summary covers Win projects only.
+                    Recognized Revenue covers Win / Backlog projects only; Pipeline remains separate.
                 </p>
             </div>
 
@@ -130,7 +110,7 @@ export default function CustomerInformation() {
                             <BanknotesIcon className="w-6 h-6" />
                         </div>
                         <div className="min-w-0">
-                            <div className="text-[11px] uppercase tracking-wider font-bold text-slate-500">Revenue Summary (Win)</div>
+                            <div className="text-[11px] uppercase tracking-wider font-bold text-slate-500">Recognized Revenue (Win / Backlog)</div>
                             <div className="text-2xl font-extrabold tabular-nums text-emerald-700 truncate">{baht(totals.winRev)}</div>
                             <div className="text-xs text-slate-500">{totals.winCount} {totals.winCount === 1 ? 'project' : 'projects'}</div>
                         </div>
@@ -166,7 +146,7 @@ export default function CustomerInformation() {
             ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     {filtered.map(c => (
-                        <CustomerCard key={c.id} c={c}
+                        <CustomerCard key={c.id} c={c} year={year}
                                       agg={aggregates.get(c.alias) || EMPTY_AGG} />
                     ))}
                 </div>
@@ -175,12 +155,9 @@ export default function CustomerInformation() {
     );
 }
 
-const EMPTY_AGG = {
-    winRev: 0, winGm: 0, winProjects: new Set(),
-    pipelineRev: 0, pipelineGm: 0, pipelineProjects: new Set()
-};
+const EMPTY_AGG = emptyCustomerRevenueSummary();
 
-function CustomerCard({ c, agg }) {
+function CustomerCard({ c, agg, year }) {
     const initials = (c.alias || '').slice(0, 2).toUpperCase() || '?';
     return (
         <div className="card p-5 fade-in hover:-translate-y-0.5 hover:shadow-lg transition-all">
@@ -274,6 +251,37 @@ function CustomerCard({ c, agg }) {
                     </div>
                 </div>
             </div>
+
+            <div className="mt-3 rounded-xl border border-indigo-100 bg-indigo-50/40 p-3">
+                <div className="text-[10px] uppercase tracking-wider font-bold text-indigo-700 mb-2">
+                    Recognized Revenue Breakdown · {year}
+                </div>
+                <div className="space-y-2">
+                    <RevenueSummaryRow label="Subscription" revenue={agg.subscriptionRev} grossMargin={agg.subscriptionGm} />
+                    <RevenueSummaryRow label="Perpetual License" revenue={agg.perpetualRev} grossMargin={agg.perpetualGm} />
+                    <RevenueSummaryRow label="SW MA" revenue={agg.swMaRev} grossMargin={agg.swMaGm} />
+                    <RevenueSummaryRow label="SV Revenue (All)" revenue={agg.serviceRev} />
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function RevenueSummaryRow({ label, revenue, grossMargin }) {
+    return (
+        <div className="rounded-lg border border-white/80 bg-white/80 px-2.5 py-2 shadow-sm">
+            <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-bold text-slate-600">{label}</span>
+                <span className="text-xs font-extrabold tabular-nums text-emerald-700" title={baht(revenue)}>
+                    {baht(revenue)}
+                </span>
+            </div>
+            {grossMargin !== undefined && (
+                <div className="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-slate-500">
+                    <span>Gross Margin</span>
+                    <span className="font-bold tabular-nums text-indigo-700" title={baht(grossMargin)}>{baht(grossMargin)}</span>
+                </div>
+            )}
         </div>
     );
 }
