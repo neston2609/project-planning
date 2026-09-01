@@ -4,10 +4,11 @@ import HoverImage from '../components/HoverImage';
 import Modal from '../components/Modal';
 import toast from 'react-hot-toast';
 import { useAuth } from '../auth';
+import { buildResourceCsv, resourceCsvFilename } from '../utils/resourceCsv';
 import {
     UserCircleIcon, MagnifyingGlassIcon, FunnelIcon,
     EnvelopeIcon, IdentificationIcon, BriefcaseIcon,
-    PencilSquareIcon, ArrowUpTrayIcon, TrashIcon, PhoneIcon
+    PencilSquareIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, TrashIcon, PhoneIcon
 } from '@heroicons/react/24/outline';
 
 export default function ResourceInformation() {
@@ -43,6 +44,21 @@ export default function ResourceInformation() {
     }
 
     useEffect(() => { loadResources(); }, []);
+
+    function exportCsv() {
+        if (list.length === 0) return;
+
+        const blob = new Blob([buildResourceCsv(list)], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = resourceCsvFilename();
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+        toast.success(`Exported ${list.length} resources`);
+    }
 
     async function saveOwnResource(f) {
         try {
@@ -114,11 +130,18 @@ export default function ResourceInformation() {
 
     return (
         <div className="space-y-5">
-            <div>
-                <h1 className="text-3xl font-extrabold">
-                    <span className="brand-mark">Resource Information</span>
-                </h1>
-                <p className="text-sm text-slate-500 mt-1">Team directory · {list.length} {list.length === 1 ? 'person' : 'people'}.</p>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <h1 className="text-3xl font-extrabold">
+                        <span className="brand-mark">Resource Information</span>
+                    </h1>
+                    <p className="text-sm text-slate-500 mt-1">Team directory · {list.length} {list.length === 1 ? 'person' : 'people'}.</p>
+                </div>
+                <button type="button" className="btn-primary" onClick={exportCsv}
+                        disabled={loading || list.length === 0}
+                        title="Export all resource information">
+                    <ArrowDownTrayIcon className="w-4 h-4" /> Export CSV
+                </button>
             </div>
 
             {/* Role count chips — click to filter */}
